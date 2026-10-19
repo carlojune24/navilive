@@ -1,0 +1,79 @@
+@import 'tailwindcss';
+@import '../../node_modules/tw-animate-css/dist/tw-animate.css';
+@import '../../node_modules/@fontsource/big-shoulders-display/latin-900.css';
+@import '../../node_modules/@fontsource/barlow-semi-condensed/latin-400.css';
+@import '../../node_modules/@fontsource/barlow-semi-condensed/latin-600.css';
+@import '../../node_modules/@fontsource/barlow-semi-condensed/latin-700.css';
+
+@custom-variant dark (&:is(.dark *));
+
+/* Tyvek bib: cool paper, black print ink, square, flat. Same tokens as perstationapp. */
+:root {
+	--radius: 0px;
+	--background: oklch(0.955 0.008 250);
+	--foreground: oklch(0.16 0.012 270);
+	--card: oklch(0.995 0.002 250);
+	--card-foreground: oklch(0.16 0.012 270);
+	--popover: oklch(0.995 0.002 250);
+	--popover-foreground: oklch(0.16 0.012 270);
+	--primary: oklch(0.16 0.012 270);
+	--primary-foreground: oklch(0.995 0.002 250);
+	--secondary: oklch(0.91 0.01 250);
+	--secondary-foreground: oklch(0.16 0.012 270);
+	--muted: oklch(0.93 0.008 250);
+	--muted-foreground: oklch(0.38 0.012 270);
+	--accent: oklch(0.9 0.012 250);
+	--accent-foreground: oklch(0.16 0.012 270);
+	--destructive: oklch(0.52 0.21 28);
+	--border: oklch(0.16 0.012 270);
+	--input: oklch(0.16 0.012 270);
+	--ring: oklch(0.5 0.2 262);
+	--start: oklch(0.5 0.14 150);
+	--checkpoint: oklch(0.66 0.17 55);
+	--finish: oklch(0.52 0.21 28);
+	--fresh: oklch(0.9 0.17 100);
+	--gold: oklch(0.84 0.16 88);
+	--silver: oklch(0.84 0.012 250);
+	--bronze: oklch(0.68 0.12 55);
+}
+
+@theme inline {
+	--font-sans: 'Barlow Semi Condensed', 'Segoe UI', system-ui, sans-serif;
+	--font-display: 'Big Shoulders Display', 'Barlow Semi Condensed', Impact, sans-serif;
+	--radius-sm: 0px;
+	--radius-md: 0px;
+	--radius-lg: 0px;
+	--radius-xl: 0px;
+	--color-background: var(--background);
+	--color-foreground: var(--foreground);
+	--color-card: var(--card);
+	--color-card-foreground: var(--card-foreground);
+	--color-popover: var(--popover);
+	--color-popover-foreground: var(--popover-foreground);
+	--color-primary: var(--primary);
+	--color-primary-foreground: var(--primary-foreground);
+	--color-secondary: var(--secondary);
+	--color-secondary-foreground: var(--secondary-foreground);
+	--color-muted: var(--muted);
+	--color-muted-foreground: var(--muted-foreground);
+	--color-accent: var(--accent);
+	--color-accent-foreground: var(--accent-foreground);
+	--color-destructive: var(--destructive);
+	--color-border: var(--border);
+	--color-input: var(--input);
+	--color-ring: var(--ring);
+	--color-start: var(--start);
+	--color-checkpoint: var(--checkpoint);
+	--color-finish: var(--finish);
+	--color-fresh: var(--fresh);
+}
+
+@layer base {
+	* {
+		@apply border-border outline-ring/50;
+	}
+	body {
+		@apply bg-background text-foreground font-sans text-[15px];
+		font-variant-numeric: tabular-nums;
+	}
+}

@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-03T00:00:00Z",
+  "title": "Design System: Race Tracker",
+  "extensions": {
+    "colorMeta": {
+      "paper": { "role": "neutral", "displayName": "Tyvek Paper", "canonical": "oklch(0.955 0.008 250)", "tonalRamp": ["oklch(0.2 0.008 250)", "oklch(0.3 0.008 250)", "oklch(0.45 0.008 250)", "oklch(0.6 0.008 250)", "oklch(0.75 0.008 250)", "oklch(0.86 0.008 250)", "oklch(0.93 0.008 250)", "oklch(0.97 0.008 250)"] },
+      "sheet": { "role": "neutral", "displayName": "Bib Sheet", "canonical": "oklch(0.995 0.002 250)", "tonalRamp": ["oklch(0.2 0.002 250)", "oklch(0.3 0.002 250)", "oklch(0.45 0.002 250)", "oklch(0.6 0.002 250)", "oklch(0.75 0.002 250)", "oklch(0.86 0.002 250)", "oklch(0.93 0.002 250)", "oklch(0.995 0.002 250)"] },
+      "ink": { "role": "primary", "displayName": "Print Ink", "canonical": "oklch(0.16 0.012 270)", "tonalRamp": ["oklch(0.16 0.012 270)", "oklch(0.26 0.012 270)", "oklch(0.38 0.012 270)", "oklch(0.5 0.012 270)", "oklch(0.62 0.012 270)", "oklch(0.74 0.012 270)", "oklch(0.86 0.012 270)", "oklch(0.95 0.012 270)"] },
+      "start": { "role": "secondary", "displayName": "Start Green", "canonical": "oklch(0.5 0.14 150)", "tonalRamp": ["oklch(0.15 0.14 150)", "oklch(0.25 0.14 150)", "oklch(0.35 0.14 150)", "oklch(0.5 0.14 150)", "oklch(0.62 0.14 150)", "oklch(0.74 0.14 150)", "oklch(0.86 0.14 150)", "oklch(0.95 0.14 150)"] },
+      "checkpoint": { "role": "secondary", "displayName": "Checkpoint Orange", "canonical": "oklch(0.66 0.17 55)", "tonalRamp": ["oklch(0.15 0.17 55)", "oklch(0.25 0.17 55)", "oklch(0.4 0.17 55)", "oklch(0.55 0.17 55)", "oklch(0.66 0.17 55)", "oklch(0.76 0.17 55)", "oklch(0.86 0.17 55)", "oklch(0.95 0.17 55)"] },
+      "finish": { "role": "secondary", "displayName": "Finish Vermilion", "canonical": "oklch(0.52 0.21 28)", "tonalRamp": ["oklch(0.15 0.21 28)", "oklch(0.25 0.21 28)", "oklch(0.38 0.21 28)", "oklch(0.52 0.21 28)", "oklch(0.64 0.21 28)", "oklch(0.75 0.21 28)", "oklch(0.86 0.21 28)", "oklch(0.95 0.21 28)"] }
+    },
+    "typographyMeta": {
+      "bib": { "displayName": "Bib Numeral", "purpose": "Last-read numeral only." },
+      "headline": { "displayName": "Headline", "purpose": "Wordmark, clock stub, panel titles." },
+      "title": { "displayName": "Title", "purpose": "Runner name in the last-read sheet." },
+      "body": { "displayName": "Body", "purpose": "Working text, tabular figures." },
+      "label": { "displayName": "Label", "purpose": "Uppercase labels, headers, buttons, nav, tags." }
+    },
+    "shadows": [],
+    "motion": [
+      { "name": "ease-out-expo", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Character flip (520ms, 55ms stagger) and row highlight fade (2.4s)." }
+    ],
+    "breakpoints": [
+      { "name": "split", "value": "1200px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Ink-filled square button; the manual-entry action.",
+      "html": "<button class=\"ds-btn\">Record at current time</button>",
+      "css": ".ds-btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; height:44px; padding:8px 20px; background:var(--ink); color:var(--sheet); border:2px solid var(--ink); font-weight:700; font-size:14px; letter-spacing:0.025em; text-transform:uppercase; cursor:pointer; transition:background-color .15s; } .ds-btn:hover { background:color-mix(in oklab, var(--ink) 85%, transparent); } .ds-btn:focus-visible { outline:3px solid var(--ring); outline-offset:2px; } .ds-btn:active { transform:translateY(1px); } .ds-btn:disabled { background:var(--sheet); color:var(--ink-soft); border-style:dashed; }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Square 2px-ink field on sheet.",
+      "html": "<input class=\"ds-input\" placeholder=\"Search bib, name or tag\">",
+      "css": ".ds-input { height:44px; width:100%; padding:4px 12px; background:var(--sheet); color:var(--ink); border:2px solid var(--ink); font-size:16px; font-weight:500; outline:none; } .ds-input:focus-visible { outline:3px solid var(--ring); }"
+    },
+    {
+      "name": "Nav Item (active)",
+      "kind": "nav",
+      "refersTo": "nav-item-active",
+      "description": "Rail item; active is ink-inverted.",
+      "html": "<button class=\"ds-nav\">LIVE</button>",
+      "css": ".ds-nav { display:flex; align-items:center; height:48px; width:100%; padding:0 12px; background:var(--ink); color:var(--sheet); border:2px solid var(--ink); font-size:18px; font-weight:700; letter-spacing:0.025em; text-transform:uppercase; } .ds-nav:focus-visible { outline:3px solid var(--ring); outline-offset:2px; }"
+    },
+    {
+      "name": "Station Chip",
+      "kind": "chip",
+      "refersTo": "station-chip-finish",
+      "description": "Kind-colored word cell plus station name; color is never the only signal.",
+      "html": "<span class=\"ds-chip\"><span class=\"ds-chip-k\">FINISH</span><span class=\"ds-chip-n\">Main gate</span></span>",
+      "css": ".ds-chip { display:inline-flex; align-items:stretch; border:2px solid var(--ink); font-size:12px; font-weight:700; text-transform:uppercase; line-height:1; } .ds-chip-k { padding:4px 8px; letter-spacing:0.05em; background:var(--finish); color:#fff; } .ds-chip-n { padding:4px 8px; background:var(--sheet); white-space:nowrap; }"
+    },
+    {
+      "name": "Notched Sheet",
+      "kind": "card",
+      "refersTo": "sheet-notched",
+      "description": "Panel with 16px clipped corners and an ink border that follows the cut.",
+      "html": "<section class=\"ds-notch\"><div class=\"ds-notch-in\"><h2>READERS</h2></div></section>",
+      "css": ".ds-notch { position:relative; background:var(--ink); clip-path:polygon(16px 0,calc(100% - 16px) 0,100% 16px,100% calc(100% - 16px),calc(100% - 16px) 100%,16px 100%,0 calc(100% - 16px),0 16px); } .ds-notch-in { position:relative; margin:2px; padding:16px; background:var(--sheet); clip-path:polygon(15px 0,calc(100% - 15px) 0,100% 15px,100% calc(100% - 15px),calc(100% - 15px) 100%,15px 100%,0 calc(100% - 15px),0 15px); } .ds-notch-in h2 { margin:0; font-family:'Big Shoulders Display',Impact,sans-serif; font-weight:900; font-size:30px; line-height:.85; }"
+    },
+    {
+      "name": "Last-Read Band",
+      "kind": "custom",
+      "refersTo": "station-chip-start",
+      "description": "Kind-colored header band with pin holes over the monumental bib numeral.",
+      "html": "<div class=\"ds-band\"><span>START</span><span>Gate A</span></div>",
+      "css": ".ds-band { position:relative; display:flex; justify-content:space-between; padding:8px 56px; background:var(--start); color:#fff; font-size:24px; font-weight:700; text-transform:uppercase; } .ds-band::before,.ds-band::after { content:''; position:absolute; top:50%; width:16px; height:16px; margin-top:-8px; border:2px solid var(--ink); border-radius:50%; background:var(--paper); } .ds-band::before { left:16px; } .ds-band::after { right:16px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Tyvek Bib",
+    "overview": "The whole app is a race bib read at arm's length: cool blue-white synthetic paper, black print ink, monumental condensed numerals, tear-off perforations and clipped corners. Hierarchy comes from scale contrast and 2px ink rules, never from shadow, tint, or rounding. Color is rationed to meaning: three station inks and a focus blue.",
+    "keyCharacteristics": [
+      "Cool Tyvek paper ground, black ink.",
+      "Heavy condensed bib numerals for identity data; semi-condensed grotesk for everything else.",
+      "2px ink borders, square corners, zero shadows.",
+      "Perforation dots and 16px notched corners as the signature silhouette.",
+      "Station kind is always color plus word."
+    ],
+    "rules": [
+      { "name": "The Color-Plus-Word Rule", "body": "A station kind is never color alone: the band or chip carries START, CHECKPOINT, or FINISH as text.", "section": "colors" },
+      { "name": "The Station Ink Rule", "body": "Green, orange, and vermilion mean station kind and status. They are never decoration.", "section": "colors" },
+      { "name": "The Bib Numeral Rule", "body": "Big Shoulders is for numbers and short panel titles; running text, forms, and buttons stay in Barlow.", "section": "typography" },
+      { "name": "The Tabular Rule", "body": "Tabular numerals are on for the whole app.", "section": "typography" },
+      { "name": "The No-Shadow Rule", "body": "Separation is a 2px ink border or a paper-to-sheet step; shadows are out of system.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep every border 2px Print Ink and every corner square; use the 16px notch for major sheets.",
+      "Do pair every station color with its kind word.",
+      "Do set identity numbers in Big Shoulders 900 and everything else in Barlow Semi Condensed.",
+      "Do show state by fill inversion, dashed borders, and strikethrough.",
+      "Do reserve the flip and row flash for genuinely new reads."
+    ],
+    "donts": [
+      "Don't add shadows, rounded corners, or gradient fills.",
+      "Don't use green, orange, or vermilion as decoration.",
+      "Don't introduce a warm cream ground.",
+      "Don't set body or form text in the display face.",
+      "Don't use grey admin-dashboard patterns."
+    ]
+  }
+}

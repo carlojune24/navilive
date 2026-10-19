@@ -1,0 +1,216 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "../node_modules/@fontsource/barlow-semi-condensed/latin-400.css";
+@import "../node_modules/@fontsource/barlow-semi-condensed/latin-500.css";
+@import "../node_modules/@fontsource/barlow-semi-condensed/latin-600.css";
+@import "../node_modules/@fontsource/barlow-semi-condensed/latin-700.css";
+@import "../node_modules/@fontsource/big-shoulders-display/latin-800.css";
+@import "../node_modules/@fontsource/big-shoulders-display/latin-900.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Tyvek bib sheet: cool white paper, black print ink, three station inks. */
+:root {
+  --paper: oklch(0.955 0.008 250);
+  --sheet: oklch(0.995 0.002 250);
+  --ink: oklch(0.16 0.012 270);
+  --ink-soft: oklch(0.38 0.012 270);
+  --rule: oklch(0.16 0.012 270);
+  --perf: oklch(0.7 0.01 260);
+
+  --start: oklch(0.5 0.14 150);
+  --checkpoint: oklch(0.66 0.17 55);
+  --finish: oklch(0.52 0.21 28);
+
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: var(--sheet);
+  --card-foreground: var(--ink);
+  --popover: var(--sheet);
+  --popover-foreground: var(--ink);
+  --primary: var(--ink);
+  --primary-foreground: var(--sheet);
+  --secondary: oklch(0.91 0.01 250);
+  --secondary-foreground: var(--ink);
+  --muted: oklch(0.93 0.008 250);
+  --muted-foreground: var(--ink-soft);
+  --accent: oklch(0.9 0.012 250);
+  --accent-foreground: var(--ink);
+  --destructive: var(--finish);
+  --border: var(--ink);
+  --input: var(--ink);
+  --ring: oklch(0.5 0.2 262);
+  --radius: 0rem;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-sheet: var(--sheet);
+  --color-perf: var(--perf);
+  --color-start: var(--start);
+  --color-checkpoint: var(--checkpoint);
+  --color-finish: var(--finish);
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --font-sans: "Barlow Semi Condensed", "Segoe UI", system-ui, sans-serif;
+  --font-bib: "Big Shoulders Display", "Barlow Semi Condensed", Impact, sans-serif;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html,
+  body {
+    height: 100%;
+  }
+  /* pinned to the viewport so the layout follows the window when it is maximized or resized */
+  #root {
+    position: fixed;
+    inset: 0;
+  }
+  body {
+    @apply bg-background text-foreground font-sans text-[15px] antialiased;
+    font-variant-numeric: tabular-nums;
+    overflow: hidden;
+  }
+  ::selection {
+    background: var(--ink);
+    color: var(--sheet);
+  }
+  :focus-visible {
+    outline: 3px solid var(--ring);
+    outline-offset: 2px;
+  }
+  input,
+  textarea {
+    caret-color: var(--ring);
+  }
+  ::-webkit-scrollbar {
+    width: 14px;
+    height: 14px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--paper);
+    border-left: 1px solid var(--perf);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--ink);
+    border: 3px solid var(--paper);
+  }
+}
+
+@layer utilities {
+  .font-bib {
+    font-family: var(--font-bib);
+    font-weight: 900;
+    letter-spacing: -0.01em;
+    line-height: 0.85;
+  }
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+  /* perforation line: the tear-off edge of a race bib */
+  .perf-b {
+    background-image: radial-gradient(circle, var(--perf) 1.6px, transparent 2px);
+    background-size: 12px 6px;
+    background-repeat: repeat-x;
+    background-position: 0 100%;
+    padding-bottom: 6px;
+  }
+  .perf-t {
+    background-image: radial-gradient(circle, var(--perf) 1.6px, transparent 2px);
+    background-size: 12px 6px;
+    background-repeat: repeat-x;
+    background-position: 0 0;
+    padding-top: 6px;
+  }
+  .sheet {
+    background: var(--sheet);
+    border: 2px solid var(--ink);
+  }
+  /* notched corner like a bib: ink polygon underneath, sheet polygon inset 2px on top, so the border follows the cut */
+  .notch {
+    position: relative;
+    border: 0;
+    background: var(--ink);
+    clip-path: polygon(16px 0, calc(100% - 16px) 0, 100% 16px, 100% calc(100% - 16px), calc(100% - 16px) 100%, 16px 100%, 0 calc(100% - 16px), 0 16px);
+  }
+  .notch::before {
+    content: "";
+    position: absolute;
+    inset: 2px;
+    background: var(--sheet);
+    clip-path: polygon(15px 0, calc(100% - 15px) 0, 100% 15px, 100% calc(100% - 15px), calc(100% - 15px) 100%, 15px 100%, 0 calc(100% - 15px), 0 15px);
+  }
+  .notch > * {
+    position: relative;
+  }
+  .perf-l {
+    background-image: radial-gradient(circle, var(--perf) 1.6px, transparent 2px);
+    background-size: 6px 12px;
+    background-repeat: repeat-y;
+    background-position: 0 0;
+    padding-left: 6px;
+  }
+}
+
+/* One authored moment: a new read flips in character by character, like the departures board. */
+@keyframes flip-in {
+  0% {
+    transform: rotateX(-90deg);
+    opacity: 0;
+  }
+  60% {
+    transform: rotateX(12deg);
+    opacity: 1;
+  }
+  100% {
+    transform: rotateX(0);
+  }
+}
+.flip-char {
+  display: inline-block;
+  transform-origin: 50% 100%;
+  animation: flip-in 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--i, 0) * 55ms);
+}
+@keyframes row-in {
+  from {
+    background: oklch(0.9 0.17 100);
+  }
+  to {
+    background: transparent;
+  }
+}
+.row-new {
+  animation: row-in 2.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .flip-char,
+  .row-new {
+    animation: none;
+  }
+}
