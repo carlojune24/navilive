@@ -33,7 +33,7 @@ The sections below describe running it on a laptop instead (leave `PUBLIC_URL` u
 
 ## One-time setup (this laptop)
 
-1. **Database.** PostgreSQL must be running with a database called `racecentral`. Create the tables once:
+1. **Database.** PostgreSQL must be running and `.env` (step 2) must exist. Then `npm run migrate` creates the database if missing and applies every `db\*.sql` (safe to re-run). The manual equivalent:
    ```powershell
    $env:PGPASSWORD='<postgres password>'
    Get-ChildItem db\*.sql | Sort-Object Name | ForEach-Object { & 'C:\Program Files\PostgreSQL\18\bin\psql.exe' -U postgres -h localhost -d racecentral -v ON_ERROR_STOP=1 -f $_.FullName }
