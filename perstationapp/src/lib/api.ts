@@ -20,6 +20,7 @@ export interface Read {
   runner: string | null;
   category: string | null;
   is_passing: boolean;
+  synced: boolean; // false = not yet confirmed by the central app
 }
 export interface Station {
   id: number;

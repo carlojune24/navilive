@@ -181,7 +181,7 @@ pub fn query_reads(conn: &Connection, f: &ReadFilter) -> Res<Vec<Value>> {
     let debounce_ms = get_setting(conn, "debounce_s", "30").parse::<i64>().unwrap_or(30).max(0) * 1000;
     let mut sql = format!(
         "SELECT rd.id, rd.device_id, rd.seq, rd.tag, rd.raw, rd.read_at_ms, rd.received_at_ms, rd.time_exact, \
-         rd.station_id, s.name, s.kind, rd.voided, rd.note, COALESCE(rt.bib, rb.bib), COALESCE(rt.name, rb.name), COALESCE(rt.category, rb.category), {PASSING} AS is_passing \
+         rd.station_id, s.name, s.kind, rd.voided, rd.note, COALESCE(rt.bib, rb.bib), COALESCE(rt.name, rb.name), COALESCE(rt.category, rb.category), {PASSING} AS is_passing, rd.synced \
          FROM reads rd LEFT JOIN stations s ON s.id=rd.station_id \
          LEFT JOIN runners rt ON rt.tag=rd.tag \
          LEFT JOIN runners rb ON rb.bib=rd.tag AND rt.id IS NULL \
@@ -228,6 +228,7 @@ pub fn query_reads(conn: &Connection, f: &ReadFilter) -> Res<Vec<Value>> {
             "runner": r.get::<_, Option<String>>(14)?,
             "category": r.get::<_, Option<String>>(15)?,
             "is_passing": r.get::<_, i64>(16)? == 1,
+            "synced": r.get::<_, i64>(17)? == 1,
         }))
     })?;
     rows.collect()

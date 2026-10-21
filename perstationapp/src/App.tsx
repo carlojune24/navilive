@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { Radio, Trophy, Users, Settings2 } from "lucide-react";
+import { Radio, Trophy, Users, Settings2, CloudUpload } from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
 import { api, beep, ONLINE_MS, type AppInfo, type Device, type Read, type Station } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -8,12 +8,14 @@ import { Live } from "@/views/Live";
 import { Results } from "@/views/Results";
 import { Runners } from "@/views/Runners";
 import { Setup } from "@/views/Setup";
+import { Sync } from "@/views/Sync";
 
-type View = "live" | "results" | "runners" | "setup";
+type View = "live" | "results" | "runners" | "sync" | "setup";
 const NAV: { id: View; label: string; icon: typeof Radio }[] = [
   { id: "live", label: "Live", icon: Radio },
   { id: "results", label: "Results", icon: Trophy },
   { id: "runners", label: "Runners", icon: Users },
+  { id: "sync", label: "Sync", icon: CloudUpload },
   { id: "setup", label: "Setup", icon: Settings2 },
 ];
 const FEED_LIMIT = 400;
@@ -157,6 +159,7 @@ export default function App() {
           )}
           {view === "results" && <Results version={version} />}
           {view === "runners" && <Runners reads={reads} version={version} reload={reload} />}
+          {view === "sync" && <Sync version={version} now={now} goSetup={() => setView("setup")} />}
           {view === "setup" && <Setup stations={stations} devices={devices} info={info} now={now} reload={reload} />}
         </div>
       </main>

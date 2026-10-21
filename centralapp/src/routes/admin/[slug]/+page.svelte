@@ -312,6 +312,23 @@
 					<p class="border-b-2 border-border/15 px-4 py-2 text-muted-foreground">Course: {c.course.map((s) => s.name).join(' → ')}</p>
 					{#key c.id}<ProgressTable course={c.course} rows={c.progress} flags pageSize={20} />{/key}
 				</section>
+				<!-- per checkpoint: who has passed and who has not yet (the start counts a gun start too, like the table) -->
+				<section class="border-2 border-border bg-card">
+					<h3 class="bg-primary px-4 py-2 font-display text-3xl font-black text-primary-foreground uppercase">By checkpoint</h3>
+					<div class="grid gap-4 p-4 md:grid-cols-2">
+						{#each c.course as s, i (s.id)}
+							{@const passed = c.progress.filter((r) => (s.kind === 'start' ? r.start !== null || r.at[i] !== null : r.at[i] !== null))}
+							{@const waiting = c.progress.filter((r) => !passed.includes(r))}
+							<div class="border-2 border-border/15 p-3">
+								<h4 class="font-display text-2xl font-black uppercase">{s.name} <span class="text-base font-normal text-muted-foreground">{passed.length} passed · {waiting.length} not yet</span></h4>
+								<p class="mt-2 text-sm font-bold uppercase">Passed</p>
+								<p class="break-words">{passed.length ? passed.map((r) => r.bib).join(', ') : '—'}</p>
+								<p class="mt-2 text-sm font-bold uppercase">Not yet</p>
+								<p class="break-words text-muted-foreground">{waiting.length ? waiting.map((r) => r.bib).join(', ') : '—'}</p>
+							</div>
+						{/each}
+					</div>
+				</section>
 			{:else}
 				<p class="border-2 border-border bg-card p-4 text-muted-foreground">No participants yet.</p>
 			{/each}
