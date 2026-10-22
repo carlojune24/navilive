@@ -5,10 +5,16 @@ import { hashKey, newKey } from '$lib/server/apikey';
 const slugify = (s: string) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
 export const load = async () => ({
-	events: await q('select id, name, slug, date from events order by id desc')
+	events: await q('select id, name, slug, date, published from events order by id desc')
 });
 
 export const actions = {
+	// a draft event 404s on the live board; see hooks.server.ts
+	publish: async ({ request }) => {
+		const f = await request.formData();
+		await q('update events set published=$2 where id=$1', [Number(f.get('id')), f.get('published') === 'true']);
+		return { published: true };
+	},
 	create: async ({ request }) => {
 		const f = await request.formData();
 		const name = String(f.get('name') ?? '').trim();

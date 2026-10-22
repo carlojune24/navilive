@@ -17,11 +17,17 @@
 
 	<ul class="divide-y-2 divide-border border-2 border-border bg-card">
 		{#each data.events as e (e.id)}
-			<li>
-				<a href="/admin/{e.slug}" class="flex items-baseline justify-between p-4 hover:bg-accent">
+			<li class="flex flex-wrap items-center gap-3 pr-4">
+				<a href="/admin/{e.slug}" class="flex flex-1 flex-wrap items-baseline justify-between gap-3 p-4 hover:bg-accent">
 					<span class="text-2xl font-bold uppercase">{e.name}</span>
 					<span class="text-muted-foreground">{e.date ? new Date(e.date).toLocaleDateString() : ''}</span>
 				</a>
+				<span class="font-bold uppercase {e.published ? 'text-start' : 'text-muted-foreground'}" title={e.published ? 'The live board is open to everyone' : 'The live board is hidden; only you can see it'}>{e.published ? 'Live' : 'Draft'}</span>
+				<form method="POST" action="?/publish">
+					<input type="hidden" name="id" value={e.id} />
+					<input type="hidden" name="published" value={e.published ? 'false' : 'true'} />
+					<Button type="submit" variant="outline" class="h-11 border-2 font-bold uppercase">{e.published ? 'Unpublish' : 'Publish'}</Button>
+				</form>
 			</li>
 		{:else}
 			<li class="p-4 text-muted-foreground">No events yet. Create the first one above.</li>
