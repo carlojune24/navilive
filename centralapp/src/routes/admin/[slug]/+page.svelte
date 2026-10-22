@@ -485,7 +485,6 @@
 						<span>{c.name}</span>
 						<span class="text-base font-normal tracking-wide">{progRows.filter((r) => r.state === 'finished').length} finished · {progRows.filter((r) => r.start !== null).length} started · {progRows.length} registered{flagged ? ` · ${flagged} to check` : ''}</span>
 					</h3>
-					<p class="border-b-2 border-border/15 px-4 py-2 text-muted-foreground">Course: {c.course.map((s) => s.name).join(' → ')}</p>
 					{#key `${c.id}-${progBatch}`}<ProgressTable course={c.course} rows={progRows} flags pageSize={20} />{/key}
 				</section>
 				<!-- per checkpoint: who has passed and who has not yet (the start counts a gun start too, like the table) -->

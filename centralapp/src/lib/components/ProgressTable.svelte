@@ -30,6 +30,7 @@
 	<table class="w-full border-collapse text-left">
 		<thead>
 			<tr class="bg-primary text-primary-foreground">
+				<th class="px-3 py-2 font-bold tracking-wide uppercase {head}">Rank</th>
 				<th class="px-3 py-2 font-bold tracking-wide uppercase {head}">Bib</th>
 				<th class="px-3 py-2 font-bold tracking-wide uppercase {head}">Name</th>
 				<th class="px-3 py-2 font-bold tracking-wide uppercase {head}">Status</th>
@@ -45,10 +46,11 @@
 		<tbody>
 			{#each shown as r (r.bib)}
 				<tr class="border-b-2 border-border/15 {r.state === 'not-started' ? 'text-muted-foreground' : ''}">
+					<td class="font-display px-3 py-1 text-3xl leading-[0.9] font-black {big ? 'md:text-5xl' : ''}">{r.state === 'finished' && r.rank ? r.rank : '—'}</td>
 					<td class="font-display px-3 py-1 text-3xl leading-[0.9] font-black {big ? 'md:text-5xl' : ''}">{r.bib}</td>
 					<td class="px-3 py-1 font-bold uppercase {text}">{r.name || '—'}</td>
 					<td class="px-3 py-1 whitespace-nowrap {text}">
-						{#if r.state === 'finished'}<b>Finished{r.rank ? ` · ${r.rank}` : ''}</b>{:else if r.state === 'on-course'}{r.last ? `At ${r.last}` : 'Started'}{:else}{status[r.state]}{/if}
+						{#if r.state === 'finished'}<b>Finished</b>{:else if r.state === 'on-course'}{r.last ? `At ${r.last}` : 'Started'}{:else}{status[r.state]}{/if}
 					</td>
 					{#each course as s, i (s.id)}
 						{@const v = cell(r, i)}
@@ -65,7 +67,7 @@
 					{/if}
 				</tr>
 			{:else}
-				<tr><td colspan={course.length + 4} class="p-6 text-muted-foreground">No runners in this category yet.</td></tr>
+				<tr><td colspan={course.length + 5} class="p-6 text-muted-foreground">No runners in this category yet.</td></tr>
 			{/each}
 		</tbody>
 	</table>

@@ -10,7 +10,7 @@
 
 	let { data } = $props();
 
-	type Payload = { event: string; mode: Mode; serverMs: number; lastReadAgoMs: number | null; awardsHidden?: boolean; categories: Cat[] };
+	type Payload = { event: string; mode: Mode; serverMs: number; lastReadAgoMs: number | null; awardsHidden?: boolean; batches: { id: number; name: string; category_id: number }[]; batchOf: Record<string, number>; categories: Cat[] };
 
 	let res = $state<Payload>(data.initial);
 	let mode = $state<Mode>(data.initial.mode);
@@ -37,6 +37,15 @@
 	const agoText = $derived(
 		ago === null ? 'No reads yet' : ago < 60000 ? `Last read ${Math.floor(ago / 1000)}s ago` : `Last read ${Math.floor(ago / 60000)} min ago`
 	);
+
+	// Progress view: the shown category's runners, narrowed to one batch when picked
+	let batchSel = $state<'all' | 'none' | number>('all');
+	const catBatches = $derived(res.batches.filter((b) => b.category_id === cat?.id));
+	const progRows = $derived.by(() => {
+		const rows = cat?.progress ?? [];
+		if (batchSel === 'all' || !catBatches.length) return rows;
+		return rows.filter((r) => (res.batchOf[r.bib] ?? null) === (batchSel === 'none' ? null : batchSel));
+	});
 
 	function track(p: Payload) {
 		const keys = p.categories.flatMap((c) => c.rows.map((r) => `${c.id}:${r.bib}`));
@@ -71,6 +80,7 @@
 
 	function pick(id: number) {
 		active = id;
+		batchSel = 'all';
 		auto = false;
 	}
 
@@ -111,7 +121,7 @@
 		const id = setInterval(() => {
 			remaining -= 1;
 			if (remaining <= 0) {
-				if (nextId !== -1) active = nextId;
+				if (nextId !== -1) (active = nextId), (batchSel = 'all');
 				remaining = total;
 			}
 		}, 1000);
@@ -255,15 +265,21 @@
 					{/each}
 				</div>
 			{:else if view === 'progress'}
-				<p class="border-b-2 border-border/15 px-4 py-2 text-lg text-muted-foreground">Course: {cat.course.map((s) => s.name).join(' → ')}</p>
+				{#if catBatches.length && !data.kiosk}
+					<div class="flex flex-wrap gap-2 border-b-2 border-border/15 px-4 py-3" role="tablist" aria-label="Batch">
+						{#each [['all', 'All batches'], ...catBatches.map((b) => [b.id, b.name]), ['none', 'No batch']] as [id, label]}
+							<button type="button" role="tab" aria-selected={id === batchSel} onclick={() => (batchSel = id as typeof batchSel)} class="h-11 border-2 border-border px-4 text-lg font-bold uppercase {id === batchSel ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-accent'}">{label}</button>
+						{/each}
+					</div>
+				{/if}
 				{#if data.routeCats.includes(cat.id)}
 					<!-- the route map sits beside the table; its pins count who has passed each checkpoint, live -->
-					<div class="grid xl:grid-cols-2">
-						<ProgressTable course={cat.course} rows={cat.progress} big={data.kiosk} />
+					<div class="grid xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+						{#key batchSel}<ProgressTable course={cat.course} rows={progRows} big={data.kiosk} />{/key}
 						<div class="relative h-[70vh] min-h-[520px] border-t-2 border-border xl:sticky xl:top-0 xl:order-first xl:h-[max(460px,calc(100vh-19.5rem))] xl:border-t-0 xl:border-r-2"><RouteMap slug={data.slug} category={cat.id} compact /></div>
 					</div>
 				{:else}
-					<ProgressTable course={cat.course} rows={cat.progress} big={data.kiosk} />
+					{#key batchSel}<ProgressTable course={cat.course} rows={progRows} big={data.kiosk} />{/key}
 				{/if}
 			{:else}
 			{#key cat.id}

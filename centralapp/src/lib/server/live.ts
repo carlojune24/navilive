@@ -28,7 +28,7 @@ export async function loadResults(slug: string, mode: Mode, opts: { includeHidde
 		),
 		q<{ ago: number | null }>("select extract(epoch from now()-max(ingested_at))*1000 as ago from reads where event_id=$1", [ev.id]),
 		q<{ category_id: number; station_id: number }>('select cc.category_id, cc.station_id from category_courses cc join categories c on c.id=cc.category_id where c.event_id=$1 order by cc.category_id, cc.ord', [ev.id]),
-		q<{ id: number; gun_ms: number | null }>('select b.id, b.gun_ms from batches b join categories c on c.id=b.category_id where c.event_id=$1', [ev.id])
+		q<{ id: number; name: string; category_id: number; gun_ms: number | null }>('select b.id, b.name, b.category_id, b.gun_ms from batches b join categories c on c.id=b.category_id where c.event_id=$1 order by b.id', [ev.id])
 	]);
 	const courses = new Map<number, number[]>();
 	for (const r of courseRows) (courses.get(r.category_id) ?? courses.set(r.category_id, []).get(r.category_id)!).push(r.station_id);
@@ -42,6 +42,9 @@ export async function loadResults(slug: string, mode: Mode, opts: { includeHidde
 		serverMs: Date.now(), // lets a browser with a wrong clock still run the race clock correctly
 		lastReadAgoMs: last[0]?.ago === null || last[0]?.ago === undefined ? null : Math.round(Number(last[0].ago)),
 		awardsHidden: !cfg.reveal && !opts.includeHiddenAwards,
+		// for the board's per-category batch toggle on the Progress view
+		batches: batches.map((b) => ({ id: b.id, name: b.name, category_id: b.category_id })),
+		batchOf: Object.fromEntries(ps.filter((p) => p.batch_id).map((p) => [p.bib, p.batch_id as number])),
 		categories: hidden ? categories.map((c) => ({ ...c, awards: [] })) : categories
 	};
 }
