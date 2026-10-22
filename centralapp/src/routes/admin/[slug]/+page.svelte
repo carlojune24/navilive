@@ -23,6 +23,20 @@
 	const sections = ['participants', 'categories', 'stations', 'route', 'progress', 'results', 'awards', 'reads', 'data', 'connect'];
 	const titles: Record<string, string> = { participants: 'Participants', categories: 'Categories', stations: 'Stations', route: 'Route & map', progress: 'Progress', results: 'Results', awards: 'Awards', reads: 'Reads', data: 'Station data', connect: 'Connect stations' };
 	let progCat = $state<number | null>(null); // Progress page: which category is shown
+	let catSel = $state<number | null>(null); // Categories page: which category is shown
+	const catShown = $derived(data.categories.find((c) => c.id === catSel) ?? data.categories[0]);
+	let catBatch = $state<'none' | number | null>(null); // Categories page: which batch of that category ('none' = the runners in no batch)
+	const catBatches = $derived(data.batches.filter((b) => b.category_id === catShown?.id));
+	let catQ = $state(''); // Categories page: search inside the shown category
+	// the panel's rows: the search looks across the whole category, otherwise it is the picked batch
+	const catRows = $derived.by(() => {
+		const all = data.participants.filter((p) => p.category_id === catShown?.id);
+		const words = catQ.toLowerCase().split(' ').filter(Boolean);
+		if (words.length) return all.filter((p) => words.every((w) => `${p.bib} ${p.name}`.toLowerCase().includes(w)));
+		return batchShown ? all.filter((p) => p.batch_id === batchShown.id) : all.filter((p) => !p.batch_id);
+	});
+	const catLoose = $derived(data.participants.filter((p) => p.category_id === catShown?.id && !p.batch_id));
+	const batchShown = $derived(catBatch === 'none' ? null : (catBatches.find((b) => b.id === catBatch) ?? catBatches[0]));
 	let awardsView = $state<'list' | 'settings'>('list'); // Awards page: the winners list or the settings
 	let resSel = $state<number | 'all' | null>(null); // Results / Award list: which category is shown
 	const resShown = $derived(resSel === 'all' ? data.resultsData : data.resultsData.filter((c) => c.id === (resSel ?? data.resultsData[0]?.id)));
@@ -291,8 +305,15 @@
 				<Button type="submit" class="h-11 font-bold uppercase">Add</Button>
 			</form>
 			{#if form?.batchAssigned !== undefined}<p class="border-2 border-border bg-card p-3 font-bold">{form.batchAssigned} runner(s) assigned.</p>{/if}
+			{#if data.categories.length > 1}
+				<div class="flex flex-wrap gap-2" role="tablist" aria-label="Category">
+					{#each data.categories as c (c.id)}
+						<button type="button" role="tab" aria-selected={c.id === catShown?.id} onclick={() => ((catSel = c.id), (catBatch = null), (catQ = ''))} class="h-11 border-2 border-border px-4 font-display text-2xl font-black uppercase {c.id === catShown?.id ? 'bg-primary text-primary-foreground' : 'bg-card'}">{c.name} ({c.n})</button>
+					{/each}
+				</div>
+			{/if}
 			<ul class="divide-y-2 divide-border border-2 border-border bg-card">
-				{#each data.categories as c (c.id)}
+				{#each catShown ? [catShown] : [] as c (c.id)}
 					{@const bs = data.batches.filter((b) => b.category_id === c.id)}
 					<li class="p-3">
 						<div class="flex flex-wrap items-center justify-between gap-3">
@@ -305,19 +326,45 @@
 								</form>
 							</div>
 						</div>
-						<form method="POST" action="?tab={tab}&/setRankBy" use:enhance={() => ({ update }) => update({ reset: false })} class="mt-3 flex flex-wrap items-center gap-2">
-							<input type="hidden" name="id" value={c.id} />
-							<Label class={lbl} for="rb{c.id}">Winner decided by</Label>
-							<select id="rb{c.id}" name="rank_by" class="h-11 border-2 border-border bg-card px-3" value={c.rank_by} onchange={(e) => e.currentTarget.form?.requestSubmit()}>
-								<option value="elapsed">Shortest time from the start</option>
-								<option value="chip">Shortest time from own start read</option>
-								<option value="finish">First across the finish line</option>
-							</select>
-						</form>
-						<ul class="mt-3 divide-y-2 divide-border/15 border-2 border-border/15">
-							{#each bs as b (b.id)}
-								<li class="flex flex-wrap items-center justify-between gap-3 bg-accent/40 px-3 py-2">
-									<span class="font-bold uppercase">{b.name} <span class="font-normal text-muted-foreground">({b.n})</span></span>
+						<div class="mt-3 flex flex-wrap items-center justify-between gap-3">
+							<form method="POST" action="?tab={tab}&/setRankBy" use:enhance={() => ({ update }) => update({ reset: false })} class="flex flex-wrap items-center gap-2">
+								<input type="hidden" name="id" value={c.id} />
+								<Label class={lbl} for="rb{c.id}">Winner decided by</Label>
+								<select id="rb{c.id}" name="rank_by" class="h-11 border-2 border-border bg-card px-3" value={c.rank_by} onchange={(e) => e.currentTarget.form?.requestSubmit()}>
+									<option value="elapsed">Shortest time from the start</option>
+									<option value="chip">Shortest time from own start read</option>
+									<option value="finish">First across the finish line</option>
+								</select>
+							</form>
+							<div class="flex flex-wrap gap-2">
+								<Button variant="outline" class="h-11 border-2 font-bold uppercase" onclick={() => (batchDlg = { kind: 'add', cat: c.id })}>Add batch</Button>
+								{#if bs.length}<Button variant="outline" class="h-11 border-2 font-bold uppercase" onclick={() => (batchDlg = { kind: 'assign', cat: c.id })}>Assign runners</Button>{/if}
+								{#if bs.length}<Button variant="outline" class="h-11 border-2 font-bold uppercase" onclick={() => ((findQ = ''), (batchDlg = { kind: 'find', cat: c.id }))}>Find runner</Button>{/if}
+							</div>
+						</div>
+						<div class="mt-3 flex flex-wrap items-center justify-between gap-3">
+							{#if bs.length}
+								<div class="flex flex-wrap gap-2" role="tablist" aria-label="Batch">
+									{#each bs as b (b.id)}
+										<button type="button" role="tab" aria-selected={!catQ && b.id === batchShown?.id} onclick={() => ((catBatch = b.id), (catQ = ''))} class="h-11 border-2 border-border px-4 text-lg font-bold uppercase {!catQ && b.id === batchShown?.id ? 'bg-primary text-primary-foreground' : 'bg-card'}">
+											Batch {b.name} ({b.n})
+											{#if b.gun_ms}<span class="ml-1 text-start" title="Started">&#9679;</span>{/if}
+										</button>
+									{/each}
+									<button type="button" role="tab" aria-selected={!catQ && catBatch === 'none'} onclick={() => ((catBatch = 'none'), (catQ = ''))} class="h-11 border-2 border-border px-4 text-lg font-bold uppercase {!catQ && catBatch === 'none' ? 'bg-primary text-primary-foreground' : 'bg-card'}">Not in a batch ({catLoose.length})</button>
+								</div>
+							{:else}
+								<p class="text-muted-foreground">No batches. Everyone in this category starts together.</p>
+							{/if}
+							<Input bind:value={catQ} placeholder="Search {c.name} by bib or name" class="h-11 w-full border-2 sm:w-72" aria-label="Search runners in {c.name}" />
+						</div>
+						<div class="mt-3 border-2 border-border/15">
+							{#if catQ}
+								<p class="bg-accent/40 px-3 py-2 font-bold uppercase">{catRows.length} match{catRows.length === 1 ? '' : 'es'} in {c.name}</p>
+							{:else if batchShown}
+								{@const b = batchShown}
+								<div class="flex flex-wrap items-center justify-between gap-3 bg-accent/40 px-3 py-2">
+									<span class="font-bold uppercase">Batch {b.name} <span class="font-normal text-muted-foreground">({b.n})</span></span>
 									<div class="flex flex-wrap items-center gap-3">
 										{@render gunControls('batch', b.id, b.gun_ms, `${c.name} ${b.name}`)}
 										<form method="POST" action="?tab={tab}&/deleteBatch" use:enhance>
@@ -325,35 +372,23 @@
 											<Button type="submit" variant="outline" size="sm" class={small} title="Its runners go back to no batch">Delete</Button>
 										</form>
 									</div>
-									<details class="group w-full">
-										<summary class="cursor-pointer font-bold tracking-wide uppercase select-none">Runners ({b.n})</summary>
-										<ul class="mt-2 divide-y divide-border/15">
-											{#each data.participants.filter((p) => p.batch_id === b.id) as p (p.id)}
-												<li class="flex items-center justify-between gap-3 py-1">
-													<span><span class="font-bold">{p.bib}</span> {p.name}</span>
-													<form method="POST" action="?tab={tab}&/removeFromBatch" use:enhance>
-														<input type="hidden" name="id" value={p.id} />
-														<Button type="submit" variant="outline" size="sm" class={small} aria-label="Remove {p.bib} from {b.name}">Remove</Button>
-													</form>
-												</li>
-											{:else}
-												<li class="py-1 text-muted-foreground">No runners assigned yet.</li>
-											{/each}
-										</ul>
-									</details>
-								</li>
-							{:else}
-								<li class="px-3 py-2 text-muted-foreground">No batches. Everyone in this category starts together.</li>
-							{/each}
-						</ul>
-						{#if bs.length}
-							{@const loose = data.participants.filter((p) => p.category_id === c.id && !p.batch_id)}
-							<details class="mt-3 border-2 border-border/15 px-3 py-2">
-								<summary class="cursor-pointer font-bold tracking-wide uppercase select-none">Not in a batch ({loose.length})</summary>
-								<ul class="mt-2 divide-y divide-border/15">
-									{#each loose as p (p.id)}
-										<li class="flex flex-wrap items-center justify-between gap-2 py-1">
-											<span><span class="font-bold">{p.bib}</span> {p.name}</span>
+								</div>
+							{/if}
+							<ul class="divide-y divide-border/15 px-3">
+								{#each catRows as p (p.id)}
+									{@const mine = bs.find((b) => b.id === p.batch_id)}
+									<li class="flex flex-wrap items-center justify-between gap-2 py-1">
+										<span>
+											<span class="font-bold">{p.bib}</span>
+											{p.name}
+											{#if catQ}<span class="ml-2 text-sm font-bold uppercase {mine ? '' : 'text-muted-foreground'}">{mine ? `Batch ${mine.name}` : 'Not in a batch'}</span>{/if}
+										</span>
+										{#if p.batch_id}
+											<form method="POST" action="?tab={tab}&/removeFromBatch" use:enhance>
+												<input type="hidden" name="id" value={p.id} />
+												<Button type="submit" variant="outline" size="sm" class={small} aria-label="Remove {p.bib} from their batch">Remove</Button>
+											</form>
+										{:else if bs.length}
 											<form method="POST" action="?tab={tab}&/assignBatch" use:enhance class="flex items-center gap-1">
 												<input type="hidden" name="category" value={c.id} />
 												<input type="hidden" name="bibs" value={p.bib} />
@@ -362,17 +397,12 @@
 												</select>
 												<Button type="submit" size="sm" class="font-bold uppercase">Assign</Button>
 											</form>
-										</li>
-									{:else}
-										<li class="py-1 text-muted-foreground">Everyone is in a batch.</li>
-									{/each}
-								</ul>
-							</details>
-						{/if}
-						<div class="mt-3 flex flex-wrap gap-2">
-							<Button variant="outline" class="h-11 border-2 font-bold uppercase" onclick={() => (batchDlg = { kind: 'add', cat: c.id })}>Add batch</Button>
-							{#if bs.length}<Button variant="outline" class="h-11 border-2 font-bold uppercase" onclick={() => (batchDlg = { kind: 'assign', cat: c.id })}>Assign runners</Button>{/if}
-							{#if bs.length}<Button variant="outline" class="h-11 border-2 font-bold uppercase" onclick={() => ((findQ = ''), (batchDlg = { kind: 'find', cat: c.id }))}>Find runner</Button>{/if}
+										{/if}
+									</li>
+								{:else}
+									<li class="py-2 text-muted-foreground">{catQ ? 'No runner matches that.' : batchShown ? 'No runners assigned yet.' : 'Everyone is in a batch.'}</li>
+								{/each}
+							</ul>
 						</div>
 					</li>
 				{:else}
