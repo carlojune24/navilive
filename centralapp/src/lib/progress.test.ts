@@ -27,12 +27,13 @@ const person = (bib: string, o: Partial<Person> & { reads?: Record<number, numbe
 	start: o.start ?? null,
 	finished: o.finished ?? false,
 	rank: o.rank ?? null,
+	time: o.time ?? null,
 	first: new Map(Object.entries(o.reads ?? {}).map(([k, v]) => [Number(k), v]))
 });
 
 describe('buildProgress', () => {
 	const rows = buildProgress(course5k, [
-		person('1', { start: 0, finished: true, rank: 2, reads: { 1: 0, 3: 500, 2: 1000 } }),
+		person('1', { start: 0, finished: true, rank: 2, time: 1000, reads: { 1: 0, 3: 500, 2: 1000 } }),
 		person('2', { start: 0, finished: true, rank: 1, reads: { 1: 0, 3: 400, 2: 900 } }),
 		person('3', { start: 0, reads: { 1: 0, 3: 700 } }), // at checkpoint 1, on course
 		person('4', { start: 0, reads: { 1: 0, 3: 600 } }), // reached it earlier than 3
@@ -41,6 +42,12 @@ describe('buildProgress', () => {
 		person('7', { start: 0, finished: true, rank: 3, reads: { 1: 0, 2: 1200 } }) // skipped checkpoint 1
 	]);
 	const by = (bib: string) => rows.find((r) => r.bib === bib)!;
+
+	it('carries the official time through, null for anyone still out', () => {
+		expect(by('1').time).toBe(1000);
+		expect(by('3').time).toBeNull();
+		expect(by('6').time).toBeNull();
+	});
 
 	it('states', () => {
 		expect(by('2').state).toBe('finished');

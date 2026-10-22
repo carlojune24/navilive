@@ -567,6 +567,9 @@
 						</span>
 					</h3>
 					<p class="border-b-2 border-border/15 px-4 py-2 text-muted-foreground">Ranked by: {c.rankBy === 'finish' ? 'first across the finish line' : c.rankBy === 'chip' ? "shortest time from each runner's own start read" : 'shortest time from the category or batch start'}</p>
+					{#if c.noStart}
+						<p class="border-b-2 border-border/15 px-4 py-2 font-bold text-destructive" role="alert">{c.noStart} {c.noStart === 1 ? 'runner has' : 'runners have'} crossed the finish but {c.noStart === 1 ? 'has' : 'have'} no start time — press Start for this category, or add their start read on the Reads page.</p>
+					{/if}
 					{#if isRes}
 						<Table.Root>
 							<Table.Header>

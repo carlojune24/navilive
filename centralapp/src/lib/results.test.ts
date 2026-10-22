@@ -92,6 +92,24 @@ describe('computeResults', () => {
 	});
 });
 
+describe('finisher with no start time', () => {
+	// one runner, a finish read only, category ranked by their own start read and no gun pressed
+	const fin: R[] = [{ pid: 1, station_id: 3, read_at_ms: 5000 }];
+	it('is counted, not silently dropped', () => {
+		const [c] = computeResults([{ id: 10, name: '10K', rank_by: 'chip' }], ps, st, fin, 'gun');
+		expect(c.noStart).toBe(1);
+		expect(c.rows).toHaveLength(0);
+	});
+	it('is timed from the gun once Start is pressed', () => {
+		const [c] = computeResults([{ id: 10, name: '10K', rank_by: 'chip', gun_ms: 1000 }], ps, st, fin, 'gun');
+		expect(c.noStart).toBe(0);
+		expect(c.rows.map((r) => [r.bib, r.time])).toEqual([['101', 4000]]);
+	});
+	it('stays zero when nobody finished', () => {
+		expect(computeResults(cats, ps, st, rs, 'gun')[0].noStart).toBe(0);
+	});
+});
+
 describe('fmt', () => {
 	it('formats m:ss and h:mm:ss', () => {
 		expect(fmt(65000)).toBe('1:05');

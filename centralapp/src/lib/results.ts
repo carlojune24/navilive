@@ -48,6 +48,7 @@ export type Cat = {
 	gunMs: number | null; // when the category's clock started (null = not started yet)
 	gunManual: boolean; // true when the organizer pressed Start on the live board
 	rankBy: 'elapsed' | 'chip' | 'finish'; // how the order was decided
+	noStart: number; // crossed the finish but cannot be timed: no start read and no gun for their group
 	underway: boolean; // someone already has a counted checkpoint or finish read, so the clock can no longer be started
 };
 
@@ -154,8 +155,11 @@ export function computeResults(
 			const course = resolveCourse(stations, courseFor(cat.id));
 			const inCourse = new Set(course.map((s) => s.id));
 			const track = new Map<string, Pick<Person, 'start' | 'first'>>(); // per runner, for the progress view
+			let noStart = 0;
 			const rows: Row[] = members.map((p) => {
 				const start = mode === 'own' || cat.rank_by === 'chip' ? startOf(p) : gun.get(groupOf(p)) ?? null;
+				// a finisher with no usable start is dropped from the ranking silently, so count them for the warning
+				if (start === null && (byP.get(p.id) ?? []).some((r) => kind.get(r.station_id)?.kind === 'finish')) noStart++;
 				const mine = (byP.get(p.id) ?? []).filter((r) => start !== null && r.read_at_ms > start);
 				const fin = mine.filter((r) => kind.get(r.station_id)?.kind === 'finish').map((r) => r.read_at_ms);
 				const finishAt = fin.length ? Math.min(...fin) : null;
@@ -193,11 +197,12 @@ export function computeResults(
 			const started = members.filter((p) => startOf(p) !== null).length;
 			const o = optionsFor(cat.id);
 			const rankOf = new Map(done.map((r) => [r.bib, r.rank]));
+			const timeOf = new Map(done.map((r) => [r.bib, r.time]));
 			const progress = buildProgress(
 				course,
-				members.map((p) => ({ bib: p.bib, name: p.name, start: track.get(p.bib)!.start, first: track.get(p.bib)!.first, finished: rankOf.has(p.bib), rank: rankOf.get(p.bib) ?? null }))
+				members.map((p) => ({ bib: p.bib, name: p.name, start: track.get(p.bib)!.start, first: track.get(p.bib)!.first, finished: rankOf.has(p.bib), rank: rankOf.get(p.bib) ?? null, time: timeOf.get(p.bib) ?? null }))
 			);
-			return { id: cat.id, name: cat.name, rows: done, started, total: members.length, awards: buildAwards(done, o), places: o.places, course, progress, gunMs: gun.get(`c${cat.id}`) ?? null, gunManual: manual.has(`c${cat.id}`), rankBy: (rankBy === 'chip' || rankBy === 'finish' ? rankBy : 'elapsed') as 'elapsed' | 'chip' | 'finish', underway: members.some((p) => (byP.get(p.id) ?? []).some((r) => kind.get(r.station_id)?.kind !== 'start')) };
+			return { id: cat.id, name: cat.name, rows: done, started, total: members.length, awards: buildAwards(done, o), places: o.places, course, progress, noStart, gunMs: gun.get(`c${cat.id}`) ?? null, gunManual: manual.has(`c${cat.id}`), rankBy: (rankBy === 'chip' || rankBy === 'finish' ? rankBy : 'elapsed') as 'elapsed' | 'chip' | 'finish', underway: members.some((p) => (byP.get(p.id) ?? []).some((r) => kind.get(r.station_id)?.kind !== 'start')) };
 		})
 		.filter((c) => c.total > 0);
 }

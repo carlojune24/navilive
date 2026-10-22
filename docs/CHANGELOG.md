@@ -5,6 +5,45 @@ Anything older than the first entry here is in `git log`.
 
 ## 2026-10-22
 
+### Results · timing is decided by the category alone
+
+- **The Gun time / Own start toggle is gone from the live board.** It globally forced
+  every category to be timed one way, overriding each category's own *Winner decided
+  by* (`rank_by`), and let a spectator change how results rank on a public screen.
+  Each category now decides for itself, and the board already states which on the
+  "Ranked by:" line. `?mode=own` still works as a URL override; nothing in the UI
+  produces it.
+
+- **A finisher with no start time is now reported instead of vanishing.** A runner's
+  time is `finish − start`; if the start is unknown, the row was dropped from the
+  ranking with no trace and counted as "not started" although they had crossed the
+  line. Results (board and admin) now show, under "Ranked by:":
+
+  > *1 runner has crossed the finish but has no start time — press Start for this
+  > category, or add their start read on the Reads page.*
+
+  This happens when a category is ranked by **own start read** and the runner was never
+  read at the start with Start never pressed, or when nobody was read at the start and
+  Start was never pressed at all. Both are recoverable, but only if someone notices.
+
+  Missing **checkpoint** reads never prevented a finish time and still do not — they
+  only cost a split, and Progress already flags them.
+
+### Progress · Total time column
+
+The Progress table showed the race time at each station, so a finisher's total was only
+readable by finding the Finish column at the far right of a sideways-scrolling table,
+and that cell falls back to a bare clock time when the start is unknown.
+
+A **Total time** column now ends the row: the official elapsed time once a runner
+finishes, `—` while they are out. The value is not recomputed — it is the same figure
+the ranked results use, so it follows the category's *Winner decided by* automatically
+and cannot disagree with the Results page. No ticking clock, so a 189-row table does not
+redraw every second. The admin Progress page gets it too, with **Check** still last.
+
+Worth knowing: a runner in a batch is timed from their **batch** gun, and the category
+gun is ignored for them.
+
 ### Live map · Dim control for LED walls
 
 The route map is shown on an LED wall, where bright, shimmering areas of the basemap

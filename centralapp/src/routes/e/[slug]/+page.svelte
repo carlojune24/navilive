@@ -72,12 +72,6 @@
 		}
 	}
 
-	function setMode(m: Mode) {
-		mode = m;
-		seen = null; // a different ordering is not "new finishers"
-		refresh();
-	}
-
 	function pick(id: number) {
 		active = id;
 		batchSel = 'all';
@@ -186,16 +180,6 @@
 						>
 					{/each}
 				</div>
-				<div class="flex" role="group" aria-label="Timing basis">
-					{#each [['gun', 'Gun time'], ['own', 'Own start']] as [m, label]}
-						<button
-							aria-pressed={mode === m}
-							onclick={() => setMode(m as Mode)}
-							class="h-12 border-2 border-border px-4 font-bold uppercase {mode === m ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-accent'}"
-							>{label}</button
-						>
-					{/each}
-				</div>
 				<button
 					aria-pressed={auto}
 					onclick={() => (auto = !auto)}
@@ -211,7 +195,7 @@
 				<a href="?kiosk&mode={mode}&cycle={cycleSec}&view={view}" class="flex h-12 items-center border-2 border-border bg-card px-4 font-bold uppercase hover:bg-accent">Big screen</a>
 			</div>
 		{:else}
-			<p class="ml-auto font-bold uppercase">{mode === 'gun' ? 'Gun time' : 'Own start'}{view === 'awards' ? ' · Awards' : view === 'progress' ? ' · Progress' : view === 'map' ? ' · Map' : ''}{auto && nextName ? ` · next: ${nextName} in ${remaining}s` : ''}</p>
+			<p class="ml-auto font-bold uppercase">{view === 'awards' ? 'Awards' : view === 'progress' ? 'Progress' : view === 'map' ? 'Map' : 'Results'}{auto && nextName ? ` · next: ${nextName} in ${remaining}s` : ''}</p>
 		{/if}
 	</div>
 
@@ -236,6 +220,11 @@
 				<span class="font-bold tracking-wide uppercase">Ranked by:</span>
 				{cat.rankBy === 'finish' ? 'first across the finish line (clock time)' : cat.rankBy === 'chip' || mode === 'own' ? "shortest time from each runner's own start read" : 'shortest time from the category or batch start'}
 			</p>
+			{#if cat.noStart}
+				<p class="border-b-2 border-border/15 bg-card px-4 py-2 text-lg font-bold text-destructive" role="alert">
+					{cat.noStart} {cat.noStart === 1 ? 'runner has' : 'runners have'} crossed the finish but {cat.noStart === 1 ? 'has' : 'have'} no start time — press Start for this category, or add their start read on the Reads page.
+				</p>
+			{/if}
 			{#if view === 'awards' && res.awardsHidden}
 				<div class="p-10">
 					<p class="font-display text-5xl leading-[0.85] font-black uppercase md:text-7xl">Awards coming soon</p>

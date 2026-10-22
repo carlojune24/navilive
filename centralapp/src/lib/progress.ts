@@ -7,6 +7,7 @@ export type ProgressRow = {
 	name: string;
 	state: ProgressState;
 	rank: number | null;
+	time: number | null; // official elapsed time once finished, null until then
 	start: number | null; // the start the race time is measured from (gun or own), null if unknown
 	at: (number | null)[]; // first arrival (ms, clock time) at each course station, null = not reached yet
 	last: string | null; // the furthest station reached
@@ -35,6 +36,7 @@ export type Person = {
 	start: number | null;
 	finished: boolean;
 	rank: number | null;
+	time: number | null;
 	first: Map<number, number>; // station id -> first valid read (ms)
 };
 
@@ -47,7 +49,7 @@ export function buildProgress(course: CourseStation[], people: Person[]): Progre
 		const upTo = p.finished ? course.length - 1 : furthest;
 		const missed = course.filter((s, i) => i < upTo && at[i] === null && !(s.kind === 'start' && p.start !== null)).map((s) => s.name);
 		const state: ProgressState = p.finished ? 'finished' : furthest >= 0 || p.start !== null ? 'on-course' : 'not-started';
-		return { bib: p.bib, name: p.name, state, rank: p.rank, start: p.start, at, last: furthest >= 0 ? course[furthest].name : null, missed };
+		return { bib: p.bib, name: p.name, state, rank: p.rank, time: p.time, start: p.start, at, last: furthest >= 0 ? course[furthest].name : null, missed };
 	});
 	const order = (r: ProgressRow) => (r.state === 'finished' ? 0 : r.state === 'on-course' ? 1 : 2);
 	const furthestIndex = (r: ProgressRow) => r.at.reduce<number>((m, t, i) => (t !== null ? i : m), -1);

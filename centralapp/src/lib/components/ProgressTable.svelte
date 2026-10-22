@@ -40,6 +40,7 @@
 						<span class="block font-normal normal-case opacity-80">{arrived(i)} of {rows.length}</span>
 					</th>
 				{/each}
+				<th class="px-3 py-2 font-bold tracking-wide whitespace-nowrap uppercase {head}">Total time</th>
 				{#if flags}<th class="px-3 py-2 font-bold tracking-wide uppercase {head}">Check</th>{/if}
 			</tr>
 		</thead>
@@ -60,6 +61,7 @@
 								{#if v !== null && r.at[i] !== null && (!isStart(i) ? r.start !== null : r.at[i] !== r.start)}<span class="block font-sans {big ? 'text-base' : 'text-xs'} font-normal text-muted-foreground">{isStart(i) ? 'read ' : ''}{clock(r.at[i]!)}</span>{/if}
 							</td>
 					{/each}
+					<td class="px-3 py-1 font-display whitespace-nowrap {big ? 'text-3xl' : 'text-xl'} font-black">{r.time !== null ? fmt(r.time) : '—'}</td>
 					{#if flags}
 						<td class="px-3 py-1">
 							{#if r.missed.length}<span class="inline-block border-2 border-destructive px-1 font-bold text-destructive uppercase">Missed: {r.missed.join(', ')}</span>{/if}
@@ -67,7 +69,7 @@
 					{/if}
 				</tr>
 			{:else}
-				<tr><td colspan={course.length + 5} class="p-6 text-muted-foreground">No runners in this category yet.</td></tr>
+				<tr><td colspan={course.length + 6} class="p-6 text-muted-foreground">No runners in this category yet.</td></tr>
 			{/each}
 		</tbody>
 	</table>
