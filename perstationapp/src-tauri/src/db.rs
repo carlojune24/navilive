@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS reads(
   voided INTEGER NOT NULL DEFAULT 0,
   note TEXT NOT NULL DEFAULT '',
   synced INTEGER NOT NULL DEFAULT 0,
+  test INTEGER NOT NULL DEFAULT 0,
   UNIQUE(device_id, boot_id, seq)
 );
 CREATE INDEX IF NOT EXISTS idx_reads_tag ON reads(tag, station_id, read_at_ms);
@@ -80,7 +81,25 @@ fn migrate(c: &Connection) -> Res<()> {
         // 0 = not yet confirmed by the central app. Existing reads start unsynced so they upload on first connect.
         c.execute_batch("ALTER TABLE reads ADD COLUMN synced INTEGER NOT NULL DEFAULT 0")?;
     }
+    let has: i64 = c.query_row("SELECT COUNT(*) FROM pragma_table_info('reads') WHERE name='test'", [], |r| r.get(0))?;
+    if has == 0 {
+        c.execute_batch("ALTER TABLE reads ADD COLUMN test INTEGER NOT NULL DEFAULT 0")?;
+    }
     Ok(())
+}
+
+/// Test mode: reads are flagged `test`, shown instead of the live ones, never uploaded, and deleted when going live.
+fn test_mode(conn: &Connection) -> i64 {
+    (get_setting(conn, "mode", "live") == "test") as i64
+}
+
+/// Switching to live deletes every test read. Returns how many were removed.
+pub fn set_mode(conn: &mut Connection, test: bool) -> Res<i64> {
+    let tx = conn.transaction()?;
+    let n = if test { 0 } else { tx.execute("DELETE FROM reads WHERE test=1", [])? as i64 };
+    set_setting(&tx, "mode", if test { "test" } else { "live" })?;
+    tx.commit()?;
+    Ok(n)
 }
 
 // ---------------------------------------------------------------- ingest
@@ -125,6 +144,7 @@ pub fn ingest(conn: &mut Connection, b: &Batch, ip: &str, now: i64) -> Res<Vec<i
     )?;
     let station: Option<i64> = tx
         .query_row("SELECT station_id FROM devices WHERE device_id=?1", [&device], |r| r.get(0))?;
+    let test = test_mode(&tx);
     let mut ids = Vec::new();
     for r in &b.reads {
         let (read_at, exact) = match r.age_ms {
@@ -132,8 +152,8 @@ pub fn ingest(conn: &mut Connection, b: &Batch, ip: &str, now: i64) -> Res<Vec<i
             _ => (now, 0),
         };
         let n = tx.execute(
-            "INSERT OR IGNORE INTO reads(device_id,boot_id,seq,tag,raw,read_at_ms,received_at_ms,time_exact,station_id)
-             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+            "INSERT OR IGNORE INTO reads(device_id,boot_id,seq,tag,raw,read_at_ms,received_at_ms,time_exact,station_id,test)
+             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
             params![
                 device,
                 clip(&b.boot_id, 32),
@@ -143,7 +163,8 @@ pub fn ingest(conn: &mut Connection, b: &Batch, ip: &str, now: i64) -> Res<Vec<i
                 read_at,
                 now,
                 exact,
-                station
+                station,
+                test
             ],
         )?;
         if n == 1 {
@@ -174,7 +195,7 @@ pub fn get_setting(conn: &Connection, key: &str, default: &str) -> String {
 }
 
 const PASSING: &str = "(rd.voided=0 AND NOT EXISTS(SELECT 1 FROM reads p WHERE p.tag=rd.tag AND p.station_id IS rd.station_id \
- AND p.voided=0 AND (p.read_at_ms<rd.read_at_ms OR (p.read_at_ms=rd.read_at_ms AND p.id<rd.id)) \
+ AND p.voided=0 AND p.test=rd.test AND (p.read_at_ms<rd.read_at_ms OR (p.read_at_ms=rd.read_at_ms AND p.id<rd.id)) \
  AND p.read_at_ms>=rd.read_at_ms-?1))";
 
 pub fn query_reads(conn: &Connection, f: &ReadFilter) -> Res<Vec<Value>> {
@@ -185,7 +206,8 @@ pub fn query_reads(conn: &Connection, f: &ReadFilter) -> Res<Vec<Value>> {
          FROM reads rd LEFT JOIN stations s ON s.id=rd.station_id \
          LEFT JOIN runners rt ON rt.tag=rd.tag \
          LEFT JOIN runners rb ON rb.bib=rd.tag AND rt.id IS NULL \
-         WHERE 1=1"
+         WHERE rd.test={}",
+        test_mode(conn)
     );
     let mut args: Vec<Sql> = vec![Sql::Integer(debounce_ms)];
     if f.passings_only {
@@ -253,9 +275,9 @@ pub fn manual_read(conn: &mut Connection, tag_or_bib: &str, station_id: i64, at_
     let seq: i64 = tx.query_row("SELECT COALESCE(MAX(seq),0)+1 FROM reads WHERE device_id='MANUAL'", [], |r| r.get(0))?;
     let now = now_ms();
     tx.execute(
-        "INSERT INTO reads(device_id,boot_id,seq,tag,raw,read_at_ms,received_at_ms,time_exact,station_id,note)
-         VALUES('MANUAL','manual',?1,?2,'',?3,?4,1,?5,'manual entry')",
-        params![seq, normalize_tag(&tag), at_ms, now, station_id],
+        "INSERT INTO reads(device_id,boot_id,seq,tag,raw,read_at_ms,received_at_ms,time_exact,station_id,note,test)
+         VALUES('MANUAL','manual',?1,?2,'',?3,?4,1,?5,'manual entry',?6)",
+        params![seq, normalize_tag(&tag), at_ms, now, station_id, test_mode(&tx)],
     )?;
     let id = tx.last_insert_rowid();
     tx.commit()?;
@@ -485,7 +507,7 @@ pub fn import_runners(conn: &mut Connection, text: &str) -> Res<(i64, Vec<String
 pub fn unmapped_tags(conn: &Connection) -> Res<Vec<Value>> {
     let mut st = conn.prepare(
         "SELECT tag, COUNT(*), MAX(read_at_ms) FROM reads
-         WHERE voided=0 AND tag NOT IN (SELECT tag FROM runners WHERE tag IS NOT NULL) AND tag NOT IN (SELECT bib FROM runners)
+         WHERE voided=0 AND test=COALESCE((SELECT value='test' FROM settings WHERE key='mode'),0) AND tag NOT IN (SELECT tag FROM runners WHERE tag IS NOT NULL) AND tag NOT IN (SELECT bib FROM runners)
          GROUP BY tag ORDER BY MAX(read_at_ms) DESC LIMIT 200",
     )?;
     let rows = st.query_map([], |r| Ok(json!({"tag":r.get::<_,String>(0)?,"count":r.get::<_,i64>(1)?,"last_ms":r.get::<_,i64>(2)?})))?;
@@ -587,7 +609,7 @@ pub fn all_settings(conn: &Connection) -> Res<Value> {
 pub fn export_reads_json(conn: &Connection) -> Res<Value> {
     let mut st = conn.prepare(
         "SELECT rd.device_id,rd.boot_id,rd.seq,rd.tag,rd.raw,rd.read_at_ms,rd.received_at_ms,rd.time_exact,s.name,s.kind,rd.voided,rd.note
-         FROM reads rd LEFT JOIN stations s ON s.id=rd.station_id ORDER BY rd.id",
+         FROM reads rd LEFT JOIN stations s ON s.id=rd.station_id WHERE rd.test=0 ORDER BY rd.id",
     )?;
     let rows = st.query_map([], |r| {
         Ok(json!({"device_id":r.get::<_,String>(0)?,"boot_id":r.get::<_,String>(1)?,"seq":r.get::<_,i64>(2)?,
@@ -806,7 +828,7 @@ pub fn unsynced_reads(conn: &Connection, limit: i64) -> Res<Vec<PushRead>> {
          FROM reads r JOIN stations s ON s.id=r.station_id
          LEFT JOIN runners rt ON rt.tag=r.tag
          LEFT JOIN runners rb ON rb.bib=r.tag AND rt.id IS NULL
-         WHERE r.synced=0 ORDER BY r.id LIMIT ?1",
+         WHERE r.synced=0 AND r.test=0 ORDER BY r.id LIMIT ?1",
     )?;
     let rows = st.query_map([limit], |r| {
         Ok(PushRead {
@@ -832,7 +854,7 @@ pub fn mark_synced(conn: &mut Connection, sent: &[(i64, bool)]) -> Res<()> {
 }
 
 pub fn pending_count(conn: &Connection) -> Res<i64> {
-    conn.query_row("SELECT COUNT(*) FROM reads r JOIN stations s ON s.id=r.station_id WHERE r.synced=0", [], |r| r.get(0))
+    conn.query_row("SELECT COUNT(*) FROM reads r JOIN stations s ON s.id=r.station_id WHERE r.synced=0 AND r.test=0", [],|r| r.get(0))
 }
 
 /// Central roster is authoritative for bib/name/category, but a blank cell there never erases what is set here
@@ -869,8 +891,8 @@ pub fn station_beats(conn: &Connection, now: i64) -> Res<Vec<Value>> {
         "SELECT s.name, s.kind,
            (SELECT COUNT(*) FROM devices d WHERE d.station_id=s.id),
            (SELECT COUNT(*) FROM devices d WHERE d.station_id=s.id AND d.last_seen_ms > ?1 - 15000),
-           (SELECT MAX(r.read_at_ms) FROM reads r WHERE r.station_id=s.id),
-           (SELECT COUNT(*) FROM reads r WHERE r.station_id=s.id AND r.synced=0)
+           (SELECT MAX(r.read_at_ms) FROM reads r WHERE r.station_id=s.id AND r.test=0),
+           (SELECT COUNT(*) FROM reads r WHERE r.station_id=s.id AND r.synced=0 AND r.test=0)
          FROM stations s ORDER BY s.sort_order, s.id",
     )?;
     let rows = st.query_map([now], |r| {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Ban, RotateCcw, Search, Plus } from "lucide-react";
+import { Ban, FlaskConical, RotateCcw, Search, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,7 @@ interface Props {
   fresh: Set<number>;
   beepOn: boolean;
   setBeepOn: (v: boolean) => void;
+  testMode: boolean;
   reload: () => void;
   goSetup: () => void;
 }
@@ -168,6 +169,41 @@ function Devices({ devices, stations, now }: Pick<Props, "devices" | "stations" 
   );
 }
 
+function ModeBar({ testMode, reload }: Pick<Props, "testMode" | "reload">) {
+  const [confirm, setConfirm] = useState(false);
+
+  const change = async (test: boolean) => {
+    try {
+      const n = await api.setMode(test);
+      toast.success(test ? "Test mode on. Reads are not uploaded." : `Live. ${n} test read(s) deleted.`);
+      setConfirm(false);
+      reload();
+    } catch (e) {
+      toast.error(errText(e));
+    }
+  };
+
+  if (!testMode) {
+    return (
+      <Button variant="outline" size="sm" onClick={() => void change(true)}><FlaskConical /> Start test mode</Button>
+    );
+  }
+  return (
+    <div role="status" className="flex flex-wrap items-center gap-3 border-2 border-ink bg-checkpoint px-4 py-2 text-ink">
+      <p className="font-bold uppercase">Test mode: reads below are test only, never uploaded, deleted when you go live</p>
+      <Button
+        variant={confirm ? "destructive" : "default"}
+        size="sm"
+        className="ml-auto"
+        onClick={() => (confirm ? void change(false) : setConfirm(true))}
+        onBlur={() => setConfirm(false)}
+      >
+        {confirm ? "Confirm: delete test reads" : "Go live"}
+      </Button>
+    </div>
+  );
+}
+
 export function Live(p: Props) {
   const [passingsOnly, setPassingsOnly] = useState(false);
   const [search, setSearch] = useState("");
@@ -194,6 +230,7 @@ export function Live(p: Props) {
   return (
     <div className="grid h-full grid-cols-1 gap-5 overflow-auto p-5 min-[1200px]:grid-cols-[minmax(0,1fr)_340px] min-[1200px]:overflow-hidden">
       <div className="flex min-h-0 flex-col gap-4 max-[1199px]:min-h-[560px]">
+        <ModeBar testMode={p.testMode} reload={p.reload} />
         <LastRead read={latest} now={p.now} />
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
           <div className="relative w-72">

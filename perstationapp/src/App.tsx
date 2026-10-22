@@ -29,6 +29,7 @@ export default function App() {
   const [now, setNow] = useState(Date.now());
   const [fresh, setFresh] = useState<Set<number>>(new Set());
   const [version, setVersion] = useState(0);
+  const [testMode, setTestMode] = useState(false);
   const [beepOn, setBeepOn] = useState(() => {
     try {
       return localStorage.getItem("beep") !== "0";
@@ -44,6 +45,7 @@ export default function App() {
     api.stations().then(setStations).catch(() => {});
     api.devices().then(setDevices).catch(() => {});
     api.info().then(setInfo).catch(() => {});
+    api.settings().then((s) => setTestMode(s.mode === "test")).catch(() => {});
     setVersion((v) => v + 1);
   }, []);
 
@@ -155,7 +157,7 @@ export default function App() {
         )}
         <div className={cn("min-h-0", !serverOk && info ? "h-[calc(100%-3rem)]" : "h-full")}>
           {view === "live" && (
-            <Live reads={reads} stations={stations} devices={devices} now={now} fresh={fresh} beepOn={beepOn} setBeepOn={setBeep} reload={reload} goSetup={() => setView("setup")} />
+            <Live reads={reads} stations={stations} devices={devices} now={now} fresh={fresh} beepOn={beepOn} setBeepOn={setBeep} testMode={testMode} reload={reload} goSetup={() => setView("setup")} />
           )}
           {view === "results" && <Results version={version} />}
           {view === "runners" && <Runners reads={reads} version={version} reload={reload} />}

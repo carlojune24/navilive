@@ -114,6 +114,7 @@ export const api = {
   results: () => invoke<Results>("results"),
   settings: () => invoke<Record<string, string>>("get_settings"),
   setSetting: (key: string, value: string) => invoke<void>("set_setting", { key, value }),
+  setMode: (test: boolean) => invoke<number>("set_mode", { test }),
   exportFile: (kind: "reads" | "passings" | "results" | "results-json" | "passings-json" | "reads-json" | "merge", station?: string) => invoke<string>("export_file", { kind, station: station || null }),
   importMerge: (path: string) =>
     invoke<{ added: number; duplicates: number; runners_added: number }>("import_merge", { path }),

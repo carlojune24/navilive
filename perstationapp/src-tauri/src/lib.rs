@@ -175,6 +175,14 @@ fn set_setting(st: State<AppState>, key: String, value: String) -> Result<(), St
     db::set_setting(&lock(&st.db), &key, &value).map_err(s)
 }
 
+/// Test mode on/off. Going live deletes the test reads; returns how many.
+#[tauri::command]
+fn set_mode(app: tauri::AppHandle, st: State<AppState>, test: bool) -> Result<i64, String> {
+    let n = db::set_mode(&mut lock(&st.db), test).map_err(s)?;
+    let _ = app.emit("new-reads", Vec::<Value>::new());
+    Ok(n)
+}
+
 fn stamp() -> String {
     // seconds since epoch keeps export names unique and sortable
     (now_ms() / 1000).to_string()
@@ -326,6 +334,7 @@ pub fn run() {
             results,
             get_settings,
             set_setting,
+            set_mode,
             export_file,
             import_merge,
             backup_now,

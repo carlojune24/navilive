@@ -421,3 +421,21 @@ fn laptop_identity_is_stable_and_the_name_can_be_set() {
     set_setting(&c, "laptop_name", "  Finish laptop ").unwrap();
     assert_eq!(laptop_identity(&c).1, "Finish laptop");
 }
+
+#[test]
+fn test_reads_are_isolated_unsynced_and_deleted_on_going_live() {
+    let mut c = mem();
+    ingest(&mut c, &batch("b", &[(1, "LIVE1")]), "ip", 1000).unwrap();
+    set_mode(&mut c, true).unwrap();
+    ingest(&mut c, &batch("b", &[(2, "TEST1")]), "ip", 2000).unwrap();
+    // test mode shows only test reads
+    let rows = query_reads(&c, &ReadFilter::default()).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["tag"], "TEST1");
+    // and the test read is never queued for upload
+    assert!(unsynced_reads(&c, 100).unwrap().is_empty());
+    assert_eq!(set_mode(&mut c, false).unwrap(), 1);
+    let rows = query_reads(&c, &ReadFilter::default()).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["tag"], "LIVE1");
+}
