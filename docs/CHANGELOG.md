@@ -5,6 +5,44 @@ Anything older than the first entry here is in `git log`.
 
 ## 2026-10-22
 
+### Live map · Dim control for LED walls
+
+The route map is shown on an LED wall, where bright, shimmering areas of the basemap
+washed out the route, the station pins and their labels. Satellite imagery is the
+worst case: its fine high-frequency texture aliases against the panel's pixel pitch,
+and its highlights clip, because most LED processors crush anything above ~235.
+
+A global brightness control would have dimmed the route and labels too — exactly what
+has to stay legible. Instead:
+
+- A **Dim** slider (0–90%) fades a black scrim layer inserted *between* the basemap and
+  the overlays, so the basemap and its place names darken while the route, pins, labels
+  and elevation profile keep full strength. That layer ordering is the whole mechanism.
+- **Display mode** (`?display`) dims to 40% by default, and the `DISPLAY` chip carries the
+  current value into the URL (`?display&dim=55&cat=6`), so you set the level where you
+  can see the slider and send that link to the wall. Values are clamped; junk falls back.
+- **Overlays get heavier in display and fullscreen only**, for the pixel pitch: route line
+  6→10px, glow 14→20, station dots 14/17→18/22, label text 14→20 with halo 2.2→3.5.
+  The normal browser view is unchanged.
+- The wall already defaulted to the dark basemap, so no change was needed there.
+
+Rules of thumb for a wall, if the default does not suit yours: indoor panels are
+typically P2.5–P4 and run 600–1500 nits (outdoor 3500–6000+) against the ~300 nits of
+the monitor the design was made on, and comfortable viewing distance in metres is about
+the pixel pitch in mm. Expect to land between 30% and 70% depending on the room.
+
+### Build · maplibre is pre-bundled
+
+`maplibre-gl` is reached only through a dynamic `import()`, so in dev Vite discovered it
+the first time anyone opened the map and re-optimized mid-session, forcing a reload at
+the worst possible moment; with a stale dep cache the import fails outright and the map
+shows "The map could not be loaded." `optimizeDeps.include` now pre-bundles it at
+startup. Production builds were never affected — there the import is compiled to a real
+chunk.
+
+Note: running two dev servers against one checkout makes them fight over
+`node_modules/.vite`, which produces the same failure. Run one.
+
 ### Events · publish and unpublish
 
 Every event was public from the moment it existed: anyone who knew or guessed

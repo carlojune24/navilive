@@ -6,4 +6,4 @@
 
 <svelte:head><title>{data.initial.event} · Route</title></svelte:head>
 
-<div class="fixed inset-0"><RouteMap slug={data.slug} initial={data.initial} display={data.display} /></div>
+<div class="fixed inset-0"><RouteMap slug={data.slug} initial={data.initial} display={data.display} dim={data.dim} /></div>

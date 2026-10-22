@@ -4,6 +4,9 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 
 export default defineConfig(({ command }) => ({
+	// maplibre is only reached through a dynamic import, so Vite discovers it when the map is first
+	// opened and re-optimizes mid-session; pre-bundling keeps that off the race-day path
+	optimizeDeps: { include: ['maplibre-gl'] },
 	plugins: [
 		tailwindcss(),
 		sveltekit({

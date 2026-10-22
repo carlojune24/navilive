@@ -27,7 +27,7 @@
 
 	// compact = embedded beside the live board; display = big-screen loop. Without `initial` the route is fetched on mount.
 	// `category` (the board's selected tab) picks whose route is shown; on its own the map has category buttons.
-	let { slug, initial = null, display = false, compact = false, category = null }: { slug: string; initial?: Payload | null; display?: boolean; compact?: boolean; category?: number | null } = $props();
+	let { slug, initial = null, display = false, compact = false, category = null, dim = 0 }: { slug: string; initial?: Payload | null; display?: boolean; compact?: boolean; category?: number | null; dim?: number } = $props();
 	// svelte-ignore state_referenced_locally
 	let res = $state<Payload>(initial ?? { event: '', categories: [], category: null, name: '', track: null, stations: [], lastReadAgoMs: null });
 	// svelte-ignore state_referenced_locally
@@ -54,10 +54,13 @@
 	let connected = $state(false);
 	let ready = $state(false);
 	let mapError = $state('');
+	// svelte-ignore state_referenced_locally
+	let dimPct = $state(dim); // black scrim over the basemap only, so the route and labels keep full strength on an LED wall
 
 	let el = $state<HTMLDivElement>();
 	let root = $state<HTMLDivElement>();
 	let isFull = $state(false); // full screen hides the menu, like display mode
+	const heavy = $derived(display || isFull); // thicker strokes for the pixel pitch of a wall
 	let map: import('maplibre-gl').Map | undefined;
 	let ml: typeof import('maplibre-gl');
 
@@ -180,6 +183,22 @@
 		map.setLayoutProperty('hill', 'visibility', basemap === 'dark' ? 'visible' : 'none');
 	});
 	$effect(() => {
+		if (!ready || !map?.getLayer('scrim')) return;
+		map.setPaintProperty('scrim', 'background-opacity', dimPct / 100);
+	});
+	// a wall is seen from far away through a coarse pixel pitch: thin strokes and small text break up
+	$effect(() => {
+		if (!ready || !map) return;
+		const m = map, h = heavy;
+		m.setPaintProperty('route-glow', 'line-width', h ? 20 : 14);
+		m.setPaintProperty('route-line', 'line-width', h ? 10 : 6);
+		m.setPaintProperty('st-dot', 'circle-radius', ['case', ['==', ['get', 'on'], 1], h ? 22 : 17, h ? 18 : 14] as never);
+		m.setPaintProperty('st-halo', 'circle-radius', h ? 28 : 22);
+		m.setLayoutProperty('st-label', 'text-size', h ? 20 : 14);
+		m.setPaintProperty('st-label', 'text-halo-width', h ? 3.5 : 2.2);
+		m.setLayoutProperty('st-count', 'text-size', h ? 17 : 13);
+	});
+	$effect(() => {
 		if (!ready || !map || flying) return;
 		map.setTerrain(flat ? null : { source: 'dem', exaggeration: 1.35 });
 		map.easeTo({ pitch: flat ? 0 : 55, bearing: flat ? 0 : map.getBearing(), duration: 700 });
@@ -290,6 +309,8 @@
 				m.addLayer({ id: 'sat', type: 'raster', source: 'sat', layout: { visibility: 'none' } }, before);
 				m.setTerrain({ source: 'dem', exaggeration: 1.35 });
 				m.setSky({ 'sky-color': '#0b0d12', 'horizon-color': '#27324a', 'fog-color': '#0b0d12', 'sky-horizon-blend': 0.6, 'horizon-fog-blend': 0.8, 'fog-ground-blend': 0.4 });
+				// dims the basemap only: the route and pins are added after this, so they stay above it
+				m.addLayer({ id: 'scrim', type: 'background', paint: { 'background-color': '#000', 'background-opacity': dimPct / 100 } });
 				addRoute();
 				addPins();
 				ready = true; // the effect below draws the route of the chosen category
@@ -352,13 +373,20 @@
 					{#if !compact || label === 'Satellite' || label === '2D'}
 					<button type="button" onclick={go as () => void} aria-pressed={on as boolean} class="chip {on ? 'chip-on' : ''}">{label}</button>{/if}
 				{/each}
+				{#if !compact}
+					<label class="chip gap-2" title="Darkens the basemap only, so the route and labels stay readable on a bright screen or LED wall">
+						Dim
+						<input type="range" min="0" max="90" step="5" bind:value={dimPct} class="w-24 accent-[#ffd21f]" aria-label="Dim the basemap" />
+						<span class="min-w-9 text-right tabular-nums">{dimPct}%</span>
+					</label>
+				{/if}
 				{#if !compact}<button type="button" onclick={() => (flying ? stopFly() : startFly())} class="chip chip-hot">{#if flying}<Pause class="size-4" />Pause{:else}<Play class="size-4" />Flyover{/if}</button>
 				{#if flying}
 					<button type="button" onclick={() => slower()} disabled={speed <= STEPS[0]} class="chip" aria-label="Slower">−</button>
 					<span class="chip chip-on min-w-14 justify-center tabular-nums" aria-live="polite" title="Whole route at this speed">{speed}× · {fmt(Math.round(((track?.km ?? 0) * SEC_PER_KM * 1000) / speed))}</span>
 					<button type="button" onclick={() => faster()} disabled={speed >= STEPS[STEPS.length - 1]} class="chip" aria-label="Faster">+</button>
 				{/if}{/if}
-				{#if !compact}<a href="/e/{slug}/map?display{catId ? `&cat=${catId}` : ''}" class="chip" title="Big-screen mode: hides the menu and loops the flyover"><Tv class="size-4" />Display</a>
+				{#if !compact}<a href="/e/{slug}/map?display&dim={dimPct}{catId ? `&cat=${catId}` : ''}" class="chip" title="Big-screen mode: hides the menu and loops the flyover"><Tv class="size-4" />Display</a>
 				<button type="button" onclick={fullscreen} class="chip">Fullscreen</button>{/if}
 			</nav>
 		{:else if display}
