@@ -67,4 +67,8 @@ describe('buildProgress', () => {
 		expect(r.missed).toEqual(['Start']);
 		expect(r.state).toBe('on-course');
 	});
+	it('a gun start stands in for the start read, so the start is not flagged', () => {
+		const r = buildProgress(course5k, [person('9', { start: 100, reads: { 3: 300 } })])[0];
+		expect(r.missed).toEqual([]);
+	});
 });

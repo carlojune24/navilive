@@ -78,6 +78,6 @@
 			</Table.Body>
 		</Table.Root>
 	</div>
-	{#if data.reads.length === 500}<p class="text-muted-foreground">Showing the latest 500. Use Search to find a specific runner, or Export for everything.</p>{/if}
+	{#if data.reads.length === 500}<p class="text-muted-foreground">Showing the latest 500. Use Search to find a specific runner, or download all reads from the Reads page.</p>{/if}
 	<p class="text-muted-foreground">Refreshes by itself every few seconds. To void a read or add a missed one, use the event's Reads page.</p>
 </main>

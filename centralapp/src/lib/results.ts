@@ -12,6 +12,7 @@ export type P = {
 	bib: string;
 	name: string;
 	category_id: number | null;
+	batch_id?: number | null;
 	gender?: string;
 	age?: number | null;
 	extra?: Record<string, string>;
@@ -46,6 +47,7 @@ export type Cat = {
 	progress: ProgressRow[]; // everyone in the category and how far they have got
 	gunMs: number | null; // when the category's clock started (null = not started yet)
 	gunManual: boolean; // true when the organizer pressed Start on the live board
+	rankBy: 'elapsed' | 'chip' | 'finish'; // how the order was decided
 	underway: boolean; // someone already has a counted checkpoint or finish read, so the clock can no longer be started
 };
 
@@ -110,14 +112,16 @@ export function buildAwards(rows: Row[], o: CategoryOptions): Award[] {
  * Finish = first finish read after the start; checkpoint splits are first read per station after the start.
  */
 export function computeResults(
-	cats: { id: number; name: string; gun_ms?: number | null }[],
+	cats: { id: number; name: string; gun_ms?: number | null; rank_by?: string }[],
 	ps: P[],
 	stations: S[],
 	reads: R[],
 	mode: Mode,
 	optionsFor: (categoryId: number) => CategoryOptions = DEFAULT_OPTIONS,
 	/** station ids a category passes, in order; nothing configured = every station (start, checkpoints, finish) */
-	courseFor: (categoryId: number) => number[] | null | undefined = () => null
+	courseFor: (categoryId: number) => number[] | null | undefined = () => null,
+	/** a runner in a batch is timed from the batch's own gun start; null gun_ms = batch not started */
+	batches: { id: number; gun_ms: number | null }[] = []
 ): Cat[] {
 	const kind = new Map(stations.map((s) => [s.id, s]));
 	const byP = new Map<number, R[]>();
@@ -128,16 +132,20 @@ export function computeResults(
 		return t.length ? Math.min(...t) : null;
 	};
 	const ownStart = new Map(ps.map((p) => [p.id, firstStart(p.id)]));
-	const gun = new Map<number, number>();
+	// the clock group of a runner: their batch if they have one, else their category
+	const groupOf = (p: P) => (p.batch_id ? `b${p.batch_id}` : `c${p.category_id ?? 0}`);
+	const gun = new Map<string, number>();
 	for (const p of ps) {
 		const s = ownStart.get(p.id);
-		const c = p.category_id ?? 0;
-		if (s !== null && s !== undefined && (!gun.has(c) || s < gun.get(c)!)) gun.set(c, s);
+		const g = groupOf(p);
+		if (s !== null && s !== undefined && (!gun.has(g) || s < gun.get(g)!)) gun.set(g, s);
 	}
 
-	for (const c of cats) if (c.gun_ms !== null && c.gun_ms !== undefined) gun.set(c.id, Number(c.gun_ms)); // set by hand: wins over the reads
-	const manual = new Map(cats.filter((c) => c.gun_ms !== null && c.gun_ms !== undefined).map((c) => [c.id, Number(c.gun_ms)]));
-	const startOf = (p: P) => ownStart.get(p.id) ?? manual.get(p.category_id ?? 0) ?? null;
+	const manual = new Map<string, number>(); // set by hand: wins over the reads
+	for (const c of cats) if (c.gun_ms !== null && c.gun_ms !== undefined) manual.set(`c${c.id}`, Number(c.gun_ms));
+	for (const b of batches) if (b.gun_ms !== null && b.gun_ms !== undefined) manual.set(`b${b.id}`, Number(b.gun_ms));
+	for (const [g, ms] of manual) gun.set(g, ms);
+	const startOf = (p: P) => ownStart.get(p.id) ?? manual.get(groupOf(p)) ?? null;
 
 	const list = [...cats, ...(ps.some((p) => p.category_id === null) ? [{ id: 0, name: 'No category' }] : [])];
 	return list
@@ -147,7 +155,7 @@ export function computeResults(
 			const inCourse = new Set(course.map((s) => s.id));
 			const track = new Map<string, Pick<Person, 'start' | 'first'>>(); // per runner, for the progress view
 			const rows: Row[] = members.map((p) => {
-				const start = mode === 'own' ? startOf(p) : gun.get(cat.id) ?? null;
+				const start = mode === 'own' || cat.rank_by === 'chip' ? startOf(p) : gun.get(groupOf(p)) ?? null;
 				const mine = (byP.get(p.id) ?? []).filter((r) => start !== null && r.read_at_ms > start);
 				const fin = mine.filter((r) => kind.get(r.station_id)?.kind === 'finish').map((r) => r.read_at_ms);
 				const finishAt = fin.length ? Math.min(...fin) : null;
@@ -178,7 +186,9 @@ export function computeResults(
 					photo: p.photo ?? null
 				};
 			});
-			const done = rows.filter((r) => r.time !== null).sort((a, b) => a.time! - b.time! || a.bib.localeCompare(b.bib, undefined, { numeric: true }));
+			const rankBy = 'rank_by' in cat ? cat.rank_by : undefined;
+			const byFinish = rankBy === 'finish'; // first across the line, whatever their start
+			const done = rows.filter((r) => r.time !== null).sort((a, b) => (byFinish ? a.finishAt! - b.finishAt! : a.time! - b.time!) || a.bib.localeCompare(b.bib, undefined, { numeric: true }));
 			done.forEach((r, i) => (r.rank = i + 1));
 			const started = members.filter((p) => startOf(p) !== null).length;
 			const o = optionsFor(cat.id);
@@ -187,7 +197,7 @@ export function computeResults(
 				course,
 				members.map((p) => ({ bib: p.bib, name: p.name, start: track.get(p.bib)!.start, first: track.get(p.bib)!.first, finished: rankOf.has(p.bib), rank: rankOf.get(p.bib) ?? null }))
 			);
-			return { id: cat.id, name: cat.name, rows: done, started, total: members.length, awards: buildAwards(done, o), places: o.places, course, progress, gunMs: gun.get(cat.id) ?? null, gunManual: manual.has(cat.id), underway: members.some((p) => (byP.get(p.id) ?? []).some((r) => kind.get(r.station_id)?.kind !== 'start')) };
+			return { id: cat.id, name: cat.name, rows: done, started, total: members.length, awards: buildAwards(done, o), places: o.places, course, progress, gunMs: gun.get(`c${cat.id}`) ?? null, gunManual: manual.has(`c${cat.id}`), rankBy: (rankBy === 'chip' || rankBy === 'finish' ? rankBy : 'elapsed') as 'elapsed' | 'chip' | 'finish', underway: members.some((p) => (byP.get(p.id) ?? []).some((r) => kind.get(r.station_id)?.kind !== 'start')) };
 		})
 		.filter((c) => c.total > 0);
 }

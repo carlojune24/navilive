@@ -15,9 +15,9 @@ export async function loadResults(slug: string, mode: Mode, opts: { includeHidde
 		[slug]
 	);
 	if (!ev) return null;
-	const [cats, ps, stations, reads, last, courseRows] = await Promise.all([
-		q('select id, name, gun_ms from categories where event_id=$1 order by name', [ev.id]),
-		q("select p.id, p.bib, p.name, p.category_id, p.gender, p.age, p.extra, (select (extract(epoch from ph.updated_at)*1000)::bigint from participant_photos ph where ph.participant_id=p.id) as photo from participants p where p.event_id=$1", [ev.id]),
+	const [cats, ps, stations, reads, last, courseRows, batches] = await Promise.all([
+		q('select id, name, gun_ms, rank_by from categories where event_id=$1 and archived_at is null order by name', [ev.id]),
+		q("select p.id, p.bib, p.name, p.category_id, p.batch_id, p.gender, p.age, p.extra, (select (extract(epoch from ph.updated_at)*1000)::bigint from participant_photos ph where ph.participant_id=p.id) as photo from participants p where p.event_id=$1", [ev.id]),
 		q('select id, name, kind, ord from stations where event_id=$1', [ev.id]),
 		// a read belongs to the participant whose bib it carries, else whose tag matches
 		q(
@@ -27,14 +27,15 @@ export async function loadResults(slug: string, mode: Mode, opts: { includeHidde
 			[ev.id]
 		),
 		q<{ ago: number | null }>("select extract(epoch from now()-max(ingested_at))*1000 as ago from reads where event_id=$1", [ev.id]),
-		q<{ category_id: number; station_id: number }>('select cc.category_id, cc.station_id from category_courses cc join categories c on c.id=cc.category_id where c.event_id=$1 order by cc.category_id, cc.ord', [ev.id])
+		q<{ category_id: number; station_id: number }>('select cc.category_id, cc.station_id from category_courses cc join categories c on c.id=cc.category_id where c.event_id=$1 order by cc.category_id, cc.ord', [ev.id]),
+		q<{ id: number; gun_ms: number | null }>('select b.id, b.gun_ms from batches b join categories c on c.id=b.category_id where c.event_id=$1', [ev.id])
 	]);
 	const courses = new Map<number, number[]>();
 	for (const r of courseRows) (courses.get(r.category_id) ?? courses.set(r.category_id, []).get(r.category_id)!).push(r.station_id);
 	const { cfg } = parseConfig(ev.award_config); // always usable; bad stored values fall back to defaults
 	const defaults = { places: ev.award_places, brackets: ev.age_brackets, exclusive: ev.award_exclusive };
 	const hidden = !cfg.reveal && !opts.includeHiddenAwards;
-	const categories = computeResults(cats, ps, stations, reads, mode, (id) => resolveOptions(defaults, cfg, id), (id) => courses.get(id));
+	const categories = computeResults(cats, ps, stations, reads, mode, (id) => resolveOptions(defaults, cfg, id), (id) => courses.get(id), batches);
 	return {
 		event: ev.name,
 		mode,

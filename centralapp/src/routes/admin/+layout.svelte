@@ -7,10 +7,10 @@
 	import Users from '@lucide/svelte/icons/users';
 	import Tags from '@lucide/svelte/icons/tags';
 	import Flag from '@lucide/svelte/icons/flag';
+	import ListOrdered from '@lucide/svelte/icons/list-ordered';
 	import Trophy from '@lucide/svelte/icons/trophy';
 	import ListChecks from '@lucide/svelte/icons/list-checks';
 	import Activity from '@lucide/svelte/icons/activity';
-	import Download from '@lucide/svelte/icons/download';
 	import Plug from '@lucide/svelte/icons/plug';
 	import Radio from '@lucide/svelte/icons/radio';
 	import Route from '@lucide/svelte/icons/route';
@@ -75,10 +75,10 @@
 		['stations', 'Stations', Flag],
 		['route', 'Route & map', MapIcon],
 		['progress', 'Progress', Route],
+		['results', 'Results', ListOrdered],
 		['awards', 'Awards', Trophy],
 		['reads', 'Reads', ListChecks],
 		['data', 'Station data', Activity],
-		['export', 'Export', Download],
 		['connect', 'Connect', Plug]
 	] as const;
 
@@ -112,7 +112,7 @@
 {/snippet}
 
 <!-- desktop: fixed rail, like the station app -->
-<aside class="fixed inset-y-0 left-0 z-30 hidden w-[216px] flex-col border-r-2 border-border bg-card md:flex">
+<aside class="fixed inset-y-0 left-0 z-30 hidden w-[216px] flex-col border-r-2 border-border bg-card md:flex print:hidden">
 	<div class="px-5 pt-5">
 		<p class="font-display text-[44px] leading-[0.85] font-black uppercase">Race<br />Central</p>
 		{#if ev}<p class="mt-3 truncate text-sm font-bold tracking-wide uppercase" title={ev.name}>{ev.name}</p>{/if}
@@ -146,12 +146,12 @@
 </aside>
 
 <!-- narrow screens: the same menu as a scrolling strip on top -->
-<header class="border-b-2 border-border bg-card md:hidden">
+<header class="border-b-2 border-border bg-card md:hidden print:hidden">
 	<p class="px-4 pt-3 font-display text-3xl leading-[0.85] font-black uppercase">Race Central{ev ? ` · ${ev.name}` : ''}</p>
 	<nav class="flex gap-1 overflow-x-auto p-2" aria-label="Admin">{@render nav(true)}</nav>
 </header>
 
-<div class="min-h-screen md:pl-[216px]">{@render children()}</div>
+<div class="min-h-screen md:pl-[216px] print:pl-0">{@render children()}</div>
 
 <style>
 	.perf {

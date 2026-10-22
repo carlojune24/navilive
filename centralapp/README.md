@@ -92,7 +92,7 @@ The **Station data** page lists every station with its read count, how many diff
 
 - **Participants** page: a **Search** box (bib, name, tag, gender, age; several words must all match) and a **Category** filter narrow the list instantly, and *Edit* changes bib, name, category, gender, age and tag. Renumbering a bib keeps its reads attached.
 - **Reads** page: void or restore any read, add a read by hand (missed tag, or testing before the event), or *Clear all reads* (type `CLEAR`) to wipe test data. Reads are otherwise never deleted. A void made here is not sent back to the station apps.
-- **Export** page: results as CSV (gun time or own start, with checkpoint splits) and the raw log of every read.
+- **Results** and **Awards** pages: ranked results and winners per category, to print or download as CSV (with checkpoint splits and gender and age-group ranks). The **Reads** page downloads the raw log of every read.
 
 ### Station order, courses and progress
 
@@ -109,7 +109,7 @@ Categories are distances (5K, 10K). Winners are picked **inside each category**,
 - **Reveal switch:** *Hide until the ceremony* keeps awards off the public board ("Awards coming soon") while you still see them on the Awards page and in the winners export. *Reveal awards now* shows them, and open boards update by themselves.
 - **Who wins what right now:** a preview at the bottom of the page for the saved settings.
 
-Nothing configured means all standard awards are on, the same as before. The live board's **Results / Awards** switch shows the podiums, and the Export page has a winners CSV plus gender and age-group ranks in the results CSV (using each category's own brackets).
+Nothing configured means all standard awards are on, the same as before. The live board's **Results / Awards** switch shows the podiums, and the Awards page prints the winners or downloads them as a CSV, with gender and age-group ranks in the Results CSV (using each category's own brackets).
 
 ### Live board
 

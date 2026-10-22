@@ -45,7 +45,7 @@ export function buildProgress(course: CourseStation[], people: Person[]): Progre
 		at.forEach((t, i) => t !== null && (furthest = i));
 		// a finished runner is judged against the whole course, even if the finish station is not on a custom course
 		const upTo = p.finished ? course.length - 1 : furthest;
-		const missed = course.filter((_, i) => i < upTo && at[i] === null).map((s) => s.name);
+		const missed = course.filter((s, i) => i < upTo && at[i] === null && !(s.kind === 'start' && p.start !== null)).map((s) => s.name);
 		const state: ProgressState = p.finished ? 'finished' : furthest >= 0 || p.start !== null ? 'on-course' : 'not-started';
 		return { bib: p.bib, name: p.name, state, rank: p.rank, start: p.start, at, last: furthest >= 0 ? course[furthest].name : null, missed };
 	});

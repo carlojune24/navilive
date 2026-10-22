@@ -41,9 +41,11 @@ const id = async (request: Request) => Number((await request.formData()).get('id
 
 export const load = async ({ params, url }) => {
 	const e = await ev(params.slug);
-	const [categories, participants, stations, reads] = await Promise.all([
-		q('select c.id, c.name, c.gun_ms, count(p.id)::int as n from categories c left join participants p on p.category_id=c.id where c.event_id=$1 group by c.id order by c.name', [e.id]),
-		q('select p.id, p.bib, p.name, p.tag, p.gender, p.age, p.category_id, c.name as category, (select (extract(epoch from ph.updated_at)*1000)::bigint from participant_photos ph where ph.participant_id=p.id) as photo from participants p left join categories c on c.id=p.category_id where p.event_id=$1 order by p.bib', [e.id]),
+	const [categories, archived, batches, participants, stations, reads] = await Promise.all([
+		q('select c.id, c.name, c.gun_ms, c.rank_by, count(p.id)::int as n from categories c left join participants p on p.category_id=c.id where c.event_id=$1 and c.archived_at is null group by c.id order by c.name', [e.id]),
+		q('select id, name from categories where event_id=$1 and archived_at is not null order by name', [e.id]),
+		q('select b.id, b.category_id, b.name, b.gun_ms, count(p.id)::int as n from batches b join categories c on c.id=b.category_id left join participants p on p.batch_id=b.id where c.event_id=$1 group by b.id order by b.name', [e.id]),
+		q('select p.id, p.bib, p.name, p.tag, p.gender, p.age, p.category_id, p.batch_id, c.name as category, (select (extract(epoch from ph.updated_at)*1000)::bigint from participant_photos ph where ph.participant_id=p.id) as photo from participants p left join categories c on c.id=p.category_id where p.event_id=$1 order by p.bib', [e.id]),
 		q('select id, name, kind, ord, services from stations where event_id=$1 order by ord, id', [e.id]),
 		q(
 			`select r.id, r.read_at_ms, r.tag, r.device_id, r.voided, s.name as station,
@@ -68,6 +70,12 @@ export const load = async ({ params, url }) => {
 	// what the organizer would see on the board, even while the awards are hidden from the public
 	const full = (await loadResults(e.slug, 'gun', { includeHiddenAwards: true }))?.categories ?? [];
 	const awardPreview = full.map((c) => ({ id: c.id, name: c.name, finished: c.rows.length, total: c.total, awards: c.awards }));
+	// the ranked results and award podiums for the Results and Award list pages (print / export)
+	const resultsData = full.map((c) => ({
+		id: c.id, name: c.name, rankBy: c.rankBy, total: c.total,
+		rows: c.rows.map((r) => ({ rank: r.rank, bib: r.bib, name: r.name, gender: r.gender, age: r.age, time: r.time })),
+		awards: c.awards
+	}));
 	// who has reached which station, for the Progress page
 	const progressData = full.map((c) => ({ id: c.id, name: c.name, total: c.total, started: c.started, finished: c.rows.length, course: c.course, progress: c.progress }));
 	const courseRows = await q<{ category_id: number; station_id: number }>('select cc.category_id, cc.station_id from category_courses cc join categories c on c.id=cc.category_id where c.event_id=$1 order by cc.category_id, cc.ord', [e.id]);
@@ -78,7 +86,7 @@ export const load = async ({ params, url }) => {
 	for (const r of await q<{ id: number; gpx: unknown; gpx_name: string | null }>('select id, gpx, gpx_name from categories where event_id=$1', [e.id])) routes[r.id] = { track: isTrack(r.gpx) ? r.gpx : null, name: r.gpx_name ?? '' };
 	const stationKm: Record<number, Record<number, number>> = {};
 	for (const r of await q<{ category_id: number; station_id: number; km: number }>('select k.category_id, k.station_id, k.km::float8 as km from category_station_km k join categories c on c.id=k.category_id where c.event_id=$1', [e.id])) (stationKm[r.category_id] ??= {})[r.station_id] = r.km;
-	return { routes, stationKm, event: { id: e.id, name: e.name, slug: e.slug }, awards, extraFields, awardPreview, progressData, courses, apiKey: e.api_key, port, addresses: lanAddresses(), publicUrl: PUBLIC_URL ?? null, stationData, laptops, categories, participants, stations, reads };
+	return { routes, stationKm, event: { id: e.id, name: e.name, slug: e.slug }, awards, extraFields, awardPreview, resultsData, progressData, courses, apiKey: e.api_key, port, addresses: lanAddresses(), publicUrl: PUBLIC_URL ?? null, stationData, laptops, categories, archived, batches, participants, stations, reads };
 };
 
 export const actions = {
@@ -88,9 +96,93 @@ export const actions = {
 		if (!name) return fail(400, { error: 'Category name required' });
 		await q('insert into categories(event_id, name) values($1,$2) on conflict do nothing', [e.id, name]);
 	},
-	deleteCategory: async ({ request, params }) => {
+	// categories are archived, never deleted: results, reads and batches stay intact and Restore brings it back
+	archiveCategory: async ({ request, params }) => {
 		const e = await ev(params.slug);
-		await q('delete from categories where id=$1 and event_id=$2', [await id(request), e.id]);
+		await q('update categories set archived_at=now() where id=$1 and event_id=$2', [await id(request), e.id]);
+	},
+	restoreCategory: async ({ request, params }) => {
+		const e = await ev(params.slug);
+		await q('update categories set archived_at=null where id=$1 and event_id=$2', [await id(request), e.id]);
+	},
+	setRankBy: async ({ request, params }) => {
+		const e = await ev(params.slug);
+		const f = await request.formData();
+		const by = String(f.get('rank_by'));
+		if (!['elapsed', 'chip', 'finish'].includes(by)) return fail(400, { error: 'Unknown ranking' });
+		await q('update categories set rank_by=$3 where id=$1 and event_id=$2', [Number(f.get('id')), e.id, by]);
+		await q("select pg_notify('reads', $1)", [String(e.id)]);
+	},
+	addBatch: async ({ request, params }) => {
+		const e = await ev(params.slug);
+		const f = await request.formData();
+		const cat = await categoryOf(e.id, f);
+		const name = String(f.get('name') ?? '').trim();
+		if (!cat || !name) return fail(400, { error: 'Batch name required' });
+		await q('insert into batches(category_id, name) values($1,$2) on conflict do nothing', [cat, name]);
+	},
+	deleteBatch: async ({ request, params }) => {
+		const e = await ev(params.slug);
+		await q('delete from batches where id=$1 and category_id in (select id from categories where event_id=$2)', [await id(request), e.id]);
+	},
+	// Put runners (by bib) into a batch of their category; "none" takes them out of any batch.
+	assignBatch: async ({ request, params }) => {
+		const e = await ev(params.slug);
+		const f = await request.formData();
+		const cat = await categoryOf(e.id, f);
+		const batch = Number(f.get('batch')) || null;
+		if (!cat) return fail(400, { error: 'Unknown category' });
+		if (batch && !(await q('select 1 from batches where id=$1 and category_id=$2', [batch, cat])).length) return fail(400, { error: 'Unknown batch' });
+		const { bibs, errors } = parseBibs(String(f.get('bibs') ?? ''));
+		if (errors.length) return fail(400, { error: errors.join('; ') });
+		if (!bibs.length) return fail(400, { error: 'No bib numbers found' });
+		// all or nothing: a bib that is not in this category stops the whole assignment, so a typo is never half-applied
+		const found = await q<{ bib: string }>('select bib from participants where event_id=$1 and category_id=$2 and bib = any($3)', [e.id, cat, bibs]);
+		const missing = bibs.filter((b) => !found.some((r) => r.bib === b));
+		if (missing.length) return fail(400, { error: `Nothing assigned. Not in this category: ${missing.join(', ')}` });
+		if (batch) {
+			const taken = await q<{ bib: string; batch: string }>('select p.bib, b.name as batch from participants p join batches b on b.id=p.batch_id where p.event_id=$1 and p.category_id=$2 and p.bib = any($3) and p.batch_id<>$4', [e.id, cat, bibs, batch]);
+			if (taken.length) return fail(400, { error: `Nothing assigned. Already in another batch (remove them there first): ${taken.map((t) => `${t.bib} in ${t.batch}`).join(', ')}` });
+		}
+		await q('update participants set batch_id=$3 where event_id=$1 and category_id=$2 and bib = any($4)', [e.id, cat, batch, bibs]);
+		return { batchAssigned: found.length };
+	},
+	removeFromBatch: async ({ request, params }) => {
+		const e = await ev(params.slug);
+		await q('update participants set batch_id=null where id=$1 and event_id=$2', [await id(request), e.id]);
+	},
+	// Back to "not started" (a category reset also resets the batches that follow it)
+	clearGun: async ({ request, params }) => {
+		const e = await ev(params.slug);
+		const f = await request.formData();
+		const target = Number(f.get('id'));
+		if (f.get('kind') === 'batch') await q('update batches set gun_ms=null where id=$1 and category_id in (select id from categories where event_id=$2)', [target, e.id]);
+		else {
+			const [c] = await q<{ gun_ms: string | null }>('update categories set gun_ms=null where id=$1 and event_id=$2 returning (select gun_ms from categories where id=$1) as gun_ms', [target, e.id]);
+			if (c?.gun_ms) await q('update batches set gun_ms=null where category_id=$1 and gun_ms=$2', [target, c.gun_ms]);
+		}
+		await q("select pg_notify('reads', $1)", [String(e.id)]);
+	},
+	// ms given = the organizer typed the time (a forgotten start, may overwrite); no ms = Start pressed now (first press only).
+	// A category start also starts every batch that has not started or still follows the category's old time.
+	startGun: async ({ request, params }) => {
+		const e = await ev(params.slug);
+		const f = await request.formData();
+		const typed = String(f.get('ms') ?? '') !== '';
+		const ms = typed ? Number(f.get('ms')) : Date.now();
+		if (!Number.isFinite(ms) || ms <= 0) return fail(400, { error: 'Enter a valid start time' });
+		const target = Number(f.get('id'));
+		if (f.get('kind') === 'batch') {
+			const done = await q('update batches set gun_ms=$3 where id=$1 and category_id in (select id from categories where event_id=$2) and ($4 or gun_ms is null) returning id', [target, e.id, ms, typed]);
+			if (!done.length) return fail(409, { error: 'That batch has already started' });
+		} else {
+			const [c] = await q<{ gun_ms: string | null }>('select gun_ms from categories where id=$1 and event_id=$2', [target, e.id]);
+			if (!c) return fail(400, { error: 'Unknown category' });
+			if (c.gun_ms !== null && !typed) return fail(409, { error: 'That category has already started' });
+			await q('update categories set gun_ms=$2 where id=$1', [target, ms]);
+			await q('update batches set gun_ms=$2 where category_id=$1 and (gun_ms is null or gun_ms=$3)', [target, ms, c.gun_ms]);
+		}
+		await q("select pg_notify('reads', $1)", [String(e.id)]); // open boards refetch
 	},
 	importBibs: async ({ request, params }) => {
 		const e = await ev(params.slug);
@@ -177,9 +269,9 @@ export const actions = {
 				await c.query('rollback');
 				return fail(400, { error: 'Age must be a whole number from 1 to 120' });
 			}
-			await c.query('update participants set bib=$3, name=$4, tag=$5, category_id=$6, gender=$7, age=$8 where id=$1 and event_id=$2', [
+			await c.query('update participants set bib=$3, name=$4, tag=$5, category_id=$6, gender=$7, age=$8, batch_id=(select id from batches where id=$9 and category_id=$6) where id=$1 and event_id=$2', [
 				pid, e.id, bib, String(f.get('name') ?? '').trim(), String(f.get('tag') ?? '').trim(), cat,
-				normGender(String(f.get('gender') ?? '')), ageText ? parseAge(ageText) : null
+				normGender(String(f.get('gender') ?? '')), ageText ? parseAge(ageText) : null, Number(f.get('batch')) || null
 			]);
 			// reads remember the bib they were matched to; keep them attached when the bib is renumbered
 			if (old.rows[0].bib !== bib) await c.query('update reads set bib=$3 where event_id=$1 and bib=$2', [e.id, old.rows[0].bib, bib]);

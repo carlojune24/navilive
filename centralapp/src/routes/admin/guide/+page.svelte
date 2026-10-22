@@ -46,7 +46,7 @@
 		<h2 class="font-display text-3xl font-black uppercase">1. The app is hosted online</h2>
 		<p>Nothing to start or install on your laptop. Open <a class="font-bold underline" href={data.publicUrl}>{data.publicUrl}</a>/admin to manage the event, and share <b>{data.publicUrl}/e/&lt;event name&gt;</b> for the live board.</p>
 		<p>The admin password and the database live on the server. Change the password on the <a class="font-bold underline" href="/admin/account">Password</a> page in the left menu. Five wrong passwords block that address for 10 minutes.</p>
-		<p>The server saves a database backup every night to <code>/home/ubuntu/backups</code> (the last 14 are kept). Use the Export page for race-day copies of results.</p>
+		<p>The server saves a database backup every night to <code>/home/ubuntu/backups</code> (the last 14 are kept). Use the Results and Awards pages (Print or Download CSV) for race-day copies of results.</p>
 	</section>
 	{:else}
 	<section class="space-y-3 border-2 border-border bg-card p-5">
@@ -107,7 +107,7 @@
 	<section class="space-y-3 border-2 border-border bg-card p-5">
 		<h2 class="font-display text-3xl font-black uppercase">Event-day checklist</h2>
 		<ul class="space-y-1">
-			{#each (data.publicUrl ? ['Open the live board on the big screen (Big screen button)', 'Every station laptop has internet and shows Connected', 'Do a test read at each station, then Clear all reads (Reads page) before the start', 'After the finish: Export results and winners'] : ['Back up the database (below)', 'Laptop plugged in, sleep turned off', 'Venue WiFi is set to Private', 'App running; phone can open the live board', 'Every station shows Connected', 'Do a test read at each station, then Clear all reads (Reads page) before the start', 'Big screen open: live board with Big screen on', 'Back up again after the finish, then Export results']) as item}
+			{#each (data.publicUrl ? ['Open the live board on the big screen (Big screen button)', 'Every station laptop has internet and shows Connected', 'Do a test read at each station, then Clear all reads (Reads page) before the start', 'After the finish: print or download the Results and Awards'] : ['Back up the database (below)', 'Laptop plugged in, sleep turned off', 'Venue WiFi is set to Private', 'App running; phone can open the live board', 'Every station shows Connected', 'Do a test read at each station, then Clear all reads (Reads page) before the start', 'Big screen open: live board with Big screen on', 'Back up again after the finish, then download the Results']) as item}
 				<li class="flex items-start gap-3"><span class="mt-1 inline-block size-5 shrink-0 border-2 border-border"></span>{item}</li>
 			{/each}
 		</ul>

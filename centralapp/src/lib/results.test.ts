@@ -40,6 +40,28 @@ describe('manual gun start', () => {
 	});
 });
 
+describe('batches', () => {
+	const noStart = rs.filter((r) => r.station_id !== 1);
+	it('a runner in a batch is timed from the batch gun, not the category gun', () => {
+		const bp = [{ ...ps[0], batch_id: 7 }, ps[1]];
+		const [c] = computeResults([{ id: 10, name: '10K', gun_ms: 100 }], bp, st, noStart, 'gun', undefined, undefined, [{ id: 7, gun_ms: 300 }]);
+		expect(c.rows.map((r) => [r.bib, r.time])).toEqual([['101', 600700], ['102', 640900]]);
+	});
+	it('an unstarted batch has no time even when the category has started', () => {
+		const bp = [{ ...ps[0], batch_id: 7 }];
+		const [c] = computeResults([{ id: 10, name: '10K', gun_ms: 100 }], bp, st, noStart, 'gun', undefined, undefined, [{ id: 7, gun_ms: null }]);
+		expect(c.rows).toEqual([]);
+	});
+});
+
+describe('rank_by', () => {
+	// A starts at 1000 and finishes at 601000 (time 600000); B starts at 61000 and finishes at 641000 (time 580000, but later on the clock)
+	const r = (rank_by: string) => computeResults([{ id: 10, name: '10K', rank_by }], ps, st, rs, 'gun')[0].rows.map((x) => x.bib);
+	it('chip: own start, B is faster', () => expect(r('chip')).toEqual(['102', '101']));
+	it('finish: first across the line wins whatever their start', () => expect(r('finish')).toEqual(['101', '102']));
+	it('elapsed: from the category gun (A first read 1000)', () => expect(r('elapsed')).toEqual(['101', '102']));
+});
+
 describe('underway (the clock can no longer be started)', () => {
 	it('only checkpoint or finish reads count, start-station reads do not', () => {
 		const only = (f: (r: R) => boolean) => computeResults(cats, ps, st, rs.filter(f), 'gun')[0].underway;

@@ -14,14 +14,27 @@
 	import { onMount } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { ago } from '$lib/time';
+	import { fmt } from '$lib/results';
 	import { monitor } from '$lib/monitor.svelte';
 	import { bestLink, clockWarning, linkState, type Link } from '$lib/heartbeat';
 
 	let { data, form } = $props();
 	// the left menu picks the section with ?tab=...
-	const sections = ['participants', 'categories', 'stations', 'route', 'progress', 'awards', 'reads', 'data', 'export', 'connect'];
-	const titles: Record<string, string> = { participants: 'Participants', categories: 'Categories', stations: 'Stations', route: 'Route & map', progress: 'Progress', awards: 'Awards', reads: 'Reads', data: 'Station data', export: 'Export', connect: 'Connect stations' };
+	const sections = ['participants', 'categories', 'stations', 'route', 'progress', 'results', 'awards', 'reads', 'data', 'connect'];
+	const titles: Record<string, string> = { participants: 'Participants', categories: 'Categories', stations: 'Stations', route: 'Route & map', progress: 'Progress', results: 'Results', awards: 'Awards', reads: 'Reads', data: 'Station data', connect: 'Connect stations' };
 	let progCat = $state<number | null>(null); // Progress page: which category is shown
+	let awardsView = $state<'list' | 'settings'>('list'); // Awards page: the winners list or the settings
+	let resSel = $state<number | 'all' | null>(null); // Results / Award list: which category is shown
+	const resShown = $derived(resSel === 'all' ? data.resultsData : data.resultsData.filter((c) => c.id === (resSel ?? data.resultsData[0]?.id)));
+	let progBatch = $state<'all' | 'none' | number>('all'); // Progress page: which batch of that category
+	const progBatches = $derived(data.batches.filter((b) => b.category_id === progShown?.id));
+	// the shown category's runners, narrowed to one batch when picked
+	const progRows = $derived.by(() => {
+		const rows = progShown?.progress ?? [];
+		if (progBatch === 'all' || !progBatches.length) return rows;
+		const batchOf = new Map(data.participants.map((p) => [p.bib, p.batch_id]));
+		return rows.filter((r) => (batchOf.get(r.bib) ?? null) === (progBatch === 'none' ? null : progBatch));
+	});
 	const progShown = $derived(data.progressData.find((c) => c.id === progCat) ?? data.progressData[0]);
 	const tab = $derived(sections.includes(page.url.searchParams.get('tab') ?? '') ? page.url.searchParams.get('tab')! : 'participants');
 	let now = $state(Date.now());
@@ -62,6 +75,19 @@
 	const filtering = $derived(search.trim() !== '' || catFilter !== '');
 	let importMode = $state<'bibs' | 'csv' | 'one'>('bibs');
 	let importOpen = $state(false);
+	let batchDlg = $state<{ kind: 'add' | 'assign' | 'find'; cat: number } | null>(null); // which category's batch dialog is open
+	const dlgCat = $derived(batchDlg ? data.categories.find((c) => c.id === batchDlg!.cat) : null);
+	let findQ = $state('');
+	const found = $derived.by(() => {
+		const words = findQ.toLowerCase().split(/\s+/).filter(Boolean);
+		if (!words.length || batchDlg?.kind !== 'find') return [];
+		return data.participants.filter((p) => p.category_id === batchDlg!.cat && words.every((w) => `${p.bib} ${p.name}`.toLowerCase().includes(w))).slice(0, 30);
+	});
+	const dlgBatches = $derived(data.batches.filter((b) => b.category_id === batchDlg?.cat));
+	const batchEnhance = () => async ({ result, update }: { result: { type: string }; update: () => Promise<void> }) => {
+		await update();
+		if (result.type === 'success') batchDlg = null; // a failure stays open with its message
+	};
 	let importError = $state('');
 	// success closes the dialog (the page shows the result banner); a failure stays open with its message inside
 	const importEnhance = () => async ({ result, update }: { result: { type: string; data?: { error?: string } }; update: () => Promise<void> }) => {
@@ -76,6 +102,19 @@
 	const field = 'h-11 w-full border-2 border-border bg-card px-3';
 	const lbl = 'font-bold tracking-wide uppercase';
 	const small = 'border-2 border-border bg-card font-bold uppercase hover:bg-accent';
+	// <input type="datetime-local"> wants local "YYYY-MM-DDTHH:MM:SS"
+	const localInput = (ms: number | string | null) => {
+		const d = new Date(ms ? Number(ms) : Date.now());
+		return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 19);
+	};
+	const whenText = (ms: number | string) => new Date(Number(ms)).toLocaleString([], { dateStyle: 'medium', timeStyle: 'medium' });
+	// the typed time travels as epoch ms, so the server never guesses a timezone
+	const typedTime = ({ formData, cancel }: { formData: FormData; cancel: () => void }) => {
+		const t = new Date(String(formData.get('at'))).getTime();
+		if (!Number.isFinite(t)) return cancel();
+		formData.set('ms', String(t));
+		return ({ update }: { update: (o?: { reset?: boolean }) => Promise<void> }) => update({ reset: false }); // keep the typed time in the field
+	};
 	const kindColor = (k: string) => (k === 'start' ? 'var(--start)' : k === 'finish' ? 'var(--finish)' : 'var(--checkpoint)');
 
 	const addr = $derived(data.addresses[addrIdx]);
@@ -98,13 +137,36 @@
 	};
 </script>
 
-<main class="space-y-5 p-5">
+{#snippet gunControls(kind: 'category' | 'batch', id: number, gun: number | string | null, label: string)}
+	<span class="text-sm font-bold uppercase {gun ? '' : 'text-muted-foreground'}">{gun ? `Started ${whenText(gun)}` : 'Not started'}</span>
+	{#if gun}
+		<form method="POST" action="?tab={tab}&/clearGun" use:enhance>
+			<input type="hidden" name="kind" value={kind} />
+			<input type="hidden" name="id" value={id} />
+			<Button type="submit" variant="outline" size="sm" class={small} title="Back to not started, so Start can be pressed again" aria-label="Reset start of {label}">Reset</Button>
+		</form>
+	{:else}
+		<form method="POST" action="?tab={tab}&/startGun" use:enhance>
+			<input type="hidden" name="kind" value={kind} />
+			<input type="hidden" name="id" value={id} />
+			<Button type="submit" size="sm" class="font-bold uppercase" aria-label="Start {label} now">Start</Button>
+		</form>
+	{/if}
+	<form method="POST" action="?tab={tab}&/startGun" use:enhance={typedTime} class="flex items-center gap-1">
+		<input type="hidden" name="kind" value={kind} />
+		<input type="hidden" name="id" value={id} />
+		<input type="datetime-local" step="1" name="at" value={localInput(gun)} class="h-9 border-2 border-border bg-card px-2 text-sm" aria-label="Start time for {label}" required />
+		<Button type="submit" variant="outline" size="sm" class={small}>{gun ? 'Correct time' : 'Set time'}</Button>
+	</form>
+{/snippet}
+
+<main class="space-y-5 p-5 print:p-0">
 	<header>
 		<h1 class="font-display text-5xl leading-[0.85] font-black uppercase">{titles[tab]}</h1>
 		<p class="mt-1 text-muted-foreground">{data.event.name} &middot; {data.participants.length} participants &middot; {data.categories.length} categories</p>
 	</header>
 
-	{#if form?.error && !importOpen}<p class="border-2 border-destructive p-3 font-bold text-destructive" role="alert">{form.error}</p>{/if}
+	{#if form?.error && !importOpen && !batchDlg}<p class="border-2 border-destructive p-3 font-bold text-destructive" role="alert">{form.error}</p>{/if}
 	{#if form?.imported}
 		<p class="border-2 border-border bg-card p-3 font-bold">
 			Imported {form.imported} participants.
@@ -168,6 +230,15 @@
 													{#each data.categories as c}<option value={c.id} selected={c.id === p.category_id}>{c.name}</option>{/each}
 												</select>
 											</div>
+											{#if data.batches.some((b) => b.category_id === p.category_id)}
+												<div class="w-40">
+													<Label class={lbl} for="eba{p.id}">Batch</Label>
+													<select id="eba{p.id}" name="batch" class={field}>
+														<option value="">None</option>
+														{#each data.batches.filter((b) => b.category_id === p.category_id) as b}<option value={b.id} selected={b.id === p.batch_id}>{b.name}</option>{/each}
+													</select>
+												</div>
+											{/if}
 											<div class="w-32">
 												<Label class={lbl} for="eg{p.id}">Gender</Label>
 												<select id="eg{p.id}" name="gender" class={field}>
@@ -219,20 +290,111 @@
 				<Input name="name" placeholder="e.g. 10K Women 18-29" class="h-11 border-2" required />
 				<Button type="submit" class="h-11 font-bold uppercase">Add</Button>
 			</form>
+			{#if form?.batchAssigned !== undefined}<p class="border-2 border-border bg-card p-3 font-bold">{form.batchAssigned} runner(s) assigned.</p>{/if}
 			<ul class="divide-y-2 divide-border border-2 border-border bg-card">
 				{#each data.categories as c (c.id)}
-					<li class="flex items-center justify-between p-3">
-						<span class="text-xl font-bold uppercase">{c.name} <span class="font-normal text-muted-foreground">({c.n})</span></span>
-						<span class="ml-auto mr-4 text-sm text-muted-foreground">{c.gun_ms ? `Gun start: ${new Date(Number(c.gun_ms)).toLocaleString([], { dateStyle: 'medium', timeStyle: 'medium' })} (Start pressed on the live board)` : 'Gun start: press Start on the live board'}</span>
-						<form method="POST" action="?tab={tab}&/deleteCategory" use:enhance>
+					{@const bs = data.batches.filter((b) => b.category_id === c.id)}
+					<li class="p-3">
+						<div class="flex flex-wrap items-center justify-between gap-3">
+							<span class="text-xl font-bold uppercase">{c.name} <span class="font-normal text-muted-foreground">({c.n})</span></span>
+							<div class="flex flex-wrap items-center gap-3">
+								{@render gunControls('category', c.id, c.gun_ms, c.name)}
+								<form method="POST" action="?tab={tab}&/archiveCategory" use:enhance>
+									<input type="hidden" name="id" value={c.id} />
+									<Button type="submit" variant="outline" size="sm" class={small} title="Hide this category from the boards. Results and reads are kept; Restore brings it back.">Archive</Button>
+								</form>
+							</div>
+						</div>
+						<form method="POST" action="?tab={tab}&/setRankBy" use:enhance={() => ({ update }) => update({ reset: false })} class="mt-3 flex flex-wrap items-center gap-2">
 							<input type="hidden" name="id" value={c.id} />
-							<Button type="submit" variant="outline" size="sm" class={small}>Delete</Button>
+							<Label class={lbl} for="rb{c.id}">Winner decided by</Label>
+							<select id="rb{c.id}" name="rank_by" class="h-11 border-2 border-border bg-card px-3" value={c.rank_by} onchange={(e) => e.currentTarget.form?.requestSubmit()}>
+								<option value="elapsed">Shortest time from the start</option>
+								<option value="chip">Shortest time from own start read</option>
+								<option value="finish">First across the finish line</option>
+							</select>
 						</form>
+						<ul class="mt-3 divide-y-2 divide-border/15 border-2 border-border/15">
+							{#each bs as b (b.id)}
+								<li class="flex flex-wrap items-center justify-between gap-3 bg-accent/40 px-3 py-2">
+									<span class="font-bold uppercase">{b.name} <span class="font-normal text-muted-foreground">({b.n})</span></span>
+									<div class="flex flex-wrap items-center gap-3">
+										{@render gunControls('batch', b.id, b.gun_ms, `${c.name} ${b.name}`)}
+										<form method="POST" action="?tab={tab}&/deleteBatch" use:enhance>
+											<input type="hidden" name="id" value={b.id} />
+											<Button type="submit" variant="outline" size="sm" class={small} title="Its runners go back to no batch">Delete</Button>
+										</form>
+									</div>
+									<details class="group w-full">
+										<summary class="cursor-pointer font-bold tracking-wide uppercase select-none">Runners ({b.n})</summary>
+										<ul class="mt-2 divide-y divide-border/15">
+											{#each data.participants.filter((p) => p.batch_id === b.id) as p (p.id)}
+												<li class="flex items-center justify-between gap-3 py-1">
+													<span><span class="font-bold">{p.bib}</span> {p.name}</span>
+													<form method="POST" action="?tab={tab}&/removeFromBatch" use:enhance>
+														<input type="hidden" name="id" value={p.id} />
+														<Button type="submit" variant="outline" size="sm" class={small} aria-label="Remove {p.bib} from {b.name}">Remove</Button>
+													</form>
+												</li>
+											{:else}
+												<li class="py-1 text-muted-foreground">No runners assigned yet.</li>
+											{/each}
+										</ul>
+									</details>
+								</li>
+							{:else}
+								<li class="px-3 py-2 text-muted-foreground">No batches. Everyone in this category starts together.</li>
+							{/each}
+						</ul>
+						{#if bs.length}
+							{@const loose = data.participants.filter((p) => p.category_id === c.id && !p.batch_id)}
+							<details class="mt-3 border-2 border-border/15 px-3 py-2">
+								<summary class="cursor-pointer font-bold tracking-wide uppercase select-none">Not in a batch ({loose.length})</summary>
+								<ul class="mt-2 divide-y divide-border/15">
+									{#each loose as p (p.id)}
+										<li class="flex flex-wrap items-center justify-between gap-2 py-1">
+											<span><span class="font-bold">{p.bib}</span> {p.name}</span>
+											<form method="POST" action="?tab={tab}&/assignBatch" use:enhance class="flex items-center gap-1">
+												<input type="hidden" name="category" value={c.id} />
+												<input type="hidden" name="bibs" value={p.bib} />
+												<select name="batch" class="h-9 border-2 border-border bg-card px-2 text-sm" aria-label="Batch for {p.bib}">
+													{#each bs as b}<option value={b.id}>{b.name}</option>{/each}
+												</select>
+												<Button type="submit" size="sm" class="font-bold uppercase">Assign</Button>
+											</form>
+										</li>
+									{:else}
+										<li class="py-1 text-muted-foreground">Everyone is in a batch.</li>
+									{/each}
+								</ul>
+							</details>
+						{/if}
+						<div class="mt-3 flex flex-wrap gap-2">
+							<Button variant="outline" class="h-11 border-2 font-bold uppercase" onclick={() => (batchDlg = { kind: 'add', cat: c.id })}>Add batch</Button>
+							{#if bs.length}<Button variant="outline" class="h-11 border-2 font-bold uppercase" onclick={() => (batchDlg = { kind: 'assign', cat: c.id })}>Assign runners</Button>{/if}
+							{#if bs.length}<Button variant="outline" class="h-11 border-2 font-bold uppercase" onclick={() => ((findQ = ''), (batchDlg = { kind: 'find', cat: c.id }))}>Find runner</Button>{/if}
+						</div>
 					</li>
 				{:else}
 					<li class="p-3 text-muted-foreground">No categories yet.</li>
 				{/each}
 			</ul>
+			{#if data.archived.length}
+				<div class="border-2 border-border bg-card p-3">
+					<h2 class="font-bold tracking-wide uppercase">Archived</h2>
+					<ul class="mt-2 divide-y-2 divide-border/15">
+						{#each data.archived as c (c.id)}
+							<li class="flex items-center justify-between py-2">
+								<span class="font-bold uppercase text-muted-foreground">{c.name}</span>
+								<form method="POST" action="?tab={tab}&/restoreCategory" use:enhance>
+									<input type="hidden" name="id" value={c.id} />
+									<Button type="submit" variant="outline" size="sm" class={small}>Restore</Button>
+								</form>
+							</li>
+						{/each}
+					</ul>
+				</div>
+			{/if}
 		</div>
 		{/if}
 
@@ -288,7 +450,14 @@
 
 		<!-- AWARDS -->
 		{#if tab === 'awards'}
+		<div class="flex flex-wrap gap-2 print:hidden" role="tablist" aria-label="Awards">
+			{#each [['list', 'Awards'], ['settings', 'Settings']] as [id, label]}
+				<button type="button" role="tab" aria-selected={awardsView === id} onclick={() => (awardsView = id as 'list' | 'settings')} class="h-11 border-2 border-border px-4 font-display text-2xl font-black uppercase {awardsView === id ? 'bg-primary text-primary-foreground' : 'bg-card'}">{label}</button>
+			{/each}
+		</div>
+		{#if awardsView === 'settings'}
 		<AwardsEditor categories={data.categories} awards={data.awards} extraFields={data.extraFields} preview={data.awardPreview} people={data.participants} slug={data.event.slug} />
+		{/if}
 		{/if}
 
 		<!-- PROGRESS: who has reached which station -->
@@ -298,27 +467,34 @@
 			{#if data.progressData.length > 1}
 				<div class="flex flex-wrap gap-2" role="tablist" aria-label="Category">
 					{#each data.progressData as c (c.id)}
-						<button type="button" role="tab" aria-selected={c.id === progShown?.id} onclick={() => (progCat = c.id)} class="h-11 border-2 border-border px-4 font-display text-2xl font-black uppercase {c.id === progShown?.id ? 'bg-primary text-primary-foreground' : 'bg-card'}">{c.name}</button>
+						<button type="button" role="tab" aria-selected={c.id === progShown?.id} onclick={() => ((progCat = c.id), (progBatch = 'all'))} class="h-11 border-2 border-border px-4 font-display text-2xl font-black uppercase {c.id === progShown?.id ? 'bg-primary text-primary-foreground' : 'bg-card'}">{c.name}</button>
+					{/each}
+				</div>
+			{/if}
+			{#if progBatches.length}
+				<div class="flex flex-wrap gap-2" role="tablist" aria-label="Batch">
+					{#each [['all', 'All batches'], ...progBatches.map((b) => [b.id, b.name]), ['none', 'No batch']] as [id, label]}
+						<button type="button" role="tab" aria-selected={id === progBatch} onclick={() => (progBatch = id as typeof progBatch)} class="h-11 border-2 border-border px-4 text-lg font-bold uppercase {id === progBatch ? 'bg-primary text-primary-foreground' : 'bg-card'}">{label}</button>
 					{/each}
 				</div>
 			{/if}
 			{#each progShown ? [progShown] : [] as c (c.id)}
-				{@const flagged = c.progress.filter((r) => r.missed.length).length}
+				{@const flagged = progRows.filter((r) => r.missed.length).length}
 				<section class="border-2 border-border bg-card">
 					<h3 class="flex flex-wrap items-baseline justify-between gap-2 bg-primary px-4 py-2 font-display text-3xl font-black text-primary-foreground uppercase">
 						<span>{c.name}</span>
-						<span class="text-base font-normal tracking-wide">{c.finished} finished · {c.started} started · {c.total} registered{flagged ? ` · ${flagged} to check` : ''}</span>
+						<span class="text-base font-normal tracking-wide">{progRows.filter((r) => r.state === 'finished').length} finished · {progRows.filter((r) => r.start !== null).length} started · {progRows.length} registered{flagged ? ` · ${flagged} to check` : ''}</span>
 					</h3>
 					<p class="border-b-2 border-border/15 px-4 py-2 text-muted-foreground">Course: {c.course.map((s) => s.name).join(' → ')}</p>
-					{#key c.id}<ProgressTable course={c.course} rows={c.progress} flags pageSize={20} />{/key}
+					{#key `${c.id}-${progBatch}`}<ProgressTable course={c.course} rows={progRows} flags pageSize={20} />{/key}
 				</section>
 				<!-- per checkpoint: who has passed and who has not yet (the start counts a gun start too, like the table) -->
 				<section class="border-2 border-border bg-card">
 					<h3 class="bg-primary px-4 py-2 font-display text-3xl font-black text-primary-foreground uppercase">By checkpoint</h3>
 					<div class="grid gap-4 p-4 md:grid-cols-2">
 						{#each c.course as s, i (s.id)}
-							{@const passed = c.progress.filter((r) => (s.kind === 'start' ? r.start !== null || r.at[i] !== null : r.at[i] !== null))}
-							{@const waiting = c.progress.filter((r) => !passed.includes(r))}
+							{@const passed = progRows.filter((r) => (s.kind === 'start' ? r.start !== null || r.at[i] !== null : r.at[i] !== null))}
+							{@const waiting = progRows.filter((r) => !passed.includes(r))}
 							<div class="border-2 border-border/15 p-3">
 								<h4 class="font-display text-2xl font-black uppercase">{s.name} <span class="text-base font-normal text-muted-foreground">{passed.length} passed · {waiting.length} not yet</span></h4>
 								<p class="mt-2 text-sm font-bold uppercase">Passed</p>
@@ -331,6 +507,76 @@
 				</section>
 			{:else}
 				<p class="border-2 border-border bg-card p-4 text-muted-foreground">No participants yet.</p>
+			{/each}
+		</div>
+		{/if}
+
+		<!-- RESULTS: ranked list per category, to read, print or export -->
+		{#if tab === 'results' || (tab === 'awards' && awardsView === 'list')}
+		{@const isRes = tab === 'results'}
+		<div class="space-y-5">
+			<div class="flex flex-wrap items-center gap-2 print:hidden">
+				<a class="inline-flex h-11 items-center border-2 border-border bg-card px-5 font-bold uppercase hover:bg-accent" href="/admin/{data.event.slug}/export?kind={isRes ? 'results' : 'winners'}&mode=gun" download>Download CSV</a>
+				{#if resSel === 'all'}<Button class="h-11 font-bold uppercase" onclick={() => window.print()}>Print all</Button>{/if}
+				<p class="text-muted-foreground">{isRes ? 'Ranked as set under Categories.' : 'The podium for every award.'}</p>
+			</div>
+			{#if data.resultsData.length > 1}
+				<div class="flex flex-wrap gap-2 print:hidden" role="tablist" aria-label="Category">
+					{#each [...data.resultsData.map((c) => [c.id, c.name] as const), ['all', 'All'] as const] as [id, label]}
+						<button type="button" role="tab" aria-selected={id === (resSel ?? data.resultsData[0]?.id)} onclick={() => (resSel = id)} class="h-11 border-2 border-border px-4 font-display text-2xl font-black uppercase {id === (resSel ?? data.resultsData[0]?.id) ? 'bg-primary text-primary-foreground' : 'bg-card'}">{label}</button>
+					{/each}
+				</div>
+			{/if}
+			<h2 class="hidden font-display text-4xl font-black uppercase print:block">{data.event.name} · {isRes ? 'Results' : 'Award list'}</h2>
+			{#each resShown as c, i (c.id)}
+				<section class="border-2 border-border bg-card print:break-inside-avoid-page {i ? 'print:break-before-page' : ''}">
+					<h3 class="flex flex-wrap items-baseline justify-between gap-2 bg-primary px-4 py-2 font-display text-3xl font-black text-primary-foreground uppercase print:text-black">
+						<span>{c.name}</span>
+						<span class="flex items-center gap-3">
+							<span class="text-base font-normal tracking-wide">{c.rows.length} finished · {c.total} registered</span>
+							{#if resSel !== 'all'}<button type="button" class="border-2 border-primary-foreground px-3 py-1 text-sm font-bold tracking-wide uppercase print:hidden" onclick={() => window.print()}>Print</button>{/if}
+						</span>
+					</h3>
+					<p class="border-b-2 border-border/15 px-4 py-2 text-muted-foreground">Ranked by: {c.rankBy === 'finish' ? 'first across the finish line' : c.rankBy === 'chip' ? "shortest time from each runner's own start read" : 'shortest time from the category or batch start'}</p>
+					{#if isRes}
+						<Table.Root>
+							<Table.Header>
+								<Table.Row>{#each ['Rank', 'Bib', 'Name', 'Gender', 'Age', 'Time'] as h}<Table.Head class="font-bold tracking-wide uppercase">{h}</Table.Head>{/each}</Table.Row>
+							</Table.Header>
+							<Table.Body>
+								{#each c.rows as r (r.bib)}
+									<Table.Row class="print:break-inside-avoid">
+										<Table.Cell class="font-display text-2xl font-black">{r.rank}</Table.Cell>
+										<Table.Cell class="font-bold">{r.bib}</Table.Cell>
+										<Table.Cell>{r.name || '—'}</Table.Cell>
+										<Table.Cell>{r.gender || '—'}</Table.Cell>
+										<Table.Cell>{r.age ?? '—'}</Table.Cell>
+										<Table.Cell class="font-bold tabular-nums">{fmt(r.time!)}</Table.Cell>
+									</Table.Row>
+								{:else}
+									<Table.Row><Table.Cell colspan={6} class="p-4 text-muted-foreground">No finishers yet.</Table.Cell></Table.Row>
+								{/each}
+							</Table.Body>
+						</Table.Root>
+					{:else}
+						<div class="grid gap-4 p-4 md:grid-cols-2 print:grid-cols-2">
+							{#each c.awards as a (a.key)}
+								<div class="border-2 border-border/15 p-3 print:break-inside-avoid">
+									<h4 class="font-display text-2xl font-black uppercase">{a.name}</h4>
+									<ol class="mt-1 divide-y divide-border/15">
+										{#each a.winners as w (w.place + w.bib)}
+											<li class="flex items-baseline gap-3 py-1"><span class="w-6 font-display text-xl font-black">{w.place}</span><span class="font-bold">{w.bib}</span><span class="flex-1">{w.name || '—'}</span><span class="font-bold tabular-nums">{fmt(w.time)}</span></li>
+										{/each}
+									</ol>
+								</div>
+							{:else}
+								<p class="text-muted-foreground">No awards yet.</p>
+							{/each}
+						</div>
+					{/if}
+				</section>
+			{:else}
+				<p class="border-2 border-border bg-card p-4 text-muted-foreground">No categories with runners yet.</p>
 			{/each}
 		</div>
 		{/if}
@@ -385,7 +631,10 @@
 					</Table.Body>
 				</Table.Root>
 			</div>
-			{#if data.reads.length === 300}<p class="text-muted-foreground">Showing the latest 300 reads. Use Export for all of them.</p>{/if}
+			<div class="flex flex-wrap items-center gap-3">
+				<a class="inline-flex h-11 items-center border-2 border-border bg-card px-5 font-bold uppercase hover:bg-accent" href="/admin/{data.event.slug}/export?kind=reads" download>Download all reads (CSV)</a>
+				<p class="text-muted-foreground">Every read, including voided ones, with exact times. Good as a backup or for disputes.{data.reads.length === 300 ? ' The list above shows only the latest 300.' : ''}</p>
+			</div>
 
 			<form method="POST" action="?tab={tab}&/clearReads" use:enhance class="flex flex-wrap items-end gap-2 border-2 border-destructive bg-card p-4">
 				<div class="min-w-64 flex-1">
@@ -513,33 +762,6 @@
 		</div>
 		{/if}
 
-		<!-- EXPORT -->
-		{#if tab === 'export'}
-		<div class="space-y-3">
-			<div class="space-y-3 border-2 border-border bg-card p-4">
-				<h2 class="font-display text-3xl font-black uppercase">Results</h2>
-				<p class="text-muted-foreground">All categories, ranked, with gender and age ranks and checkpoint splits. Opens in Excel.</p>
-				<div class="flex flex-wrap gap-2">
-					<a class="inline-flex h-11 items-center border-2 border-border bg-primary px-5 font-bold text-primary-foreground uppercase" href="/admin/{data.event.slug}/export?kind=results&mode=gun" download>Results · gun time</a>
-					<a class="inline-flex h-11 items-center border-2 border-border bg-primary px-5 font-bold text-primary-foreground uppercase" href="/admin/{data.event.slug}/export?kind=results&mode=own" download>Results · own start</a>
-				</div>
-			</div>
-			<div class="space-y-3 border-2 border-border bg-card p-4">
-				<h2 class="font-display text-3xl font-black uppercase">Winners</h2>
-				<p class="text-muted-foreground">The podium for every award in every category (overall, gender, age group), ready to read out or print.</p>
-				<div class="flex flex-wrap gap-2">
-					<a class="inline-flex h-11 items-center border-2 border-border bg-primary px-5 font-bold text-primary-foreground uppercase" href="/admin/{data.event.slug}/export?kind=winners&mode=gun" download>Winners · gun time</a>
-					<a class="inline-flex h-11 items-center border-2 border-border bg-primary px-5 font-bold text-primary-foreground uppercase" href="/admin/{data.event.slug}/export?kind=winners&mode=own" download>Winners · own start</a>
-				</div>
-			</div>
-			<div class="space-y-3 border-2 border-border bg-card p-4">
-				<h2 class="font-display text-3xl font-black uppercase">Every read</h2>
-				<p class="text-muted-foreground">The raw log, including voided reads, with exact times. Good as a backup or for disputes.</p>
-				<a class="inline-flex h-11 items-center border-2 border-border bg-card px-5 font-bold uppercase hover:bg-accent" href="/admin/{data.event.slug}/export?kind=reads" download>All reads (CSV)</a>
-			</div>
-		</div>
-		{/if}
-
 		<!-- CONNECT -->
 		{#if tab === 'connect'}
 		<div class="space-y-4">
@@ -601,6 +823,67 @@
 			{#if !data.publicUrl}<p class="text-muted-foreground">Admin pages open only on this laptop at <code>http://localhost:{data.port}</code>. Stations and phones use the address above.</p>{/if}
 		</div>
 		{/if}
+
+	<Dialog.Root open={batchDlg !== null} onOpenChange={(o) => !o && (batchDlg = null)}>
+		<Dialog.Content class="border-2 border-border sm:max-w-md">
+			{#if batchDlg && dlgCat}
+				<Dialog.Header>
+					<Dialog.Title class="font-display text-4xl leading-[0.85] font-black uppercase">{batchDlg.kind === 'add' ? 'Add batch' : batchDlg.kind === 'find' ? 'Find runner' : 'Assign runners'}</Dialog.Title>
+					<Dialog.Description>{dlgCat.name}</Dialog.Description>
+				</Dialog.Header>
+				{#if form?.error}<p class="border-2 border-destructive p-3 font-bold text-destructive" role="alert">{form.error}</p>{/if}
+				{#if batchDlg.kind === 'add'}
+					<form method="POST" action="?tab={tab}&/addBatch" use:enhance={batchEnhance} class="space-y-4">
+						<input type="hidden" name="category" value={batchDlg.cat} />
+						<div><Label class={lbl} for="bn">Batch name</Label><Input id="bn" name="name" placeholder="e.g. Batch 1" class="h-11 border-2" required /></div>
+						<Button type="submit" class="h-11 w-full font-bold uppercase">Add batch</Button>
+					</form>
+				{:else if batchDlg.kind === 'find'}
+					<div class="space-y-3">
+						<div><Label class={lbl} for="fq">Bib or name</Label><Input id="fq" bind:value={findQ} class="h-11 border-2" autocomplete="off" /></div>
+						<ul class="max-h-72 divide-y-2 divide-border/15 overflow-y-auto">
+							{#each found as p (p.id)}
+								{@const mine = dlgBatches.find((b) => b.id === p.batch_id)}
+								<li class="flex flex-wrap items-center justify-between gap-2 py-2">
+									<span><span class="font-bold">{p.bib}</span> {p.name}<br /><span class="text-sm font-bold uppercase {mine ? '' : 'text-muted-foreground'}">{mine ? `Batch ${mine.name}` : 'Not assigned'}</span></span>
+									{#if mine}
+										<form method="POST" action="?tab={tab}&/removeFromBatch" use:enhance>
+											<input type="hidden" name="id" value={p.id} />
+											<Button type="submit" variant="outline" size="sm" class={small}>Remove</Button>
+										</form>
+									{:else}
+										<form method="POST" action="?tab={tab}&/assignBatch" use:enhance class="flex items-center gap-1">
+											<input type="hidden" name="category" value={batchDlg.cat} />
+											<input type="hidden" name="bibs" value={p.bib} />
+											<select name="batch" class="h-9 border-2 border-border bg-card px-2 text-sm" aria-label="Batch for {p.bib}">
+												{#each dlgBatches as b}<option value={b.id}>{b.name}</option>{/each}
+											</select>
+											<Button type="submit" size="sm" class="font-bold uppercase">Assign</Button>
+										</form>
+									{/if}
+								</li>
+							{:else}
+								<li class="py-2 text-muted-foreground">{findQ.trim() ? 'No runner in this category matches.' : 'Type a bib or name.'}</li>
+							{/each}
+						</ul>
+					</div>
+				{:else}
+					<form method="POST" action="?tab={tab}&/assignBatch" use:enhance={batchEnhance} class="space-y-4">
+						<input type="hidden" name="category" value={batchDlg.cat} />
+						<div>
+							<Label class={lbl} for="ab">Assign to</Label>
+							<select id="ab" name="batch" class={field}>
+								{#each dlgBatches as b}<option value={b.id}>{b.name}</option>{/each}
+								<option value="">No batch</option>
+							</select>
+						</div>
+						<div><Label class={lbl} for="ar">Bibs (e.g. 101-150, 160)</Label><Input id="ar" name="bibs" class="h-11 border-2" required /></div>
+						<Button type="submit" class="h-11 w-full font-bold uppercase">Assign</Button>
+					</form>
+				{/if}
+			{/if}
+		</Dialog.Content>
+	</Dialog.Root>
 
 	<Dialog.Root bind:open={importOpen}>
 		<Dialog.Content class="max-h-[90vh] overflow-y-auto border-2 border-border sm:max-w-3xl">

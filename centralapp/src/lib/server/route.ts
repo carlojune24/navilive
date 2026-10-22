@@ -13,7 +13,7 @@ export type RouteCategory = { id: number; name: string; hasRoute: boolean };
 export async function loadRoute(slug: string, catId?: number | null) {
 	const [ev] = await q<{ id: number; name: string }>('select id, name from events where slug=$1', [slug]);
 	if (!ev) return null;
-	const cats = await q<RouteCategory>('select id, name, gpx is not null as "hasRoute" from categories where event_id=$1 order by name', [ev.id]);
+	const cats = await q<RouteCategory>('select id, name, gpx is not null as "hasRoute" from categories where event_id=$1 and archived_at is null order by name', [ev.id]);
 	const chosen = cats.find((c) => c.id === catId) ?? cats.find((c) => c.hasRoute) ?? cats[0];
 	const empty = { event: ev.name, categories: cats, category: chosen?.id ?? null, name: '', track: null as Track | null, stations: [] as RouteStation[], lastReadAgoMs: null as number | null };
 	if (!chosen) return empty;

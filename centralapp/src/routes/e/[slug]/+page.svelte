@@ -1,7 +1,5 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { enhance } from '$app/forms';
-	import { toast } from 'svelte-sonner';
 	import { Toaster } from '$lib/components/ui/sonner/index.js';
 	import Trophy from '@lucide/svelte/icons/trophy';
 	import RouteMap from '$lib/components/RouteMap.svelte';
@@ -35,16 +33,6 @@
 	const cat = $derived(res.categories.find((c) => c.id === active) ?? res.categories[0]);
 	// race clock: the server's start time against the server's clock (this browser's own clock may be off)
 	const clockMs = $derived(mode === 'gun' && cat?.gunManual && cat.gunMs ? Math.max(0, now + (res.serverMs - fetchedAt) - cat.gunMs) : null);
-	// Start/Reset ask first with a toast (Yes re-submits the form once); a browser confirm() box would block the page
-	const confirmed = new WeakSet<HTMLFormElement>();
-	const gunAction = (question: string, yes: string) => ({ formElement, cancel }: { formElement: HTMLFormElement; cancel: () => void }) => {
-		if (!confirmed.delete(formElement)) {
-			cancel();
-			toast(question, { duration: 12000, action: { label: yes, onClick: () => (confirmed.add(formElement), formElement.requestSubmit()) }, cancel: { label: 'Cancel', onClick: () => {} } });
-			return;
-		}
-		return async ({ update }: { update: () => Promise<void> }) => (await update(), refresh());
-	};
 	const ago = $derived(res.lastReadAgoMs === null ? null : res.lastReadAgoMs + (now - fetchedAt));
 	const agoText = $derived(
 		ago === null ? 'No reads yet' : ago < 60000 ? `Last read ${Math.floor(ago / 1000)}s ago` : `Last read ${Math.floor(ago / 60000)} min ago`
@@ -231,22 +219,13 @@
 				<h2 class="font-display text-4xl font-black uppercase md:text-6xl">{cat.name}</h2>
 				<div class="flex flex-wrap items-center justify-end gap-x-4 gap-y-1">
 					{#if clockMs !== null}<span class="font-display text-4xl leading-none font-black tabular-nums md:text-6xl" title="Race clock, from the gun start">{fmt(clockMs)}</span>{/if}
-					{#if data.admin && mode === 'gun' && cat.id !== 0 && !data.kiosk}
-						{#if !cat.gunManual}
-							<form method="POST" action="?/startGun" use:enhance={gunAction(cat.gunMs ? `Start the ${cat.name} clock now? It is currently running from the first Start read; this replaces that.` : `Start the clock for ${cat.name} now?`, 'Start')}>
-								<input type="hidden" name="category" value={cat.id} />
-								<button disabled={cat.underway} title={cat.underway ? 'Checkpoint or finish reads already exist, so this category cannot be started now' : ''} class="border-2 border-primary-foreground bg-primary-foreground px-5 py-2 text-xl font-bold tracking-wide text-primary uppercase disabled:cursor-not-allowed disabled:opacity-40">Start</button>
-							</form>
-						{:else}
-							<form method="POST" action="?/clearGun" use:enhance={gunAction(`Reset the ${cat.name} start? The clock stops and times go back to the first Start read.`, 'Reset')}>
-								<input type="hidden" name="category" value={cat.id} />
-								<button class="border-2 border-primary-foreground px-3 py-1 text-sm font-bold tracking-wide uppercase">Reset</button>
-							</form>
-						{/if}
-					{/if}
 					<p class="text-lg font-bold tracking-wide uppercase">{cat.rows.length} finished · {cat.started} started · {cat.total} registered</p>
 				</div>
 			</div>
+			<p class="border-b-2 border-border/15 bg-card px-4 py-2 text-lg">
+				<span class="font-bold tracking-wide uppercase">Ranked by:</span>
+				{cat.rankBy === 'finish' ? 'first across the finish line (clock time)' : cat.rankBy === 'chip' || mode === 'own' ? "shortest time from each runner's own start read" : 'shortest time from the category or batch start'}
+			</p>
 			{#if view === 'awards' && res.awardsHidden}
 				<div class="p-10">
 					<p class="font-display text-5xl leading-[0.85] font-black uppercase md:text-7xl">Awards coming soon</p>
