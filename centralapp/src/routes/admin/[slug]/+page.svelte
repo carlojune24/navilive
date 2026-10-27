@@ -134,6 +134,7 @@
 	const addr = $derived(data.addresses[addrIdx]);
 	const baseUrl = $derived(data.publicUrl ?? (addr ? `http://${addr.ip}:${data.port}` : `http://<this laptop's IP>:${data.port}`));
 	const code = $derived(data.apiKey ? `RC1|${baseUrl}|${data.event.slug}|${data.apiKey}` : '');
+	const marshalUrl = $derived(data.apiKey ? `${baseUrl}/m/${data.event.slug}?k=${data.apiKey}` : '');
 
 	async function copy(label: string, text: string) {
 		try {
@@ -843,6 +844,16 @@
 							<Button variant="outline" size="sm" class={small} onclick={() => copy(label + ' copied', value)}>Copy</Button>
 						</div>
 					{/each}
+				</div>
+				<div class="space-y-3 border-2 border-border bg-card p-4">
+					<h3 class="font-bold tracking-wide uppercase">Marshal tagging link (open on a phone)</h3>
+					<p>Send this to a marshal at a checkpoint or the finish. They pick their station, then tap each runner as they arrive. Taps become reads like the readers' own.</p>
+					<code class="block border-2 border-border bg-muted p-3 break-all select-all">{marshalUrl}</code>
+					<div class="flex flex-wrap items-center gap-2">
+						<Button class="h-11 font-bold uppercase" onclick={() => copy('Marshal link copied', marshalUrl)}>Copy link</Button>
+						<a href="/m/{data.event.slug}?k={data.apiKey}" target="_blank" rel="noreferrer"><Button variant="outline" class="h-11 border-2 font-bold uppercase">Open</Button></a>
+					</div>
+					<p class="text-muted-foreground">Anyone with this link can tag runners, so give it only to your marshals. Rotating the key below stops the old links and the station laptops alike.</p>
 				</div>
 			{:else}
 				<p class="border-2 border-border bg-card p-3 font-bold">This event has no key to show yet. Rotate the key to create one.</p>

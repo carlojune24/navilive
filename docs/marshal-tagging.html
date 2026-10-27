@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Marshal Tagging</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;600;700&family=Big+Shoulders+Display:wght@700;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:oklch(0.955 0.008 250); --fg:oklch(0.16 0.012 270); --card:oklch(0.995 0.002 250);
+  --muted:oklch(0.93 0.008 250); --muted-fg:oklch(0.38 0.012 270); --border:oklch(0.16 0.012 270);
+  --start:oklch(0.5 0.14 150); --checkpoint:oklch(0.66 0.17 55); --finish:oklch(0.52 0.21 28);
+  --sans:'Barlow Semi Condensed','Segoe UI',system-ui,sans-serif;
+  --display:'Big Shoulders Display','Barlow Semi Condensed',Impact,sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:oklch(0.17 0.012 270); --fg:oklch(0.95 0.008 250); --card:oklch(0.22 0.012 270);
+    --muted:oklch(0.26 0.012 270); --muted-fg:oklch(0.72 0.01 250); --border:oklch(0.75 0.01 250);
+    --start:oklch(0.62 0.15 150); --checkpoint:oklch(0.72 0.16 55); --finish:oklch(0.62 0.2 28);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:oklch(0.17 0.012 270); --fg:oklch(0.95 0.008 250); --card:oklch(0.22 0.012 270);
+  --muted:oklch(0.26 0.012 270); --muted-fg:oklch(0.72 0.01 250); --border:oklch(0.75 0.01 250);
+  --start:oklch(0.62 0.15 150); --checkpoint:oklch(0.72 0.16 55); --finish:oklch(0.62 0.2 28);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:17px;line-height:1.55}
+.wrap{max-width:1180px;margin:0 auto;padding:0 16px;display:grid;grid-template-columns:230px minmax(0,1fr);gap:40px}
+@media (max-width:900px){.wrap{grid-template-columns:1fr;gap:0}nav.toc{position:static!important;border-right:0!important;border-bottom:2px solid var(--border);margin-bottom:24px}}
+header.top{border-bottom:2px solid var(--border);background:var(--card);margin-bottom:28px}
+header.top .inner{max-width:1180px;margin:0 auto;padding:26px 16px}
+h1{font-family:var(--display);font-weight:900;font-size:clamp(2.4rem,7vw,3.6rem);line-height:.95;margin:0;text-transform:uppercase;letter-spacing:-.01em}
+.sub{color:var(--muted-fg);margin:8px 0 0;font-size:1.1rem;max-width:62ch}
+nav.toc{position:sticky;top:0;align-self:start;max-height:100vh;overflow:auto;padding:24px 16px 24px 0;border-right:2px solid var(--border)}
+nav.toc p{font-family:var(--display);font-weight:900;text-transform:uppercase;font-size:1.1rem;margin:0 0 10px;letter-spacing:.03em}
+nav.toc a{display:block;padding:5px 0;color:var(--muted-fg);text-decoration:none;border-bottom:1px solid transparent}
+nav.toc a:hover{color:var(--fg);border-bottom-color:var(--border)}
+main{padding-bottom:80px;min-width:0}
+h2{font-family:var(--display);font-weight:900;text-transform:uppercase;font-size:2rem;line-height:1.05;margin:46px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--border)}
+h2:first-child{margin-top:8px}
+h3{font-family:var(--display);font-weight:700;text-transform:uppercase;font-size:1.35rem;margin:30px 0 8px;letter-spacing:.02em}
+p{margin:0 0 14px;max-width:72ch}
+ul,ol{max-width:72ch;padding-left:22px}li{margin-bottom:7px}
+code{font-family:ui-monospace,'Cascadia Mono',Consolas,monospace;font-size:.88em;background:var(--muted);padding:1px 5px;border:1px solid var(--border)}
+pre{background:var(--card);border:2px solid var(--border);padding:14px;overflow-x:auto;margin:0 0 18px}
+pre code{background:none;border:0;padding:0;font-size:.84rem;line-height:1.5}
+table{border-collapse:collapse;width:100%;margin:0 0 20px;font-size:.96rem}
+th,td{border:2px solid var(--border);padding:8px 10px;text-align:left;vertical-align:top}
+th{background:var(--muted);font-weight:700;text-transform:uppercase;font-size:.84rem;letter-spacing:.04em}
+blockquote{margin:0 0 18px;padding:12px 16px;border:2px solid var(--border);background:var(--card);border-left-width:10px}
+blockquote p:last-child{margin:0}
+blockquote.warn{border-left-color:var(--finish)}
+blockquote.note{border-left-color:var(--checkpoint)}
+.chip{display:inline-block;border:2px solid var(--border);padding:2px 9px;font-weight:700;text-transform:uppercase;font-size:.8rem;letter-spacing:.03em;white-space:nowrap}
+.chip.go{background:var(--start);color:var(--bg);border-color:var(--start)}
+.chip.coming{background:var(--checkpoint);color:#1a1205;border-color:var(--checkpoint)}
+.chip.missed{color:var(--finish);border-color:var(--finish);background:var(--card)}
+.chip.tagged{background:var(--muted)}
+.chip.done{background:var(--fg);color:var(--bg)}
+.banner{border:2px solid var(--border);padding:11px 14px;font-family:var(--display);font-weight:900;text-transform:uppercase;font-size:1.25rem;margin-bottom:12px;display:flex;justify-content:space-between;gap:12px;align-items:center}
+.banner.go{background:var(--start);color:var(--bg);border-color:var(--border)}
+.banner.done{background:var(--fg);color:var(--bg)}
+.lim{counter-reset:lim;list-style:none;padding:0}
+.lim li{counter-increment:lim;border:2px solid var(--border);background:var(--card);padding:11px 14px 11px 46px;position:relative;margin-bottom:9px;max-width:72ch}
+.lim li::before{content:counter(lim);position:absolute;left:0;top:0;bottom:0;width:32px;display:flex;align-items:center;justify-content:center;background:var(--fg);color:var(--bg);font-family:var(--display);font-weight:900;font-size:1.1rem}
+footer{border-top:2px solid var(--border);margin-top:50px;padding-top:18px;color:var(--muted-fg);font-size:.9rem}
+a{color:inherit}
+@media print{nav.toc{display:none}.wrap{grid-template-columns:1fr}h2{break-after:avoid}table,pre,blockquote,.lim li{break-inside:avoid}}
+</style>
+</head>
+<body>
+
+<header class="top"><div class="inner">
+  <h1>Marshal Tagging</h1>
+  <p class="sub">A phone at a checkpoint, tapping runners as they arrive. Race Central &middot; <code>centralapp</code></p>
+</div></header>
+
+<div class="wrap">
+<nav class="toc">
+  <p>Contents</p>
+  <a href="#why">Why it exists</a>
+  <a href="#organizer">1 &middot; For the organizer</a>
+  <a href="#marshal">2 &middot; For the marshal</a>
+  <a href="#colours">&nbsp;&nbsp;Card colours</a>
+  <a href="#guns">&nbsp;&nbsp;Gun starts</a>
+  <a href="#offline">&nbsp;&nbsp;Offline &amp; Undo</a>
+  <a href="#how">3 &middot; How it works</a>
+  <a href="#board">&nbsp;&nbsp;The /board call</a>
+  <a href="#rules">&nbsp;&nbsp;The rules</a>
+  <a href="#timing">&nbsp;&nbsp;Timing &amp; storage</a>
+  <a href="#limits">4 &middot; Known limits</a>
+  <a href="#testing">5 &middot; Testing</a>
+  <a href="#trouble">6 &middot; Troubleshooting</a>
+</nav>
+
+<main>
+
+<h2 id="why">Why it exists</h2>
+<p>Manual tagging covers the case the readers cannot: a station with no RFID reader, a reader that died mid-race, a runner whose tag will not read, or a checkpoint that only ever needed a person with a phone.</p>
+<p>Taps become <strong>ordinary reads</strong> through the same upload endpoint the station laptops use, so results, splits, progress and the live board need no special case and cannot tell the difference.</p>
+<table>
+<tr><th>Piece</th><th>Where</th></tr>
+<tr><td>Page</td><td><code>/m/&lt;event-slug&gt;</code> — <code>centralapp/src/routes/m/[slug]/+page.svelte</code></td></tr>
+<tr><td>Rules</td><td><code>centralapp/src/lib/marshal.ts</code> (pure, unit-tested)</td></tr>
+<tr><td>Data in</td><td><code>GET /api/events/&lt;slug&gt;/board</code></td></tr>
+<tr><td>Taps out</td><td><code>POST /api/events/&lt;slug&gt;/reads</code> — the existing station endpoint</td></tr>
+</table>
+
+<h2 id="organizer">1 &middot; For the organizer</h2>
+<p>Open the event in admin &rarr; <strong>Connect</strong> tab. Under the station pairing code there is a <strong>Marshal tagging link</strong>:</p>
+<pre><code>http://&lt;server&gt;:&lt;port&gt;/m/&lt;event-slug&gt;?k=&lt;event api key&gt;</code></pre>
+<p><strong>Copy link</strong> puts it on the clipboard to send by Messenger, SMS or WhatsApp. <strong>Open</strong> launches it in a new tab to try yourself.</p>
+<blockquote class="warn"><p><strong>Anyone holding this link can write reads into your event.</strong> Give it only to your marshals. There is no per-marshal revocation: the link carries the event's own API key, the same one the station laptops hold, so rotating the key cuts off the laptops too.</p></blockquote>
+<p>The marshal's phone must reach the server — same venue Wi-Fi/LAN as the station laptops, or a public URL if you run one.</p>
+
+<h2 id="marshal">2 &middot; For the marshal</h2>
+
+<h3>Getting in</h3>
+<p>Tap the link. The key is taken from the address bar, stored on the phone, and the address bar is cleaned so the key is not left sitting in browser history or on screen. From then on plain <code>/m/&lt;event-slug&gt;</code> works — the phone remembers. If the link was mangled in transit, the page asks for the key and it can be pasted in.</p>
+
+<h3>Picking a station</h3>
+<p>A one-time grid of every station in the event. The choice is remembered, so a reload or a dropped connection goes straight back to work. <strong>Change</strong> in the header moves stations.</p>
+
+<h3>Tagging</h3>
+<p>Tabs across the top: <strong>category</strong>, then <strong>batch</strong> inside it. Below, one card per runner, always sorted by bib so a card never moves under a thumb mid-tap.</p>
+<p><strong>Tap a card to tag that runner.</strong> It turns grey at once and shows the time they were tagged, with an <strong>Undo</strong> button.</p>
+<p>The search box spans the <strong>whole event</strong>, not just the open tab: at a checkpoint you look up the bib in front of you, not the tab it belongs to.</p>
+
+<h3 id="colours">What the card colours mean</h3>
+<table>
+<tr><th style="width:230px">Card</th><th>Meaning</th></tr>
+<tr><td><span class="chip">Tap to tag</span></td><td>No sign of this runner yet.</td></tr>
+<tr><td><span class="chip coming">&#9654; Coming here</span></td><td>Read at the station <em>immediately before</em> this one. They are on their way to you.</td></tr>
+<tr><td><span class="chip missed">Missed here</span></td><td>Read at a station <em>after</em> this one but never here. Already past; this station never caught them.</td></tr>
+<tr><td><span class="chip tagged">5:30:39 PM &middot; Undo</span></td><td>Tagged here. The time shown is when they were tagged.</td></tr>
+</table>
+<blockquote class="note"><p>Nothing is ever blocked. A runner can be tapped whatever their state — a missed checkpoint is exactly the case manual tagging exists for.</p></blockquote>
+
+<h3 id="guns">Gun starts</h3>
+<p>When an organizer fires a gun in admin, every marshal phone finds out within about five seconds and says so three ways at once:</p>
+<div class="banner go"><span>&#9679; SOLO Batch 1 is go &mdash; gun 5:17:17 PM &middot; 00:00:07</span><span>&#10005;</span></div>
+<ol>
+<li>A <strong>green banner</strong> with the gun's wall-clock time, so it can be checked against the organizer, and <strong>HH:MM:SS</strong> counting up beside it.</li>
+<li>That batch's <strong>tab turns solid green</strong> and reads <span class="chip go">&#9679; Go</span>.</li>
+<li>A <strong>2.5-second alarm</strong> — five alternating pulses, not one blip, which is lost in the noise at a checkpoint.</li>
+</ol>
+<p>The alarm fires for <strong>every batch in the event</strong>, whatever tab is on screen, so a marshal parked on the wrong category still looks up. <strong>Sound on / Sound off</strong> in the header mutes it; the setting is remembered per event, and switching it on replays the alarm so the marshal hears exactly what to listen for.</p>
+
+<h3>When a wave is through</h3>
+<p>Once every runner in a batch has been read at <strong>this</strong> station, the banner does not vanish — it flips to a done notice and the tab shows <span class="chip done">&#10003;</span>:</p>
+<div class="banner done"><span>&#10003; SOLO Batch 2 done &mdash; all 25 through CP2, last 5:21:16 PM</span><span>&#10005;</span></div>
+<p>The notice <strong>stays until the marshal dismisses it with &#10005;</strong>, so nothing leaves the screen unseen. Dismissing is the acknowledgement, not a cleanup.</p>
+<blockquote class="note"><p>&ldquo;Done&rdquo; means done <strong>at your station</strong>, not finished the race. CP2 can show a batch done while the Finish is still waiting on them, so the same batch goes done at different times on different phones. That is the right reading for someone standing at a checkpoint.</p></blockquote>
+
+<h3 id="offline">Going offline</h3>
+<p>Taps are saved on the phone and sent when the signal returns, with a banner reading <code>Offline — taps are saved on this phone · N waiting</code>. Closing the browser, locking the phone or reloading does not lose them — the queue is on disk, not in memory. Each phone generates its own device id on first use, so two marshals at the same station never collide.</p>
+
+<h3>Undo</h3>
+<p><strong>Undo</strong> re-sends the same tag, time and device id marked as voided, which flips the original read rather than writing a second one. It survives a reload: the taps this phone made are kept for the whole event.</p>
+<blockquote class="warn"><p>Undo is <strong>per phone</strong>. A mis-tap made on phone A can only be undone on phone A or by an organizer in admin — it will not appear on phone B.</p></blockquote>
+
+<h2 id="how">3 &middot; How it works</h2>
+<pre><code>         admin fires gun                      marshal taps a card
+                │                                      │
+                ▼                                      ▼
+          batches.gun_ms                      queue on the phone
+                │                                      │ POST (every 4s, and at once)
+                │                                      ▼
+                │                          /api/events/&lt;slug&gt;/reads
+                │                                      │
+                │                                      ▼
+                └──────────────►  reads table  ◄───────┘
+                                       │
+                                       │ GET /api/events/&lt;slug&gt;/board (every 5s)
+                                       ▼
+                          marshal phone: banners, colours, counts</code></pre>
+<p>The page keeps <strong>no server state of its own</strong>. It polls <code>/board</code> and posts to the existing reads endpoint. Everything on screen is derived.</p>
+
+<h3 id="board">The <code>/board</code> call — one trip, everything needed</h3>
+<p>Returns <code>serverMs</code>, <code>stations</code>, <code>categories</code>, <code>batches</code>, <code>participants</code>, <code>tagged</code> and <code>courses</code>. <code>bigint</code> columns are cast to <code>float8</code> so they arrive as numbers.</p>
+<p><code>tagged</code> is one row per bib per station (<code>min(read_at_ms)</code>, voided rows excluded) — it drives &ldquo;already tagged here&rdquo; and the incoming/missed badges in a single query.</p>
+<p><code>courses</code> is each category's own route from <code>category_courses</code>. <strong>Without it a category that skips a station would have every one of its runners flagged red &ldquo;Missed here&rdquo; at that station</strong>, and its batches could never read as done.</p>
+<p>Auth is <code>Authorization: Bearer &lt;event api key&gt;</code> via <code>authEvent()</code>, the same guard the station endpoints use. A 401 clears the stored key and asks for a new link.</p>
+
+<h3 id="rules">The rules — <code>src/lib/marshal.ts</code></h3>
+<p>Pure functions: no DOM, no fetch, all unit-tested. The page holds no rules of its own.</p>
+<table>
+<tr><th style="width:38%">Function</th><th>What it decides</th></tr>
+<tr><td><code>seenBy(tagged)</code></td><td><code>bib → (station id → earliest read)</code> from the flat rows.</td></tr>
+<tr><td><code>runnerState(bib, seen, stationId, course)</code></td><td><code>tagged</code> | <code>incoming</code> | <code>missed</code> | <code>waiting</code>.</td></tr>
+<tr><td><code>batchState(batch, members, seen, stationId)</code></td><td><code>not-started</code> | <code>live</code> | <code>done</code>.</td></tr>
+<tr><td><code>taggedCount(members, seen, stationId)</code></td><td>The <code>n/m tagged</code> counter.</td></tr>
+<tr><td><code>gunsOf(batches)</code></td><td>A poll's gun times, to compare against the next.</td></tr>
+<tr><td><code>newlyStarted(prev, batches)</code></td><td>Which batches just fired. <code>prev === null</code> (first poll) announces nothing.</td></tr>
+<tr><td><code>applyLocal(seen, taps, stationId, stationName)</code></td><td>Lays this phone's taps over the board.</td></tr>
+<tr><td><code>lastThrough(members, seen, stationId)</code></td><td>When the last runner came through, or <code>null</code> while any are out.</td></tr>
+</table>
+<p><strong>A gun is announced only on a transition.</strong> <code>newlyStarted</code> compares each poll against the previous one and fires only for a batch whose gun went from unset to set. The first poll of a session announces nothing, so a marshal joining mid-race is not hit by one alarm per wave already running. A batch seen for the first time already started counts as not new, for the same reason. A corrected gun <em>time</em> does not re-announce — the wave already went.</p>
+<p><strong>Local taps win, until the server knows better.</strong> <code>applyLocal</code> shows a tap instantly instead of waiting for the next poll, but a board read <strong>newer</strong> than the local tap wins. Without that rule an Undo masks the runner for good: a marshal who undid a mis-tap would never see the genuine read that came later, and the wave could never complete.</p>
+<p><strong><code>done</code> requires everybody.</strong> <code>lastThrough</code> returns <code>null</code> while even one runner is unaccounted for, so a banner cannot claim a wave is through early.</p>
+
+<h3 id="timing">Timing, storage and intervals</h3>
+<ul>
+<li>Times are stamped with the <strong>server's</strong> clock: <code>/board</code> returns <code>serverMs</code>, the page keeps the offset, and every tap is stamped <code>Date.now() + offset</code>. A phone with a wrong clock cannot poison the results.</li>
+<li>A tap keeps the time it was made, even if it syncs an hour later from a dead spot.</li>
+<li>All times on screen are <strong>Philippine time</strong> (<code>Asia/Manila</code>), fixed rather than taken from the phone, so a handset left on another timezone cannot mislead.</li>
+</ul>
+<table>
+<tr><th style="width:230px"><code>localStorage</code> key</th><th>Holds</th></tr>
+<tr><td><code>nv.m.key.&lt;slug&gt;</code></td><td>The event API key.</td></tr>
+<tr><td><code>nv.m.station.&lt;slug&gt;</code></td><td>The chosen station id.</td></tr>
+<tr><td><code>nv.m.q.&lt;slug&gt;</code></td><td>Taps not yet accepted by the server.</td></tr>
+<tr><td><code>nv.m.mine.&lt;slug&gt;</code></td><td>Taps this phone made, so Undo survives a reload.</td></tr>
+<tr><td><code>nv.m.sound.&lt;slug&gt;</code></td><td>Alarm on/off.</td></tr>
+<tr><td><code>nv.m.device</code></td><td>This phone's device id (shared across events).</td></tr>
+</table>
+<table>
+<tr><th style="width:120px">Every</th><th>Does</th></tr>
+<tr><td>5s</td><td>Poll <code>/board</code>.</td></tr>
+<tr><td>4s</td><td>Flush the queue (also immediately on each tap and on coming back online).</td></tr>
+<tr><td>1s</td><td>Tick the clock and the banner's elapsed time.</td></tr>
+</table>
+<p>Polls carry a sequence number and a stale answer that a newer poll has overtaken is discarded — on a congested venue LAN, out-of-order responses would otherwise re-announce a gun or swallow one.</p>
+
+<h2 id="limits">4 &middot; Known limits</h2>
+<p>Each of these is a deliberate trade, commented in the code where it lives.</p>
+<ol class="lim">
+<li><strong>No per-marshal revocation.</strong> The link carries the event's API key. Rotating it cuts off the station laptops too. <em>Fix: separate marshal keys.</em></li>
+<li><strong>Undo is per phone.</strong> <code>nv.m.mine.&lt;slug&gt;</code> is local. A mis-tap on phone A cannot be undone from phone B; an organizer must do it in admin.</li>
+<li><strong>A tap writes a read with no confirmation.</strong> One stray touch is a real timing record. Undo is the only guard, and at a Start or Finish that record matters.</li>
+<li><strong><code>mine</code> grows for the whole event</strong> and is re-serialised on every tap. Microseconds at a few hundred taps; past a few thousand on one phone, write entries individually.</li>
+<li><strong>An Undo still masks a read made <em>before</em> the local tap</strong> — another device catching the same runner first. <em>Fix: give <code>/board</code> a device id per read.</em></li>
+<li><strong>An empty batch is never &ldquo;done&rdquo;</strong> — there is nobody to have come through, so its banner stays live.</li>
+<li><strong>Done banners are not capped.</strong> A marshal who never dismisses could stack a column of them at a busy Finish. <em>Fix: auto-drop after N minutes.</em></li>
+<li><strong>Audio needs a gesture first.</strong> A phone blocks sound until the page has been touched. In practice the marshal taps the key screen or the station picker before any gun fires, and the banner carries the message regardless.</li>
+<li><strong><code>Asia/Manila</code> is hardcoded.</strong> An event outside the Philippines would show wrong clocks until this becomes a per-event setting.</li>
+<li><strong><code>/board</code> sends every read for every bib at every station, every 5s, per phone.</strong> Nothing at 100 runners; at 1,000 runners &times; 4 stations &times; 10 marshals it is ~40k rows every 5 seconds off one laptop.</li>
+<li><strong><code>replaceState(...)</code> is deprecated</strong> in this SvelteKit version. It works; the modern form is <code>goto(url, { replace: true, shallow: true })</code>.</li>
+</ol>
+
+<h2 id="testing">5 &middot; Testing</h2>
+<p><code>centralapp/src/lib/marshal.test.ts</code> and <code>time.test.ts</code> cover the rules — runner states, batch states, gun transitions, local-tap merging, <code>lastThrough</code>, and the <code>HH:MM:SS</code> and Philippine-time formatters.</p>
+<pre><code>cd centralapp
+npx vitest run src/lib/marshal.test.ts src/lib/time.test.ts
+npx vitest run                 # whole suite
+npx svelte-check --threshold error</code></pre>
+<h3>Driving it end to end</h3>
+<p>With the dev server up and an event seeded:</p>
+<ol>
+<li>Open the marshal link on a second device or window; pick a station.</li>
+<li>In admin &rarr; <strong>Categories</strong>, fire a batch's gun. Within ~5s: alarm, green banner, green tab.</li>
+<li>Tap a few runners; confirm the rows land in <code>reads</code> with the right bib, tag and station.</li>
+<li>Tap <strong>Undo</strong>; confirm the <em>same</em> row flips to <code>voided = true</code> — not a second row.</li>
+<li>Reload; confirm Undo is still offered on taps made before the reload.</li>
+<li>Push the rest of the batch through that station; confirm the banner flips to <span class="chip done">&#10003; Done</span> and stays until dismissed.</li>
+<li>With a short course set on a category (<code>category_courses</code>), confirm its runners read &ldquo;Tap to tag&rdquo; at a skipped station and &ldquo;Missed here&rdquo; at one on their route.</li>
+</ol>
+
+<h2 id="trouble">6 &middot; Troubleshooting</h2>
+<table>
+<tr><th style="width:38%">Symptom</th><th>Cause</th></tr>
+<tr><td>Key screen although the link had <code>?k=</code></td><td>The page reads the key after hydration. Give it a second. If it persists, the key is wrong — ask for a fresh link.</td></tr>
+<tr><td>&ldquo;That link is no longer valid&rdquo;</td><td>The event key was rotated. The stored key is cleared; a new link is needed.</td></tr>
+<tr><td>No alarm, but the banner appears</td><td>Sound is off, or the phone has not been touched yet so audio is still blocked.</td></tr>
+<tr><td>Every runner of one category shows &ldquo;Missed here&rdquo;</td><td>That category's course is wrong in <strong>Route &amp; Map</strong>, or the marshal is at a station not on it.</td></tr>
+<tr><td>A batch never goes <span class="chip done">&#10003;</span></td><td>Someone in it has not been read here — check for a bib still white or orange. An empty batch never goes done.</td></tr>
+<tr><td>Counter says <code>n/m</code> with <code>m</code> unexpected</td><td>A search is active: the counter follows what is on screen.</td></tr>
+<tr><td>Tagged but not in results</td><td>Check the read is not <code>voided</code>, and that its station name matched a real station.</td></tr>
+</table>
+
+<footer>Race Central &middot; marshal tagging. The companion Markdown version is <code>docs/marshal-tagging.md</code>.</footer>
+</main>
+</div>
+</body>
+</html>
