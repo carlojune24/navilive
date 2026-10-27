@@ -62,6 +62,17 @@ describe('rank_by', () => {
 	it('elapsed: from the category gun (A first read 1000)', () => expect(r('elapsed')).toEqual(['101', '102']));
 });
 
+describe('finish override', () => {
+	// B really crossed first on the clock (before A's 601000) but their read landed late: the admin fixes it
+	const withOverride = (o: number | null) => computeResults(cats, ps.map((p) => (p.id === 2 ? { ...p, finishOverride: o } : p)), st, rs, 'gun')[0].rows;
+	it('replaces the finish read and re-ranks', () => {
+		const rows = withOverride(600000);
+		expect(rows.map((x) => x.bib)).toEqual(['102', '101']);
+		expect(rows[0]).toMatchObject({ finishAt: 600000, overridden: true });
+	});
+	it('no override leaves the ranking alone', () => expect(withOverride(null).map((x) => x.bib)).toEqual(['101', '102']));
+});
+
 describe('underway (the clock can no longer be started)', () => {
 	it('only checkpoint or finish reads count, start-station reads do not', () => {
 		const only = (f: (r: R) => boolean) => computeResults(cats, ps, st, rs.filter(f), 'gun')[0].underway;

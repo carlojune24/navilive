@@ -17,7 +17,7 @@ export async function loadResults(slug: string, mode: Mode, opts: { includeHidde
 	if (!ev) return null;
 	const [cats, ps, stations, reads, last, courseRows, batches] = await Promise.all([
 		q('select id, name, gun_ms, rank_by from categories where event_id=$1 and archived_at is null order by name', [ev.id]),
-		q("select p.id, p.bib, p.name, p.category_id, p.batch_id, p.gender, p.age, p.extra, (select (extract(epoch from ph.updated_at)*1000)::bigint from participant_photos ph where ph.participant_id=p.id) as photo from participants p where p.event_id=$1", [ev.id]),
+		q('select p.id, p.bib, p.name, p.category_id, p.batch_id, p.gender, p.age, p.extra, (select (extract(epoch from ph.updated_at)*1000)::bigint from participant_photos ph where ph.participant_id=p.id) as photo, (select o.finish_ms::float8 from finish_overrides o where o.participant_id=p.id) as "finishOverride" from participants p where p.event_id=$1', [ev.id]),
 		q('select id, name, kind, ord from stations where event_id=$1', [ev.id]),
 		// a read belongs to the participant whose bib it carries, else whose tag matches
 		q(

@@ -15,6 +15,8 @@
 	import { invalidateAll } from '$app/navigation';
 	import { ago } from '$lib/time';
 	import { fmt } from '$lib/results';
+	import { shrinkImage } from '$lib/image';
+	import { deserialize } from '$app/forms';
 	import { monitor } from '$lib/monitor.svelte';
 	import { bestLink, clockWarning, linkState, type Link } from '$lib/heartbeat';
 
@@ -22,6 +24,46 @@
 	// the left menu picks the section with ?tab=...
 	const sections = ['participants', 'categories', 'stations', 'route', 'progress', 'results', 'awards', 'reads', 'data', 'connect'];
 	const titles: Record<string, string> = { participants: 'Participants', categories: 'Categories', stations: 'Stations', route: 'Route & map', progress: 'Progress', results: 'Results', awards: 'Awards', reads: 'Reads', data: 'Station data', connect: 'Connect stations' };
+	// Results page: the finish-time override panel for one runner
+	let ovr = $state<{ bib: string; name: string; at: string } | null>(null);
+	let ovrBy = $state(typeof localStorage === 'undefined' ? '' : (localStorage.getItem('nv.admin.name') ?? ''));
+	let ovrReason = $state('');
+	let ovrFile = $state<File | null>(null);
+	let ovrErr = $state('');
+	let ovrBusy = $state(false);
+	const overrideOf = (bib: string) => data.overrides.find((o) => o.bib === bib);
+	function openOverride(r: { bib: string; name: string; finishAt: number | null }) {
+		ovr = { bib: r.bib, name: r.name, at: r.finishAt ? new Date(r.finishAt - new Date(r.finishAt).getTimezoneOffset() * 60000).toISOString().slice(0, 23) : '' };
+		ovrReason = '';
+		ovrFile = null;
+		ovrErr = '';
+	}
+	async function saveOverride() {
+		if (!ovr) return;
+		const ms = new Date(ovr.at).getTime();
+		if (!Number.isFinite(ms)) return (ovrErr = 'Enter the finish time.');
+		if (!ovrFile) return (ovrErr = 'Attach the proof photo.');
+		ovrBusy = true;
+		ovrErr = '';
+		try {
+			const fd = new FormData();
+			fd.set('bib', ovr.bib);
+			fd.set('finish_ms', String(ms));
+			fd.set('reason', ovrReason);
+			fd.set('by', ovrBy);
+			fd.set('photo', await shrinkImage(ovrFile), 'proof.jpg');
+			const r = await fetch('?tab=results&/setFinishOverride', { method: 'POST', body: fd, headers: { 'x-sveltekit-action': 'true' } });
+			const res = deserialize(await r.text());
+			if (res.type !== 'success') return (ovrErr = (res.type === 'failure' && (res.data as { error?: string })?.error) || 'Could not save the override.');
+			try { localStorage.setItem('nv.admin.name', ovrBy.trim()); } catch { /* private mode */ }
+			ovr = null;
+			await invalidateAll();
+		} catch {
+			ovrErr = 'That file could not be read as a photo.';
+		} finally {
+			ovrBusy = false;
+		}
+	}
 	let progCat = $state<number | null>(null); // Progress page: which category is shown
 	let catSel = $state<number | null>(null); // Categories page: which category is shown
 	const catShown = $derived(data.categories.find((c) => c.id === catSel) ?? data.categories[0]);
@@ -557,6 +599,21 @@
 					{/each}
 				</div>
 			{/if}
+			{#if isRes && ovr}
+				<div class="space-y-3 border-2 border-border bg-card p-4 print:hidden" role="dialog" aria-label="Override finish time">
+					<h3 class="font-display text-2xl font-black uppercase">Override finish — {ovr.bib} {ovr.name}</h3>
+					<p class="text-muted-foreground">Replaces this runner's finish time in the ranking. The original reads are kept. Needs a reason and a photo as proof.</p>
+					{#if ovrErr}<p class="font-bold text-destructive" role="alert">{ovrErr}</p>{/if}
+					<label class="block font-bold uppercase">Finish time (your local time)<input type="datetime-local" step="0.001" bind:value={ovr.at} class="mt-1 block h-12 w-full border-2 border-border bg-background px-3" /></label>
+					<label class="block font-bold uppercase">Reason<input bind:value={ovrReason} maxlength="300" placeholder="e.g. Read delayed; photo shows runner first" class="mt-1 block h-12 w-full border-2 border-border bg-background px-3 font-normal normal-case" /></label>
+					<label class="block font-bold uppercase">Your name<input bind:value={ovrBy} maxlength="80" class="mt-1 block h-12 w-full border-2 border-border bg-background px-3 font-normal normal-case" /></label>
+					<label class="block font-bold uppercase">Proof photo<input type="file" accept="image/*" onchange={(e) => (ovrFile = e.currentTarget.files?.[0] ?? null)} class="mt-1 block" /></label>
+					<div class="flex gap-2">
+						<Button class="h-11 font-bold uppercase" disabled={ovrBusy} onclick={saveOverride}>{ovrBusy ? 'Saving…' : 'Save override'}</Button>
+						<Button variant="outline" class="h-11 border-2 font-bold uppercase" onclick={() => (ovr = null)}>Cancel</Button>
+					</div>
+				</div>
+			{/if}
 			<h2 class="hidden font-display text-4xl font-black uppercase print:block">{data.event.name} · {isRes ? 'Results' : 'Award list'}</h2>
 			{#each resShown as c, i (c.id)}
 				<section class="border-2 border-border bg-card print:break-inside-avoid-page {i ? 'print:break-before-page' : ''}">
@@ -574,7 +631,7 @@
 					{#if isRes}
 						<Table.Root>
 							<Table.Header>
-								<Table.Row>{#each ['Rank', 'Bib', 'Name', 'Gender', 'Age', 'Time'] as h}<Table.Head class="font-bold tracking-wide uppercase">{h}</Table.Head>{/each}</Table.Row>
+								<Table.Row>{#each ['Rank', 'Bib', 'Name', 'Gender', 'Age', 'Time', ''] as h}<Table.Head class="font-bold tracking-wide uppercase">{h}</Table.Head>{/each}</Table.Row>
 							</Table.Header>
 							<Table.Body>
 								{#each c.rows as r (r.bib)}
@@ -585,9 +642,19 @@
 										<Table.Cell>{r.gender || '—'}</Table.Cell>
 										<Table.Cell>{r.age ?? '—'}</Table.Cell>
 										<Table.Cell class="font-bold tabular-nums">{fmt(r.time!)}</Table.Cell>
+										<Table.Cell class="print:hidden">
+											{#if r.overridden}
+												{@const o = overrideOf(r.bib)}
+												<span class="mr-2 border-2 border-destructive px-1 text-sm font-bold text-destructive uppercase" title={o ? `${o.reason} — ${o.by}` : ''}>Override</span>
+												<a class="mr-2 underline" href="/admin/{data.event.slug}/override-photo/{r.bib}" target="_blank" rel="noopener">Photo</a>
+												<form method="POST" action="?tab={tab}&/clearFinishOverride" use:enhance class="inline"><input type="hidden" name="bib" value={r.bib} /><button class="underline">Remove</button></form>
+											{:else}
+												<button type="button" class="underline" onclick={() => openOverride(r)}>Override</button>
+											{/if}
+										</Table.Cell>
 									</Table.Row>
 								{:else}
-									<Table.Row><Table.Cell colspan={6} class="p-4 text-muted-foreground">No finishers yet.</Table.Cell></Table.Row>
+									<Table.Row><Table.Cell colspan={7} class="p-4 text-muted-foreground">No finishers yet.</Table.Cell></Table.Row>
 								{/each}
 							</Table.Body>
 						</Table.Root>

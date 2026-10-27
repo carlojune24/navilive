@@ -73,7 +73,7 @@ export const load = async ({ params, url }) => {
 	// the ranked results and award podiums for the Results and Award list pages (print / export)
 	const resultsData = full.map((c) => ({
 		id: c.id, name: c.name, rankBy: c.rankBy, total: c.total, noStart: c.noStart,
-		rows: c.rows.map((r) => ({ rank: r.rank, bib: r.bib, name: r.name, gender: r.gender, age: r.age, time: r.time })),
+		rows: c.rows.map((r) => ({ rank: r.rank, bib: r.bib, name: r.name, gender: r.gender, age: r.age, time: r.time, finishAt: r.finishAt, overridden: r.overridden })),
 		awards: c.awards
 	}));
 	// who has reached which station, for the Progress page
@@ -86,7 +86,12 @@ export const load = async ({ params, url }) => {
 	for (const r of await q<{ id: number; gpx: unknown; gpx_name: string | null }>('select id, gpx, gpx_name from categories where event_id=$1', [e.id])) routes[r.id] = { track: isTrack(r.gpx) ? r.gpx : null, name: r.gpx_name ?? '' };
 	const stationKm: Record<number, Record<number, number>> = {};
 	for (const r of await q<{ category_id: number; station_id: number; km: number }>('select k.category_id, k.station_id, k.km::float8 as km from category_station_km k join categories c on c.id=k.category_id where c.event_id=$1', [e.id])) (stationKm[r.category_id] ??= {})[r.station_id] = r.km;
-	return { routes, stationKm, event: { id: e.id, name: e.name, slug: e.slug }, awards, extraFields, awardPreview, resultsData, progressData, courses, apiKey: e.api_key, port, addresses: lanAddresses(), publicUrl: PUBLIC_URL ?? null, stationData, laptops, categories, archived, batches, participants, stations, reads };
+	const overrides = await q<{ bib: string; finish_ms: number; reason: string; by: string; created_ms: number }>(
+		`select p.bib, o.finish_ms::float8 as finish_ms, o.reason, o.by, (extract(epoch from o.created_at)*1000)::float8 as created_ms
+		 from finish_overrides o join participants p on p.id=o.participant_id where p.event_id=$1`,
+		[e.id]
+	);
+	return { overrides, routes, stationKm, event: { id: e.id, name: e.name, slug: e.slug }, awards, extraFields, awardPreview, resultsData, progressData, courses, apiKey: e.api_key, port, addresses: lanAddresses(), publicUrl: PUBLIC_URL ?? null, stationData, laptops, categories, archived, batches, participants, stations, reads };
 };
 
 export const actions = {
@@ -499,6 +504,41 @@ export const actions = {
 		);
 		if (!res.length) return fail(400, { error: 'That exact read already exists' });
 		return { manualAdded: true };
+	},
+	// Fix a finish that landed a few ms late. The finish reads are kept; this time simply replaces them in the ranking.
+	// The browser sends the epoch ms itself, so the server's timezone never enters into it.
+	setFinishOverride: async ({ request, params }) => {
+		const e = await ev(params.slug);
+		const f = await request.formData();
+		const bib = String(f.get('bib') ?? '').trim();
+		const at = Number(f.get('finish_ms'));
+		const reason = String(f.get('reason') ?? '').trim().slice(0, 300);
+		const by = String(f.get('by') ?? '').trim().slice(0, 80);
+		const file = f.get('photo');
+		if (!Number.isFinite(at) || at <= 0) return fail(400, { error: 'Finish time is not valid.' });
+		if (!reason) return fail(400, { error: 'Give a reason for the override.' });
+		if (!by) return fail(400, { error: 'Enter your name.' });
+		if (!(file instanceof File) || !file.size) return fail(400, { error: 'Attach the proof photo.' });
+		if (file.size > MAX_PHOTO_BYTES) return fail(400, { error: 'That photo is too large.' });
+		const bytes = new Uint8Array(await file.arrayBuffer());
+		const mime = sniffImage(bytes);
+		if (!mime) return fail(400, { error: 'Use a JPG, PNG or WebP photo.' });
+		const [p] = await q<{ id: number }>('select id from participants where event_id=$1 and bib=$2', [e.id, bib]);
+		if (!p) return fail(404, { error: `No participant with bib ${bib}` });
+		await q(
+			`insert into finish_overrides(participant_id, finish_ms, reason, by, mime, data) values($1,$2,$3,$4,$5,$6)
+			 on conflict(participant_id) do update set finish_ms=excluded.finish_ms, reason=excluded.reason, by=excluded.by, mime=excluded.mime, data=excluded.data, created_at=now()`,
+			[p.id, Math.round(at), reason, by, mime, Buffer.from(bytes)]
+		);
+		await q("select pg_notify('reads', $1)", [String(e.id)]); // open boards re-rank
+		return { overrideSaved: bib };
+	},
+	clearFinishOverride: async ({ request, params }) => {
+		const e = await ev(params.slug);
+		const bib = String((await request.formData()).get('bib') ?? '');
+		await q('delete from finish_overrides where participant_id in (select id from participants where event_id=$1 and bib=$2)', [e.id, bib]);
+		await q("select pg_notify('reads', $1)", [String(e.id)]);
+		return { overrideCleared: bib };
 	},
 	// For wiping test data before the event. Station apps keep their own copies and would upload them again.
 	clearReads: async ({ request, params }) => {

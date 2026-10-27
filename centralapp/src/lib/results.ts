@@ -17,6 +17,7 @@ export type P = {
 	age?: number | null;
 	extra?: Record<string, string>;
 	photo?: number | null; // when the winner photo was last changed (ms), null = none
+	finishOverride?: number | null; // admin-corrected finish clock time (epoch ms); replaces the finish reads
 };
 export type S = { id: number; name: string; kind: string; ord: number };
 export type R = { pid: number; station_id: number; read_at_ms: number };
@@ -32,6 +33,7 @@ export type Row = {
 	age: number | null;
 	extra: Record<string, string>;
 	photo: number | null;
+	overridden?: boolean;
 };
 export type Winner = { place: number; bib: string; name: string; time: number; detail?: string; photo?: number | null };
 export type Award = { key: string; name: string; winners: Winner[] };
@@ -162,7 +164,8 @@ export function computeResults(
 				if (start === null && (byP.get(p.id) ?? []).some((r) => kind.get(r.station_id)?.kind === 'finish')) noStart++;
 				const mine = (byP.get(p.id) ?? []).filter((r) => start !== null && r.read_at_ms > start);
 				const fin = mine.filter((r) => kind.get(r.station_id)?.kind === 'finish').map((r) => r.read_at_ms);
-				const finishAt = fin.length ? Math.min(...fin) : null;
+				// an override needs a usable start, same as a real finish read
+				const finishAt = start === null ? null : p.finishOverride ?? (fin.length ? Math.min(...fin) : null);
 				// first valid read per station: the start station's own read counts, everything else must come after the start
 				const first = new Map<number, number>();
 				for (const r of byP.get(p.id) ?? []) {
@@ -187,7 +190,8 @@ export function computeResults(
 					gender: p.gender ?? '',
 					age: p.age ?? null,
 					extra: p.extra ?? {},
-					photo: p.photo ?? null
+					photo: p.photo ?? null,
+					overridden: p.finishOverride != null
 				};
 			});
 			const rankBy = 'rank_by' in cat ? cat.rank_by : undefined;

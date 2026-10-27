@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { deserialize } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
+	import { shrinkImage as shrink } from '$lib/image';
 	import { Button } from '$lib/components/ui/button/index.js';
 
 	// Small control: shows the current photo, uploads a new one (shrunk in the browser first), or removes it.
@@ -9,17 +10,6 @@
 	let busy = $state(false);
 	let error = $state('');
 	let input: HTMLInputElement;
-
-	/** Longest side 640 px, JPEG: a phone photo of 4 MB becomes about 60 KB, well under the server limit. */
-	async function shrink(file: File): Promise<Blob> {
-		const bmp = await createImageBitmap(file); // also applies the camera's rotation
-		const scale = Math.min(1, 640 / Math.max(bmp.width, bmp.height));
-		const c = document.createElement('canvas');
-		c.width = Math.max(1, Math.round(bmp.width * scale));
-		c.height = Math.max(1, Math.round(bmp.height * scale));
-		c.getContext('2d')!.drawImage(bmp, 0, 0, c.width, c.height);
-		return new Promise((ok, no) => c.toBlob((b) => (b ? ok(b) : no(new Error('x'))), 'image/jpeg', 0.85));
-	}
 
 	async function send(action: string, body: FormData) {
 		const r = await fetch(`?tab=${tab}&/${action}`, { method: 'POST', body, headers: { 'x-sveltekit-action': 'true' } });
