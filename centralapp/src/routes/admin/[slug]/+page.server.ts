@@ -5,6 +5,7 @@ import { lanAddresses } from '$lib/server/network';
 import { parseBibs, parseCsv, normGender, parseAge } from '$lib/import';
 import { parseBrackets } from '$lib/results';
 import { parseConfig } from '$lib/awardcfg';
+import { LEVELS } from '$lib/release';
 import { MAX_PHOTO_BYTES, sniffImage } from '$lib/image';
 import { loadResults } from '$lib/server/live';
 import { importBibs, importRows } from '$lib/server/participants';
@@ -42,9 +43,9 @@ const id = async (request: Request) => Number((await request.formData()).get('id
 export const load = async ({ params, url }) => {
 	const e = await ev(params.slug);
 	const [categories, archived, batches, participants, stations, reads] = await Promise.all([
-		q('select c.id, c.name, c.gun_ms, c.rank_by, count(p.id)::int as n from categories c left join participants p on p.category_id=c.id where c.event_id=$1 and c.archived_at is null group by c.id order by c.name', [e.id]),
+		q('select c.id, c.name, c.gun_ms, c.rank_by, c.release, count(p.id)::int as n from categories c left join participants p on p.category_id=c.id where c.event_id=$1 and c.archived_at is null group by c.id order by c.name', [e.id]),
 		q('select id, name from categories where event_id=$1 and archived_at is not null order by name', [e.id]),
-		q('select b.id, b.category_id, b.name, b.gun_ms, count(p.id)::int as n from batches b join categories c on c.id=b.category_id left join participants p on p.batch_id=b.id where c.event_id=$1 group by b.id order by b.name', [e.id]),
+		q('select b.id, b.category_id, b.name, b.gun_ms, b.release, count(p.id)::int as n from batches b join categories c on c.id=b.category_id left join participants p on p.batch_id=b.id where c.event_id=$1 group by b.id order by b.name', [e.id]),
 		q('select p.id, p.bib, p.name, p.tag, p.gender, p.age, p.category_id, p.batch_id, c.name as category, (select (extract(epoch from ph.updated_at)*1000)::bigint from participant_photos ph where ph.participant_id=p.id) as photo from participants p left join categories c on c.id=p.category_id where p.event_id=$1 order by p.bib', [e.id]),
 		q('select id, name, kind, ord, services from stations where event_id=$1 order by ord, id', [e.id]),
 		q(
@@ -504,6 +505,25 @@ export const actions = {
 		);
 		if (!res.length) return fail(400, { error: 'That exact read already exists' });
 		return { manualAdded: true };
+	},
+	// What the public live board shows. A batch may also 'inherit' its category's level; 'all' sets every category and clears the batch overrides.
+	setRelease: async ({ request, params }) => {
+		const e = await ev(params.slug);
+		const f = await request.formData();
+		const scope = String(f.get('scope'));
+		const level = String(f.get('level'));
+		const id = Number(f.get('id'));
+		if (!(LEVELS as string[]).includes(level) && !(scope === 'batch' && level === 'inherit')) return fail(400, { error: 'Unknown level.' });
+		if (scope === 'all') {
+			await q('update categories set release=$2 where event_id=$1', [e.id, level]);
+			await q('update batches set release=null where category_id in (select id from categories where event_id=$1)', [e.id]);
+		} else if (scope === 'category') {
+			await q('update categories set release=$3 where id=$1 and event_id=$2', [id, e.id, level]);
+		} else if (scope === 'batch') {
+			await q('update batches set release=$3 where id=$1 and category_id in (select id from categories where event_id=$2)', [id, e.id, level === 'inherit' ? null : level]);
+		} else return fail(400, { error: 'Unknown scope.' });
+		await q("select pg_notify('reads', $1)", [String(e.id)]); // open boards refetch
+		return { releaseSet: level };
 	},
 	// Fix a finish that landed a few ms late. The finish reads are kept; this time simply replaces them in the ranking.
 	// The browser sends the epoch ms itself, so the server's timezone never enters into it.

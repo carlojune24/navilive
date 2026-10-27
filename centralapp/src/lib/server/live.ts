@@ -4,6 +4,7 @@ import { q } from './db';
 import { MATCH } from './stationdata';
 import { computeResults, type Mode } from '$lib/results';
 import { parseConfig, resolveOptions } from '$lib/awardcfg';
+import { applyRelease, type Level } from '$lib/release';
 
 /**
  * `includeHiddenAwards` is for the organizer (admin pages, exports). The public board gets no awards while the
@@ -17,7 +18,7 @@ export async function loadResults(slug: string, mode: Mode, opts: { includeHidde
 	if (!ev) return null;
 	const [cats, ps, stations, reads, last, courseRows, batches] = await Promise.all([
 		q('select id, name, gun_ms, rank_by from categories where event_id=$1 and archived_at is null order by name', [ev.id]),
-		q('select p.id, p.bib, p.name, p.category_id, p.batch_id, p.gender, p.age, p.extra, (select (extract(epoch from ph.updated_at)*1000)::bigint from participant_photos ph where ph.participant_id=p.id) as photo, (select o.finish_ms::float8 from finish_overrides o where o.participant_id=p.id) as "finishOverride" from participants p where p.event_id=$1', [ev.id]),
+		q('select p.id, p.bib, p.name, p.category_id, p.batch_id, p.gender, p.age, p.extra, (select (extract(epoch from ph.updated_at)*1000)::bigint from participant_photos ph where ph.participant_id=p.id) as photo, (select o.finish_ms::float8 from finish_overrides o where o.participant_id=p.id) as "finishOverride", coalesce(b.release, c.release) as release from participants p left join batches b on b.id=p.batch_id left join categories c on c.id=p.category_id where p.event_id=$1', [ev.id]),
 		q('select id, name, kind, ord from stations where event_id=$1', [ev.id]),
 		// a read belongs to the participant whose bib it carries, else whose tag matches
 		q(
@@ -35,7 +36,12 @@ export async function loadResults(slug: string, mode: Mode, opts: { includeHidde
 	const { cfg } = parseConfig(ev.award_config); // always usable; bad stored values fall back to defaults
 	const defaults = { places: ev.award_places, brackets: ev.age_brackets, exclusive: ev.award_exclusive };
 	const hidden = !cfg.reveal && !opts.includeHiddenAwards;
-	const categories = computeResults(cats, ps, stations, reads, mode, (id) => resolveOptions(defaults, cfg, id), (id) => courses.get(id), batches);
+	let categories = computeResults(cats, ps, stations, reads, mode, (id) => resolveOptions(defaults, cfg, id), (id) => courses.get(id), batches);
+	// the public only sees what the organizer has released; the admin and exports see everything
+	if (!opts.includeHiddenAwards) {
+		const level = new Map(ps.map((p) => [p.bib as string, (p.release ?? 'checkpoints') as Level]));
+		categories = applyRelease(categories, (bib) => level.get(bib) ?? 'checkpoints');
+	}
 	return {
 		event: ev.name,
 		mode,

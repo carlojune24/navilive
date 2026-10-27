@@ -64,6 +64,10 @@
 			ovrBusy = false;
 		}
 	}
+	const levelName = { hidden: 'Hidden', checkpoints: 'Checkpoints only', released: 'Released' } as const;
+	const confirmRelease = ({ formData, cancel }: { formData: FormData; cancel: () => void }) => {
+		if (formData.get('level') === 'released' && !confirm('Show these results on the public live board?')) cancel();
+	};
 	let progCat = $state<number | null>(null); // Progress page: which category is shown
 	let catSel = $state<number | null>(null); // Categories page: which category is shown
 	const catShown = $derived(data.categories.find((c) => c.id === catSel) ?? data.categories[0]);
@@ -558,6 +562,29 @@
 		{#if tab === 'progress'}
 		<div class="space-y-5">
 			{@render overridePanel()}
+			{#if form?.releaseSet}<p class="border-2 border-border bg-card p-3 font-bold">Live board updated: {form.releaseSet === 'inherit' ? 'following the category' : levelName[form.releaseSet as keyof typeof levelName]}.</p>{/if}
+			<div class="space-y-2 border-2 border-border bg-card p-4">
+				<h2 class="font-display text-2xl font-black uppercase">What the public live board shows</h2>
+				{#snippet releaseButtons(scope: string, id: number, current: string | null)}
+					<form method="POST" action="?tab={tab}&/setRelease" use:enhance={confirmRelease} class="flex flex-wrap gap-2">
+						<input type="hidden" name="scope" value={scope} />
+						<input type="hidden" name="id" value={id} />
+						{#each ['hidden', 'checkpoints', 'released'] as lv}
+							<button type="submit" name="level" value={lv} class="h-10 border-2 border-border px-3 font-bold uppercase {current === lv ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-accent'}">{levelName[lv as keyof typeof levelName]}</button>
+						{/each}
+						{#if scope === 'batch'}<button type="submit" name="level" value="inherit" class="h-10 border-2 border-border px-3 font-bold uppercase {current === null ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-accent'}">Follow category</button>{/if}
+					</form>
+				{/snippet}
+				<p class="text-muted-foreground">Finishes stay off the live board until you release them. <b>Checkpoints only</b> keeps live checkpoint progress but holds back ranks, times and awards. <b>Hidden</b> removes the group completely.</p>
+				<div><span class="mr-2 font-bold uppercase">All categories</span>{@render releaseButtons('all', 0, null)}</div>
+				{#if progShown}
+					{@const cat = data.categories.find((c) => c.id === progShown.id)}
+					{#if cat}<div><span class="mr-2 font-bold uppercase">{cat.name}</span>{@render releaseButtons('category', cat.id, cat.release)}</div>{/if}
+					{#each progBatches as b (b.id)}
+						<div><span class="mr-2 font-bold uppercase">Batch {b.name}</span>{@render releaseButtons('batch', b.id, b.release)}</div>
+					{/each}
+				{/if}
+			</div>
 			<p class="text-muted-foreground">Live: who has reached which station in each category. Times are the race time at that station (the start shows the clock time). A runner who has a later read but none at an earlier station on their course is flagged, so the missed read can be added on the Reads page. Their result is kept.</p>
 			{#if data.progressData.length > 1}
 				<div class="flex flex-wrap gap-2" role="tablist" aria-label="Category">

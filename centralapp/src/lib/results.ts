@@ -50,6 +50,7 @@ export type Cat = {
 	gunMs: number | null; // when the category's clock started (null = not started yet)
 	gunManual: boolean; // true when the organizer pressed Start on the live board
 	rankBy: 'elapsed' | 'chip' | 'finish'; // how the order was decided
+	held?: number; // finishers kept off the public board until the organizer releases them
 	badStart: number; // finish read or override is at or before the start time, so no time: the start was probably corrected wrongly
 	noStart: number; // crossed the finish but cannot be timed: no start read and no gun for their group
 	underway: boolean; // someone already has a counted checkpoint or finish read, so the clock can no longer be started

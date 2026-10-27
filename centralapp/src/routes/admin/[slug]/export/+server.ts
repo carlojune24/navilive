@@ -48,7 +48,7 @@ export const GET = async ({ params, url }) => {
 		for (const c of res.categories) for (const a of c.awards) for (const w of a.winners) rows.push([c.name, a.name, w.place, w.bib, w.name, fmt(w.time), w.time, mode === 'gun' && c.gunMs ? new Date(c.gunMs).toISOString() : '']);
 		name = `winners-${mode === 'gun' ? 'gun-time' : 'own-start'}`;
 	} else {
-		const res = await loadResults(params.slug, mode);
+		const res = await loadResults(params.slug, mode, { includeHiddenAwards: true });
 		if (!res) error(404, 'Event not found');
 		const [ev] = await q<{ award_places: number; age_brackets: string; award_exclusive: boolean; award_config: unknown }>(
 			'select award_places, age_brackets, award_exclusive, award_config from events where slug=$1',

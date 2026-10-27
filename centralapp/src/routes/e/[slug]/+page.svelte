@@ -213,7 +213,7 @@
 				<h2 class="font-display text-4xl font-black uppercase md:text-6xl">{cat.name}</h2>
 				<div class="flex flex-wrap items-center justify-end gap-x-4 gap-y-1">
 					{#if clockMs !== null}<span class="font-display text-4xl leading-none font-black tabular-nums md:text-6xl" title="Race clock, from the gun start">{fmt(clockMs)}</span>{/if}
-					<p class="text-lg font-bold tracking-wide uppercase">{cat.rows.length} finished · {cat.started} started · {cat.total} registered</p>
+					<p class="text-lg font-bold tracking-wide uppercase">{cat.rows.length} finished{cat.held ? ` (+${cat.held} being verified)` : ''} · {cat.started} started · {cat.total} registered</p>
 				</div>
 			</div>
 			<p class="border-b-2 border-border/15 bg-card px-4 py-2 text-lg">
@@ -299,7 +299,7 @@
 						{/if}
 					</li>
 				{:else}
-					<li class="p-10 text-2xl text-muted-foreground">No finishers yet in {cat.name}. {cat.started} runner{cat.started === 1 ? '' : 's'} on course.</li>
+					<li class="p-10 text-2xl text-muted-foreground">{cat.held ? `${cat.held} finisher${cat.held === 1 ? '' : 's'} in ${cat.name}: results are being verified.` : `No finishers yet in ${cat.name}.`} {cat.started} runner{cat.started === 1 ? '' : 's'} on course.</li>
 				{/each}
 			</ol>
 			{/key}
