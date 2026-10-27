@@ -72,7 +72,7 @@ export const load = async ({ params, url }) => {
 	const awardPreview = full.map((c) => ({ id: c.id, name: c.name, finished: c.rows.length, total: c.total, awards: c.awards }));
 	// the ranked results and award podiums for the Results and Award list pages (print / export)
 	const resultsData = full.map((c) => ({
-		id: c.id, name: c.name, rankBy: c.rankBy, total: c.total, noStart: c.noStart,
+		id: c.id, name: c.name, rankBy: c.rankBy, total: c.total, noStart: c.noStart, badStart: c.badStart,
 		rows: c.rows.map((r) => ({ rank: r.rank, bib: r.bib, name: r.name, gender: r.gender, age: r.age, time: r.time, finishAt: r.finishAt, overridden: r.overridden })),
 		awards: c.awards
 	}));

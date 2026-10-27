@@ -106,3 +106,11 @@ export function lastThrough(members: Person[], seen: Map<string, Map<number, num
 	}
 	return last;
 }
+
+/**
+ * The time a marshal tap is recorded under: the server's own clock when the tap arrives promptly.
+ * A tap that waited in an offline queue (or claims to be from the future) keeps the phone's corrected
+ * time, since the server cannot know when it really happened. shortcut: fixed 30 s window, widen it if
+ * marshals on slow links see their taps keep the phone time.
+ */
+export const stampFor = (clientMs: number, serverNow: number) => (serverNow - clientMs <= 30_000 && clientMs - serverNow <= 60_000 ? serverNow : clientMs);

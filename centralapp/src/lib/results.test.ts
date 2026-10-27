@@ -73,6 +73,21 @@ describe('finish override', () => {
 	it('no override leaves the ranking alone', () => expect(withOverride(null).map((x) => x.bib)).toEqual(['101', '102']));
 });
 
+describe('start corrected after the reads', () => {
+	// the gun is moved to 700000: after every read of A (checkpoint 301000, finish 601000)
+	const late = () => computeResults([{ id: 10, name: '10K', gun_ms: 700000 }], ps, st, rs.filter((r) => r.station_id !== 1), 'gun')[0];
+	it('keeps the checkpoint and finish reads visible', () => {
+		const a = late().progress.find((x) => x.bib === '101')!;
+		expect(a.at.filter((t) => t !== null)).toEqual([301000, 601000]);
+		expect(a.state).toBe('finished');
+	});
+	it('flags the finish-before-start runners instead of dropping them silently', () => {
+		const c = late();
+		expect(c.rows).toEqual([]);
+		expect(c.badStart).toBe(2);
+	});
+});
+
 describe('underway (the clock can no longer be started)', () => {
 	it('only checkpoint or finish reads count, start-station reads do not', () => {
 		const only = (f: (r: R) => boolean) => computeResults(cats, ps, st, rs.filter(f), 'gun')[0].underway;

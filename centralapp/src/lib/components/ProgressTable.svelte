@@ -2,8 +2,8 @@
 	import { fmt, type CourseStation, type ProgressRow } from '$lib/results';
 
 	// Who has reached which station. `flags` (admin) also shows runners who skipped a station, so a missed read can be fixed.
-	type Props = { course: CourseStation[]; rows: ProgressRow[]; flags?: boolean; big?: boolean; pageSize?: number };
-	let { course, rows, flags = false, big = false, pageSize = 0 }: Props = $props(); // pageSize 0 = show every row
+	type Props = { course: CourseStation[]; rows: ProgressRow[]; flags?: boolean; big?: boolean; pageSize?: number; onOverride?: (r: ProgressRow) => void; overridden?: (bib: string) => boolean };
+	let { course, rows, flags = false, big = false, pageSize = 0, onOverride, overridden }: Props = $props(); // pageSize 0 = show every row
 
 	let page = $state(0);
 	const pages = $derived(pageSize ? Math.max(1, Math.ceil(rows.length / pageSize)) : 1);
@@ -42,6 +42,7 @@
 				{/each}
 				<th class="px-3 py-2 font-bold tracking-wide whitespace-nowrap uppercase {head}">Total time</th>
 				{#if flags}<th class="px-3 py-2 font-bold tracking-wide uppercase {head}">Check</th>{/if}
+				{#if onOverride}<th class="px-3 py-2 {head}"></th>{/if}
 			</tr>
 		</thead>
 		<tbody>
@@ -58,6 +59,7 @@
 						<td class="px-3 py-1 font-display whitespace-nowrap {big ? 'text-3xl' : 'text-xl'} font-black" title={r.at[i] !== null ? `Read at ${clock(r.at[i]!)} (station clock)` : ''}>
 								{v ?? '—'}
 								<!-- the read time as the station recorded it; the first line is the race time since the start -->
+								{#if flags && r.by[i]}<span class="block font-sans text-xs font-bold normal-case" title="Tagged by">{r.by[i] === 'MANUAL-CENTRAL' ? 'Manual' : r.by[i]}</span>{/if}
 								{#if v !== null && r.at[i] !== null && (!isStart(i) ? r.start !== null : r.at[i] !== r.start)}<span class="block font-sans {big ? 'text-base' : 'text-xs'} font-normal text-muted-foreground">{isStart(i) ? 'read ' : ''}{clock(r.at[i]!)}</span>{/if}
 							</td>
 					{/each}
@@ -67,9 +69,10 @@
 							{#if r.missed.length}<span class="inline-block border-2 border-destructive px-1 font-bold text-destructive uppercase">Missed: {r.missed.join(', ')}</span>{/if}
 						</td>
 					{/if}
+					{#if onOverride}<td class="px-3 py-1 {text}"><button type="button" class="underline" onclick={() => onOverride(r)}>{overridden?.(r.bib) ? 'Override ✓' : 'Override'}</button></td>{/if}
 				</tr>
 			{:else}
-				<tr><td colspan={course.length + 6} class="p-6 text-muted-foreground">No runners in this category yet.</td></tr>
+				<tr><td colspan={course.length + 7} class="p-6 text-muted-foreground">No runners in this category yet.</td></tr>
 			{/each}
 		</tbody>
 	</table>

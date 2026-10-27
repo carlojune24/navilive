@@ -199,7 +199,7 @@
 			const res = await fetch(`/api/events/${slug}/reads`, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
-				body: JSON.stringify({ reads: batch.map((r) => ({ tag: r.tag, bib: r.bib, station: r.station, read_at_ms: r.read_at_ms, device_id: r.by || deviceId, voided: r.voided })) })
+				body: JSON.stringify({ reads: batch.map((r) => ({ tag: r.tag, bib: r.bib, station: r.station, read_at_ms: r.read_at_ms, device_id: r.by || deviceId, voided: r.voided, server_time: true })) })
 			});
 			if (res.status === 401) return badKey('That link is no longer valid. Ask the organizer for a new one.');
 			if (!res.ok) {
@@ -258,6 +258,45 @@
 		localStorage.setItem(K_NAME, n);
 	}
 
+	// one refetch at a time: a burst of pings while one is in flight collapses into a single trailing refetch
+	let busy = false;
+	let again = false;
+	async function refresh() {
+		if (busy) return void (again = true);
+		busy = true;
+		do {
+			again = false;
+			await load();
+		} while (again);
+		busy = false;
+	}
+
+	// Server-sent events: the server pings on every change and the board is refetched at once. The slow poll
+	// below stays as a safety net; this loop reconnects by itself after a drop (a dead phone signal, a deploy).
+	async function listen(signal: AbortSignal) {
+		while (!signal.aborted) {
+			if (key) {
+				try {
+					const res = await fetch(`/api/events/${slug}/board/stream`, { headers: { authorization: `Bearer ${key}` }, signal });
+					if (res.status === 401) badKey('That link is no longer valid. Ask the organizer for a new one.');
+					else if (res.ok && res.body) {
+						void refresh(); // whatever changed while we were disconnected
+						const rd = res.body.getReader();
+						const dec = new TextDecoder();
+						for (;;) {
+							const { done, value } = await rd.read();
+							if (done) break;
+							if (dec.decode(value, { stream: true }).includes('data: update')) void refresh();
+						}
+					}
+				} catch {
+					/* dropped: retry below */
+				}
+			}
+			await new Promise((r) => setTimeout(r, 2000));
+		}
+	}
+
 	function useKey(k: string) {
 		const trimmed = k.trim();
 		if (!trimmed) return;
@@ -293,7 +332,9 @@
 		online = navigator.onLine;
 		void load();
 		void flush();
-		const poll = setInterval(load, 5000);
+		const live = new AbortController();
+		void listen(live.signal);
+		const poll = setInterval(refresh, 30000);
 		const push = setInterval(flush, 4000);
 		const tick = setInterval(() => (now = Date.now() + offset), 1000);
 		const up = () => {
@@ -304,6 +345,7 @@
 		addEventListener('online', up);
 		addEventListener('offline', down);
 		return () => {
+			live.abort();
 			clearInterval(poll);
 			clearInterval(push);
 			clearInterval(tick);

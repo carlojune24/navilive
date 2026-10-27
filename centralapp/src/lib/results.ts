@@ -20,7 +20,7 @@ export type P = {
 	finishOverride?: number | null; // admin-corrected finish clock time (epoch ms); replaces the finish reads
 };
 export type S = { id: number; name: string; kind: string; ord: number };
-export type R = { pid: number; station_id: number; read_at_ms: number };
+export type R = { pid: number; station_id: number; read_at_ms: number; device_id?: string };
 export type Split = { station: string; elapsed: number };
 export type Row = {
 	rank: number | null;
@@ -50,6 +50,7 @@ export type Cat = {
 	gunMs: number | null; // when the category's clock started (null = not started yet)
 	gunManual: boolean; // true when the organizer pressed Start on the live board
 	rankBy: 'elapsed' | 'chip' | 'finish'; // how the order was decided
+	badStart: number; // finish read or override is at or before the start time, so no time: the start was probably corrected wrongly
 	noStart: number; // crossed the finish but cannot be timed: no start read and no gun for their group
 	underway: boolean; // someone already has a counted checkpoint or finish read, so the clock can no longer be started
 };
@@ -156,26 +157,33 @@ export function computeResults(
 			const members = ps.filter((p) => (p.category_id ?? 0) === cat.id);
 			const course = resolveCourse(stations, courseFor(cat.id));
 			const inCourse = new Set(course.map((s) => s.id));
-			const track = new Map<string, Pick<Person, 'start' | 'first'>>(); // per runner, for the progress view
+			const track = new Map<string, Pick<Person, 'start' | 'first' | 'by'>>(); // per runner, for the progress view
 			let noStart = 0;
+			let badStart = 0;
+			const crossed = new Set<string>(); // has a finish read (or override), whatever the start says
 			const rows: Row[] = members.map((p) => {
 				const start = mode === 'own' || cat.rank_by === 'chip' ? startOf(p) : gun.get(groupOf(p)) ?? null;
 				// a finisher with no usable start is dropped from the ranking silently, so count them for the warning
 				if (start === null && (byP.get(p.id) ?? []).some((r) => kind.get(r.station_id)?.kind === 'finish')) noStart++;
-				const mine = (byP.get(p.id) ?? []).filter((r) => start !== null && r.read_at_ms > start);
-				const fin = mine.filter((r) => kind.get(r.station_id)?.kind === 'finish').map((r) => r.read_at_ms);
+				const all = byP.get(p.id) ?? [];
+				// reads are never dropped for being before the start: a start corrected to a later time must not hide them
+				const fin = all.filter((r) => kind.get(r.station_id)?.kind === 'finish').map((r) => r.read_at_ms);
+				const rawFinish = p.finishOverride ?? (fin.length ? Math.min(...fin) : null);
+				if (rawFinish !== null) crossed.add(p.bib);
 				// an override needs a usable start, same as a real finish read
-				const finishAt = start === null ? null : p.finishOverride ?? (fin.length ? Math.min(...fin) : null);
-				// first valid read per station: the start station's own read counts, everything else must come after the start
+				const timed = start !== null && rawFinish !== null && rawFinish > start;
+				if (start !== null && rawFinish !== null && !timed) badStart++;
+				const finishAt = timed ? rawFinish : null;
 				const first = new Map<number, number>();
-				for (const r of byP.get(p.id) ?? []) {
-					if (kind.get(r.station_id)?.kind !== 'start' && start !== null && r.read_at_ms <= start) continue;
+				const by = new Map<number, string>();
+				for (const r of all) {
+					if (r.read_at_ms < (first.get(r.station_id) ?? Infinity) && r.device_id) by.set(r.station_id, r.device_id);
 					first.set(r.station_id, Math.min(first.get(r.station_id) ?? Infinity, r.read_at_ms));
 				}
-				track.set(p.bib, { start, first });
+				track.set(p.bib, { start, first, by });
 				const seen = new Map<number, number>();
-				for (const r of mine)
-					if (kind.get(r.station_id)?.kind === 'checkpoint' && inCourse.has(r.station_id)) seen.set(r.station_id, Math.min(seen.get(r.station_id) ?? Infinity, r.read_at_ms));
+				for (const r of all)
+					if (start !== null && r.read_at_ms > start && kind.get(r.station_id)?.kind === 'checkpoint' && inCourse.has(r.station_id)) seen.set(r.station_id, Math.min(seen.get(r.station_id) ?? Infinity, r.read_at_ms));
 				const splits = [...seen]
 					.map(([id, at]) => ({ station: kind.get(id)!.name, ord: kind.get(id)!.ord, elapsed: at - start! }))
 					.sort((a, b) => a.ord - b.ord)
@@ -204,9 +212,9 @@ export function computeResults(
 			const timeOf = new Map(done.map((r) => [r.bib, r.time]));
 			const progress = buildProgress(
 				course,
-				members.map((p) => ({ bib: p.bib, name: p.name, start: track.get(p.bib)!.start, first: track.get(p.bib)!.first, finished: rankOf.has(p.bib), rank: rankOf.get(p.bib) ?? null, time: timeOf.get(p.bib) ?? null }))
+				members.map((p) => ({ bib: p.bib, name: p.name, start: track.get(p.bib)!.start, first: track.get(p.bib)!.first, by: track.get(p.bib)!.by, finished: rankOf.has(p.bib) || crossed.has(p.bib), rank: rankOf.get(p.bib) ?? null, time: timeOf.get(p.bib) ?? null }))
 			);
-			return { id: cat.id, name: cat.name, rows: done, started, total: members.length, awards: buildAwards(done, o), places: o.places, course, progress, noStart, gunMs: gun.get(`c${cat.id}`) ?? null, gunManual: manual.has(`c${cat.id}`), rankBy: (rankBy === 'chip' || rankBy === 'finish' ? rankBy : 'elapsed') as 'elapsed' | 'chip' | 'finish', underway: members.some((p) => (byP.get(p.id) ?? []).some((r) => kind.get(r.station_id)?.kind !== 'start')) };
+			return { id: cat.id, name: cat.name, rows: done, started, total: members.length, awards: buildAwards(done, o), places: o.places, course, progress, noStart, badStart, gunMs: gun.get(`c${cat.id}`) ?? null, gunManual: manual.has(`c${cat.id}`), rankBy: (rankBy === 'chip' || rankBy === 'finish' ? rankBy : 'elapsed') as 'elapsed' | 'chip' | 'finish', underway: members.some((p) => (byP.get(p.id) ?? []).some((r) => kind.get(r.station_id)?.kind !== 'start')) };
 		})
 		.filter((c) => c.total > 0);
 }

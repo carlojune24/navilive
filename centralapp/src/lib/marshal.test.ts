@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyLocal, batchState, gunsOf, lastThrough, newlyStarted, runnerState, seenBy, taggedCount, type Batch, type Person, type Tag } from './marshal';
+import { applyLocal, batchState, gunsOf, lastThrough, newlyStarted, runnerState, seenBy, stampFor, taggedCount, type Batch, type Person, type Tag } from './marshal';
 
 const course = [1, 2, 3]; // Start, CP1, Finish
 const p = (bib: string, batch_id: number | null = 7): Person => ({ bib, name: `R${bib}`, tag: '', category_id: 10, batch_id });
@@ -138,4 +138,10 @@ describe('lastThrough', () => {
 		const seen = seenBy(members.map((m) => ({ bib: m.bib, station_id: 3, at: 500 })));
 		expect(lastThrough(members, seen, 2)).toBe(null);
 	});
+});
+
+describe('stampFor', () => {
+	it('uses the server clock for a prompt tap', () => expect(stampFor(100_000, 101_500)).toBe(101_500));
+	it('keeps the phone time for a tap that waited offline', () => expect(stampFor(100_000, 200_000)).toBe(100_000));
+	it('keeps the phone time when it claims to be far in the future', () => expect(stampFor(300_000, 100_000)).toBe(300_000));
 });

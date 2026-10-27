@@ -171,6 +171,9 @@
 		formData.set('ms', String(t));
 		return ({ update }: { update: (o?: { reset?: boolean }) => Promise<void> }) => update({ reset: false }); // keep the typed time in the field
 	};
+	const confirmReset = (label: string) => ({ cancel }: { cancel: () => void }) => {
+		if (!confirm(`Reset the start of ${label}? It goes back to Not started. Reads are kept.`)) cancel();
+	};
 	const kindColor = (k: string) => (k === 'start' ? 'var(--start)' : k === 'finish' ? 'var(--finish)' : 'var(--checkpoint)');
 
 	const addr = $derived(data.addresses[addrIdx]);
@@ -197,7 +200,7 @@
 {#snippet gunControls(kind: 'category' | 'batch', id: number, gun: number | string | null, label: string)}
 	<span class="text-sm font-bold uppercase {gun ? '' : 'text-muted-foreground'}">{gun ? `Started ${whenText(gun)}` : 'Not started'}</span>
 	{#if gun}
-		<form method="POST" action="?tab={tab}&/clearGun" use:enhance>
+		<form method="POST" action="?tab={tab}&/clearGun" use:enhance={confirmReset(label)}>
 			<input type="hidden" name="kind" value={kind} />
 			<input type="hidden" name="id" value={id} />
 			<Button type="submit" variant="outline" size="sm" class={small} title="Back to not started, so Start can be pressed again" aria-label="Reset start of {label}">Reset</Button>
@@ -215,6 +218,24 @@
 		<input type="datetime-local" step="1" name="at" value={localInput(gun)} class="h-9 border-2 border-border bg-card px-2 text-sm" aria-label="Start time for {label}" required />
 		<Button type="submit" variant="outline" size="sm" class={small}>{gun ? 'Correct time' : 'Set time'}</Button>
 	</form>
+{/snippet}
+
+{#snippet overridePanel()}
+{#if ovr}
+				<div class="space-y-3 border-2 border-border bg-card p-4 print:hidden" role="dialog" aria-label="Override finish time">
+					<h3 class="font-display text-2xl font-black uppercase">Override finish — {ovr.bib} {ovr.name}</h3>
+					<p class="text-muted-foreground">Replaces this runner's finish time in the ranking. The original reads are kept. Needs a reason and a photo as proof.</p>
+					{#if ovrErr}<p class="font-bold text-destructive" role="alert">{ovrErr}</p>{/if}
+					<label class="block font-bold uppercase">Finish time (your local time)<input type="datetime-local" step="0.001" bind:value={ovr.at} class="mt-1 block h-12 w-full border-2 border-border bg-background px-3" /></label>
+					<label class="block font-bold uppercase">Reason<input bind:value={ovrReason} maxlength="300" placeholder="e.g. Read delayed; photo shows runner first" class="mt-1 block h-12 w-full border-2 border-border bg-background px-3 font-normal normal-case" /></label>
+					<label class="block font-bold uppercase">Your name<input bind:value={ovrBy} maxlength="80" class="mt-1 block h-12 w-full border-2 border-border bg-background px-3 font-normal normal-case" /></label>
+					<label class="block font-bold uppercase">Proof photo<input type="file" accept="image/*" onchange={(e) => (ovrFile = e.currentTarget.files?.[0] ?? null)} class="mt-1 block" /></label>
+					<div class="flex gap-2">
+						<Button class="h-11 font-bold uppercase" disabled={ovrBusy} onclick={saveOverride}>{ovrBusy ? 'Saving…' : 'Save override'}</Button>
+						<Button variant="outline" class="h-11 border-2 font-bold uppercase" onclick={() => (ovr = null)}>Cancel</Button>
+					</div>
+				</div>
+			{/if}
 {/snippet}
 
 <main class="space-y-5 p-5 print:p-0">
@@ -536,6 +557,7 @@
 		<!-- PROGRESS: who has reached which station -->
 		{#if tab === 'progress'}
 		<div class="space-y-5">
+			{@render overridePanel()}
 			<p class="text-muted-foreground">Live: who has reached which station in each category. Times are the race time at that station (the start shows the clock time). A runner who has a later read but none at an earlier station on their course is flagged, so the missed read can be added on the Reads page. Their result is kept.</p>
 			{#if data.progressData.length > 1}
 				<div class="flex flex-wrap gap-2" role="tablist" aria-label="Category">
@@ -558,7 +580,7 @@
 						<span>{c.name}</span>
 						<span class="text-base font-normal tracking-wide">{progRows.filter((r) => r.state === 'finished').length} finished · {progRows.filter((r) => r.start !== null).length} started · {progRows.length} registered{flagged ? ` · ${flagged} to check` : ''}</span>
 					</h3>
-					{#key `${c.id}-${progBatch}`}<ProgressTable course={c.course} rows={progRows} flags pageSize={20} />{/key}
+					{#key `${c.id}-${progBatch}`}<ProgressTable course={c.course} rows={progRows} flags pageSize={20} onOverride={(r) => openOverride({ bib: r.bib, name: r.name, finishAt: null })} overridden={(bib) => !!overrideOf(bib)} />{/key}
 				</section>
 				<!-- per checkpoint: who has passed and who has not yet (the start counts a gun start too, like the table) -->
 				<section class="border-2 border-border bg-card">
@@ -587,6 +609,7 @@
 		{#if tab === 'results' || (tab === 'awards' && awardsView === 'list')}
 		{@const isRes = tab === 'results'}
 		<div class="space-y-5">
+			{#if isRes}{@render overridePanel()}{/if}
 			<div class="flex flex-wrap items-center gap-2 print:hidden">
 				<a class="inline-flex h-11 items-center border-2 border-border bg-card px-5 font-bold uppercase hover:bg-accent" href="/admin/{data.event.slug}/export?kind={isRes ? 'results' : 'winners'}&mode=gun" download>Download CSV</a>
 				{#if resSel === 'all'}<Button class="h-11 font-bold uppercase" onclick={() => window.print()}>Print all</Button>{/if}
@@ -597,21 +620,6 @@
 					{#each [...data.resultsData.map((c) => [c.id, c.name] as const), ['all', 'All'] as const] as [id, label]}
 						<button type="button" role="tab" aria-selected={id === (resSel ?? data.resultsData[0]?.id)} onclick={() => (resSel = id)} class="h-11 border-2 border-border px-4 font-display text-2xl font-black uppercase {id === (resSel ?? data.resultsData[0]?.id) ? 'bg-primary text-primary-foreground' : 'bg-card'}">{label}</button>
 					{/each}
-				</div>
-			{/if}
-			{#if isRes && ovr}
-				<div class="space-y-3 border-2 border-border bg-card p-4 print:hidden" role="dialog" aria-label="Override finish time">
-					<h3 class="font-display text-2xl font-black uppercase">Override finish — {ovr.bib} {ovr.name}</h3>
-					<p class="text-muted-foreground">Replaces this runner's finish time in the ranking. The original reads are kept. Needs a reason and a photo as proof.</p>
-					{#if ovrErr}<p class="font-bold text-destructive" role="alert">{ovrErr}</p>{/if}
-					<label class="block font-bold uppercase">Finish time (your local time)<input type="datetime-local" step="0.001" bind:value={ovr.at} class="mt-1 block h-12 w-full border-2 border-border bg-background px-3" /></label>
-					<label class="block font-bold uppercase">Reason<input bind:value={ovrReason} maxlength="300" placeholder="e.g. Read delayed; photo shows runner first" class="mt-1 block h-12 w-full border-2 border-border bg-background px-3 font-normal normal-case" /></label>
-					<label class="block font-bold uppercase">Your name<input bind:value={ovrBy} maxlength="80" class="mt-1 block h-12 w-full border-2 border-border bg-background px-3 font-normal normal-case" /></label>
-					<label class="block font-bold uppercase">Proof photo<input type="file" accept="image/*" onchange={(e) => (ovrFile = e.currentTarget.files?.[0] ?? null)} class="mt-1 block" /></label>
-					<div class="flex gap-2">
-						<Button class="h-11 font-bold uppercase" disabled={ovrBusy} onclick={saveOverride}>{ovrBusy ? 'Saving…' : 'Save override'}</Button>
-						<Button variant="outline" class="h-11 border-2 font-bold uppercase" onclick={() => (ovr = null)}>Cancel</Button>
-					</div>
 				</div>
 			{/if}
 			<h2 class="hidden font-display text-4xl font-black uppercase print:block">{data.event.name} · {isRes ? 'Results' : 'Award list'}</h2>
@@ -625,6 +633,9 @@
 						</span>
 					</h3>
 					<p class="border-b-2 border-border/15 px-4 py-2 text-muted-foreground">Ranked by: {c.rankBy === 'finish' ? 'first across the finish line' : c.rankBy === 'chip' ? "shortest time from each runner's own start read" : 'shortest time from the category or batch start'}</p>
+					{#if c.badStart}
+						<p class="border-b-2 border-border/15 px-4 py-2 font-bold text-destructive" role="alert">{c.badStart} {c.badStart === 1 ? 'runner has' : 'runners have'} a finish at or before the start time, so no time — the start was probably set too late. Correct it on the Categories page; no reads were lost.</p>
+					{/if}
 					{#if c.noStart}
 						<p class="border-b-2 border-border/15 px-4 py-2 font-bold text-destructive" role="alert">{c.noStart} {c.noStart === 1 ? 'runner has' : 'runners have'} crossed the finish but {c.noStart === 1 ? 'has' : 'have'} no start time — press Start for this category, or add their start read on the Reads page.</p>
 					{/if}
@@ -684,6 +695,7 @@
 		<!-- READS: manual corrections -->
 		{#if tab === 'reads'}
 		<div class="space-y-4">
+			{@render overridePanel()}
 			<form method="POST" action="?tab={tab}&/manualRead" use:enhance class="space-y-3 border-2 border-border bg-card p-4">
 				<h2 class="font-display text-3xl font-black uppercase">Add a read by hand</h2>
 				<p class="text-muted-foreground">For a missed tag, or to test the board before the event. Pick a runner and a station; leave the time empty to use now.</p>
@@ -718,7 +730,8 @@
 								<Table.Cell>{r.name || (r.bib ? '—' : r.tag)}</Table.Cell>
 								<Table.Cell>{r.device_id === 'MANUAL-CENTRAL' ? 'Manual' : r.device_id || '—'}</Table.Cell>
 								<Table.Cell class="text-right">
-									<form method="POST" action="?tab={tab}&/voidRead" use:enhance>
+									{#if r.bib}<button type="button" class="mr-2 underline" onclick={() => openOverride({ bib: r.bib, name: r.name ?? '', finishAt: null })}>{overrideOf(r.bib) ? 'Override ✓' : 'Override'}</button>{/if}
+									<form method="POST" action="?tab={tab}&/voidRead" use:enhance class="inline">
 										<input type="hidden" name="id" value={r.id} />
 										<input type="hidden" name="voided" value={r.voided ? 'false' : 'true'} />
 										<Button type="submit" variant="outline" size="sm" class={small}>{r.voided ? 'Restore' : 'Void'}</Button>
