@@ -10,7 +10,8 @@ export const POST = async ({ params, request }) => {
 	const reads: InRead[] | null = Array.isArray(body) ? body : Array.isArray(body?.reads) ? body.reads : null;
 	if (!reads || reads.length > MAX_BATCH) error(400, `Body must be an array (or {reads:[]}) of at most ${MAX_BATCH}`);
 	for (const r of reads)
-		if (typeof r.tag !== 'string' || !r.tag || !Number.isFinite(r.read_at_ms)) error(400, 'Each read needs tag (string) and read_at_ms (number)');
+		if (!r || typeof r !== 'object' || typeof r.tag !== 'string' || !r.tag || !Number.isSafeInteger(r.read_at_ms))
+			error(400, 'Each read needs tag (string) and read_at_ms (whole number of milliseconds)');
 
 	return json(await insertReads(e.id, reads));
 };

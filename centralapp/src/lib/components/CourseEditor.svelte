@@ -21,7 +21,8 @@
 		if (i + d < 0 || i + d >= a.length) return;
 		[a[i], a[i + d]] = [a[i + d], a[i]];
 	};
-	const payload = $derived(JSON.stringify(Object.fromEntries(categories.map((c) => [String(c.id), ids[c.id] ?? []]))));
+	// a station deleted on this page stays in `ids` (state is not re-read from props), so only send stations that still exist
+	const payload = $derived(JSON.stringify(Object.fromEntries(categories.map((c) => [String(c.id), (ids[c.id] ?? []).filter((id) => byId.has(id))]))));
 </script>
 
 <form method="POST" action="?tab=stations&/saveCourses" use:enhance class="space-y-4">

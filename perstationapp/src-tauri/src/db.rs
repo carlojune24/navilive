@@ -274,10 +274,12 @@ pub fn manual_read(conn: &mut Connection, tag_or_bib: &str, station_id: i64, at_
         .unwrap_or(key);
     let seq: i64 = tx.query_row("SELECT COALESCE(MAX(seq),0)+1 FROM reads WHERE device_id='MANUAL'", [], |r| r.get(0))?;
     let now = now_ms();
+    // every laptop's manual reads share device MANUAL; the laptop id in boot_id keeps them apart on the central app and in merges
+    let boot = format!("manual-{}", laptop_identity(&tx).0);
     tx.execute(
         "INSERT INTO reads(device_id,boot_id,seq,tag,raw,read_at_ms,received_at_ms,time_exact,station_id,note,test)
-         VALUES('MANUAL','manual',?1,?2,'',?3,?4,1,?5,'manual entry',?6)",
-        params![seq, normalize_tag(&tag), at_ms, now, station_id, test_mode(&tx)],
+         VALUES('MANUAL',?7,?1,?2,'',?3,?4,1,?5,'manual entry',?6)",
+        params![seq, normalize_tag(&tag), at_ms, now, station_id, test_mode(&tx), boot],
     )?;
     let id = tx.last_insert_rowid();
     tx.commit()?;
@@ -819,12 +821,13 @@ pub struct PushRead {
     pub station: String,
     pub read_at_ms: i64,
     pub voided: bool,
+    pub src: String, // "<boot_id>:<seq>", the read's identity, so the central app never merges two different reads
 }
 
 /// Reads the central app has not confirmed. Reads with no station wait: the central app ranks by station name.
 pub fn unsynced_reads(conn: &Connection, limit: i64) -> Res<Vec<PushRead>> {
     let mut st = conn.prepare(
-        "SELECT r.id, r.device_id, r.tag, COALESCE(rt.bib, rb.bib), s.name, r.read_at_ms, r.voided
+        "SELECT r.id, r.device_id, r.tag, COALESCE(rt.bib, rb.bib), s.name, r.read_at_ms, r.voided, r.boot_id || ':' || r.seq
          FROM reads r JOIN stations s ON s.id=r.station_id
          LEFT JOIN runners rt ON rt.tag=r.tag
          LEFT JOIN runners rb ON rb.bib=r.tag AND rt.id IS NULL
@@ -839,6 +842,7 @@ pub fn unsynced_reads(conn: &Connection, limit: i64) -> Res<Vec<PushRead>> {
             station: r.get(4)?,
             read_at_ms: r.get(5)?,
             voided: r.get::<_, i64>(6)? != 0,
+            src: r.get(7)?,
         })
     })?;
     rows.collect()
@@ -857,8 +861,9 @@ pub fn pending_count(conn: &Connection) -> Res<i64> {
     conn.query_row("SELECT COUNT(*) FROM reads r JOIN stations s ON s.id=r.station_id WHERE r.synced=0 AND r.test=0", [],|r| r.get(0))
 }
 
-/// Central roster is authoritative for bib/name/category, but a blank cell there never erases what is set here
-/// (e.g. a tag mapped locally before the central app knew it).
+/// Central roster is authoritative for bib/name/category/tag, but a blank cell there never erases what is set here
+/// (e.g. a tag mapped locally before the central app knew it). A tag the central app gives to this bib is taken off any other
+/// runner here: a bib renumbered or a tag moved on the central app must not leave reads credited to the old bib.
 pub fn upsert_central_runner(conn: &Connection, bib: &str, name: &str, category: &str, tag: &str) -> Result<(), String> {
     let bib = bib.trim();
     if bib.is_empty() {
@@ -866,6 +871,9 @@ pub fn upsert_central_runner(conn: &Connection, bib: &str, name: &str, category:
     }
     let tag = normalize_tag(tag);
     let tag: Option<String> = if tag.is_empty() { None } else { Some(tag) };
+    if let Some(t) = &tag {
+        conn.execute("UPDATE runners SET tag=NULL WHERE tag=?1 AND bib<>?2", params![t, bib]).map_err(|e| e.to_string())?;
+    }
     conn.execute(
         "INSERT INTO runners(bib,name,category,tag) VALUES(?1,?2,?3,?4)
          ON CONFLICT(bib) DO UPDATE SET

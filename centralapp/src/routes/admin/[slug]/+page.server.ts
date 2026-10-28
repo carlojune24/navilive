@@ -472,7 +472,11 @@ export const actions = {
 	},
 	deleteStation: async ({ request, params }) => {
 		const e = await ev(params.slug);
-		await q('delete from stations where id=$1 and event_id=$2', [await id(request), e.id]);
+		const sid = await id(request);
+		// mid-race this would take the station's reads out of every result and the station out of every course for good
+		const [{ n }] = await q<{ n: number }>('select count(*)::int n from reads where station_id=$1 and event_id=$2', [sid, e.id]);
+		if (n) return fail(400, { error: `This station has ${n} reads, so it cannot be deleted. Clear the reads first (Reads page) if they were only a test.` });
+		await q('delete from stations where id=$1 and event_id=$2', [sid, e.id]);
 	},
 	rotateKey: async ({ params }) => {
 		const e = await ev(params.slug);
@@ -483,7 +487,8 @@ export const actions = {
 	voidRead: async ({ request, params }) => {
 		const e = await ev(params.slug);
 		const f = await request.formData();
-		await q('update reads set voided=$3 where id=$1 and event_id=$2', [Number(f.get('id')), e.id, f.get('voided') === 'true']);
+		// voided_by_admin: the station's own value no longer overwrites this decision when it uploads the read again
+		await q('update reads set voided=$3, voided_by_admin=true where id=$1 and event_id=$2', [Number(f.get('id')), e.id, f.get('voided') === 'true']);
 	},
 	manualRead: async ({ request, params }) => {
 		const e = await ev(params.slug);

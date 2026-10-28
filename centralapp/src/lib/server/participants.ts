@@ -2,6 +2,10 @@ import { pool } from './db';
 import type { Row } from '$lib/import';
 
 /** Bibs only into one category: new bibs inserted; existing bibs keep name/tag and just move category. A gender, if given, applies to all. */
+// a batch belongs to one category: a runner moved to another category by an import leaves it, or they would be timed
+// from the old category's wave
+const KEEP_BATCH = `case when excluded.category_id is null or excluded.category_id = participants.category_id then participants.batch_id end`;
+
 export async function importBibs(eventId: number, categoryId: number | null, bibs: string[], gender = '') {
 	const c = await pool.connect();
 	try {
@@ -11,6 +15,7 @@ export async function importBibs(eventId: number, categoryId: number | null, bib
 				`insert into participants(event_id, category_id, bib, gender) values($1,$2,$3,$4)
 				 on conflict(event_id, bib) do update set
 				   category_id = coalesce(excluded.category_id, participants.category_id),
+				   batch_id = ${KEEP_BATCH},
 				   gender = coalesce(nullif(excluded.gender,''), participants.gender)`,
 				[eventId, categoryId, bib, gender]
 			);
@@ -48,6 +53,7 @@ export async function importRows(eventId: number, rows: Row[], defaultCategoryId
 				`insert into participants(event_id, category_id, bib, name, tag, gender, age, extra) values($1,$2,$3,$4,$5,$6,$7,$8)
 				 on conflict(event_id, bib) do update set
 				   category_id = coalesce(excluded.category_id, participants.category_id),
+				   batch_id = ${KEEP_BATCH},
 				   name = coalesce(nullif(excluded.name,''), participants.name),
 				   tag = coalesce(nullif(excluded.tag,''), participants.tag),
 				   gender = coalesce(nullif(excluded.gender,''), participants.gender),

@@ -375,7 +375,26 @@ fn central_roster_never_erases_local_data() {
         .unwrap();
     assert_eq!(r, ("Local Name".into(), "5K".into(), "TAGLOCAL".into()));
     upsert_central_runner(&c, "8", "Bo", "10K", "tag8").unwrap();
-    assert!(upsert_central_runner(&c, "9", "Cy", "10K", "TAG8").unwrap_err().contains("tag"));
+    // the central app moved the tag to 9: it follows, and 8 keeps its other data
+    upsert_central_runner(&c, "9", "Cy", "10K", "TAG8").unwrap();
+    let tags: Vec<(String, Option<String>)> =
+        c.prepare("SELECT bib,tag FROM runners WHERE bib IN ('8','9') ORDER BY bib").unwrap().query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().map(|r| r.unwrap()).collect();
+    assert_eq!(tags, vec![("8".into(), None), ("9".into(), Some("TAG8".into()))]);
+}
+
+/// BUG-5 in centralapp/e2e/BUGS.md.
+#[test]
+fn central_bib_renumber_moves_the_tag_to_the_new_bib() {
+    let mut c = mem();
+    let sid = with_station(&mut c, "Finish");
+    upsert_central_runner(&c, "101", "Ana", "5K", "T101").unwrap();
+    // the director renumbers 101 -> 111 on the central app; the next roster pull says 111 has T101 and 101 is gone
+    upsert_central_runner(&c, "111", "Ana", "5K", "T101").unwrap();
+    ingest(&mut c, &batch("b", &[(1, "T101")]), "ip", 1_000).unwrap();
+    let up = unsynced_reads(&c, 10).unwrap();
+    assert_eq!(up[0].station, c.query_row("SELECT name FROM stations WHERE id=?1", [sid], |r| r.get::<_, String>(0)).unwrap());
+    // central trusts the bib it is sent and does not fall back to the tag, so bib 101 here means the read matches nobody
+    assert_eq!(up[0].bib.as_deref(), Some("111"));
 }
 
 // ---- heartbeat
@@ -438,4 +457,16 @@ fn test_reads_are_isolated_unsynced_and_deleted_on_going_live() {
     let rows = query_reads(&c, &ReadFilter::default()).unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["tag"], "LIVE1");
+}
+
+/// BUG-3 in centralapp/e2e/BUGS.md: the upload carries each read's own identity, and manual reads are unique per laptop.
+#[test]
+fn uploads_carry_the_read_identity_and_manual_reads_name_the_laptop() {
+    let mut c = mem();
+    let sid = with_station(&mut c, "Finish");
+    ingest(&mut c, &batch("boot9", &[(4, "T1")]), "ip", 1_000).unwrap();
+    manual_read(&mut c, "T1", sid, 1_000).unwrap();
+    let (laptop, _) = laptop_identity(&c);
+    let src: Vec<String> = unsynced_reads(&c, 10).unwrap().into_iter().map(|r| r.src).collect();
+    assert_eq!(src, vec!["boot9:4".to_string(), format!("manual-{laptop}:1")]);
 }

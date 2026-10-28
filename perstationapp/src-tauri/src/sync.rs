@@ -131,8 +131,17 @@ fn pull(db: &Mutex<Connection>, cfg: &Cfg) -> Result<i64, String> {
         .map_err(|e| format!("Bad roster reply: {e}"))?;
     let c = lock(db);
     let (mut ok, mut bad) = (0, Vec::new());
+    let mut tags = std::collections::HashMap::new(); // tag -> bib, to catch the same tag on two runners in the central app
     for p in &rows {
         let f = |k: &str| p.get(k).and_then(Value::as_str).unwrap_or("");
+        let tag = db::normalize_tag(f("tag"));
+        if !tag.is_empty() {
+            if let Some(other) = tags.insert(tag, f("bib")) {
+                // otherwise the two would take the tag off each other on every pull
+                bad.push(format!("bib {}: same tag as bib {other} in the central app", f("bib")));
+                continue;
+            }
+        }
         match db::upsert_central_runner(&c, f("bib"), f("name"), f("category"), f("tag")) {
             Ok(()) => ok += 1,
             Err(e) => bad.push(format!("bib {}: {e}", f("bib"))),
@@ -157,7 +166,7 @@ fn push(db: &Mutex<Connection>, cfg: &Cfg) -> Result<i64, String> {
             .iter()
             .map(|r| {
                 json!({"tag": r.tag, "bib": r.bib, "station": r.station, "read_at_ms": r.read_at_ms,
-                       "device_id": r.device_id, "voided": r.voided})
+                       "device_id": r.device_id, "voided": r.voided, "src": r.src})
             })
             .collect();
         let reply: Value = agent()
@@ -343,6 +352,144 @@ mod live_tests {
         assert_eq!(st.state, "reconnecting");
         assert_eq!(st.failures_in_row, 1);
         assert!(st.log.last().is_some_and(|l| !l.ok && l.text.starts_with("Attempt failed")));
+    }
+
+    /// A race fed by three ESP32s (Start + Finish on laptop A, CP1 on laptop B) through `db::ingest`, the code behind /ingest,
+    /// then synced to the central event. Also STATION_DB_DIR: where the two station databases and their CSV exports are kept.
+    /// Every check is written to checks.json; the test fails at the end if any did. Seeded by centralapp/e2e/esp-race.mjs.
+    #[test]
+    #[ignore]
+    fn esp_readers_through_station_to_central() {
+        let env = |k| std::env::var(k).expect(k);
+        let dir = std::path::PathBuf::from(env("STATION_DB_DIR"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut checks: Vec<Value> = Vec::new();
+        let mut check = |name: &str, expected: Value, actual: Value| {
+            checks.push(json!({"check": name, "ok": expected == actual, "expected": expected, "actual": actual}));
+        };
+        let laptop = |file: &str, stations: &[(&str, &str, i64)]| {
+            let _ = std::fs::remove_file(dir.join(file));
+            let c = db::open(&dir.join(file)).unwrap();
+            for (k, v) in [("central_url", env("CENTRAL_URL")), ("central_event", env("CENTRAL_EVENT")), ("central_key", env("CENTRAL_KEY"))] {
+                db::set_setting(&c, k, &v).unwrap();
+            }
+            for (name, kind, ord) in stations {
+                db::save_station(&c, None, name, kind, *ord).unwrap();
+            }
+            Mutex::new(c)
+        };
+        let station_id = |db: &Mutex<Connection>, name: &str| -> i64 {
+            lock(db).query_row("SELECT id FROM stations WHERE name=?1", [name], |r| r.get(0)).unwrap()
+        };
+        // what the firmware POSTs: one boot_id for the batch, and per read its seq and age (-1 = recovered after a reboot)
+        let send = |db: &Mutex<Connection>, device: &str, boot: &str, now: i64, reads: &[(i64, i64, &str)]| -> usize {
+            let b = db::Batch {
+                device_id: device.into(),
+                boot_id: boot.into(),
+                fw: Some("1.4.0".into()),
+                queue: Some(0),
+                ssid: Some("RaceWiFi".into()),
+                reads: reads.iter().map(|(seq, age, tag)| db::IngestRead { seq: *seq, age_ms: Some(*age), tag: tag.to_string(), raw: None }).collect(),
+            };
+            db::ingest(&mut lock(db), &b, "192.168.1.50", now).unwrap().len()
+        };
+        let count = |db: &Mutex<Connection>, sql: &str| -> i64 { lock(db).query_row(sql, [], |r| r.get(0)).unwrap() };
+        let tag = |bib: i64| format!("E2000{bib}");
+        let (a, b) = (laptop("station-A-start-finish.db", &[("Start", "start", 0), ("Finish", "finish", 2)]), laptop("station-B-cp1.db", &[("CP1", "checkpoint", 1)]));
+        let (sa, sb) = (Sync::default(), Sync::default());
+        let left = |s: &Sync| { let st = s.status.lock().unwrap(); json!([st.pending, st.last_error]) }; // reads still queued, last error
+        let (start, finish, cp1) = (station_id(&a, "Start"), station_id(&a, "Finish"), station_id(&b, "CP1")); // not inside a lock(): the mutex is not re-entrant
+        let gun = db::now_ms() - 30 * 60_000;
+        const MIN: i64 = 60_000;
+
+        sync_once(&a, &sa, true);
+        sync_once(&b, &sb, true);
+        check("A: roster pulled from central", json!([10, ""]), { let st = sa.status.lock().unwrap(); json!([st.runners_pulled, st.last_error]) });
+
+        // Start: the ESP is switched on before anyone assigns it to a station
+        let starts: Vec<(i64, i64, String)> = (101..=109).map(|bib| (bib - 100, 800, tag(bib))).collect();
+        let starts: Vec<(i64, i64, &str)> = starts.iter().map(|(s, a, t)| (*s, *a, t.as_str())).collect();
+        let n = send(&a, "ESP-START", "s1", gun + 20_000, &starts);
+        check("Start: 9 reads stored", json!(9), json!(n));
+        check("Start: reads of an unassigned reader wait (not uploaded)", json!(0), json!(db::pending_count(&lock(&a)).unwrap()));
+        db::assign_device(&mut lock(&a), "ESP-START", "Start mat", Some(start)).unwrap();
+        check("Start: assigning the reader back-fills its reads", json!(9), json!(db::pending_count(&lock(&a)).unwrap()));
+        check("Start: lost ACK, same batch resent, no duplicates", json!(0), json!(send(&a, "ESP-START", "s1", gun + 21_000, &starts)));
+        db::manual_read(&mut lock(&a), "110", start, gun + 5_000).unwrap(); // 110 has no tag
+        sync_once(&a, &sa, false);
+        check("Start: everything uploaded", json!([0, ""]), left(&sa));
+
+        // CP1 on laptop B: 109 misses it; 104's tag arrives in lower case with spaces
+        send(&b, "ESP-CP1", "c1", gun, &[]); // the reader's first contact registers it
+        db::assign_device(&mut lock(&b), "ESP-CP1", "CP1 arch", Some(cp1)).unwrap();
+        let cp: Vec<(i64, i64, String)> = (101..=108).map(|bib| (bib - 100, 600, if bib == 104 { " e2000104 ".into() } else { tag(bib) })).collect();
+        let cp: Vec<(i64, i64, &str)> = cp.iter().map(|(s, a, t)| (*s, *a, t.as_str())).collect();
+        for (i, r) in cp.iter().enumerate() {
+            send(&b, "ESP-CP1", "c1", gun + 12 * MIN + i as i64 * 20_000, std::slice::from_ref(r));
+        }
+        check("CP1: tag normalised to upper case", json!(1), json!(count(&b, "SELECT COUNT(*) FROM reads WHERE tag='E2000104'")));
+        sync_once(&b, &sb, false);
+        check("CP1: everything uploaded", json!([0, ""]), left(&sb));
+
+        // Finish, boot f1: 101-105, 103 read again (the operator voids it), a tag nobody has; read i at t_fin + i*30 s, one POST
+        // after the last. Acked, but 106 is read during that POST, so the queue never empties and the firmware does not
+        // compact its flash journal: it still holds seq 1-7.
+        send(&a, "ESP-FINISH", "f1", gun, &[]);
+        db::assign_device(&mut lock(&a), "ESP-FINISH", "Finish arch", Some(finish)).unwrap();
+        let t_fin = gun + 22 * MIN;
+        let f1: Vec<(i64, i64, &str)> = ["E2000101", "E2000102", "E2000103", "E2000104", "E2000105", "E2000103", "E2009999"]
+            .iter()
+            .enumerate()
+            .map(|(i, t)| (i as i64 + 1, (7 - i as i64) * 30_000, *t))
+            .collect();
+        check("Finish f1: 7 reads stored", json!(7), json!(send(&a, "ESP-FINISH", "f1", t_fin + 7 * 30_000, &f1)));
+        check(
+            "Finish: tag not in the roster shows as unmapped",
+            json!(["E2009999"]),
+            json!(db::unmapped_tags(&lock(&a)).unwrap().iter().map(|v| v["tag"].clone()).collect::<Vec<_>>()),
+        );
+        let dup: i64 = lock(&a).query_row("SELECT id FROM reads WHERE device_id='ESP-FINISH' AND seq=6", [], |r| r.get(0)).unwrap();
+        db::void_read(&lock(&a), dup, true, "double read").unwrap();
+        sync_once(&a, &sa, false);
+        check("Finish f1: uploaded, void included", json!([0, ""]), left(&sa));
+        let before = count(&a, "SELECT COUNT(*) FROM reads WHERE device_id='ESP-FINISH'");
+
+        // Power cut at the finish. f1 seq 8 (106) and 9 (107) were read while WiFi was down. After the reboot (boot f2) the
+        // journal gives back f1 seq 1-9 (age unknown); 108 and 109 cross right after boot. One POST, boot_id "f2", as the firmware does.
+        let (t106, t107, cut) = (gun + 25 * MIN, gun + 25 * MIN + 40_000, gun + 26 * MIN);
+        let back = cut + 3 * MIN;
+        let (t108, t109) = (back + 10_000, back + 25_000);
+        let mut post: Vec<(i64, i64, &str)> = f1.iter().map(|(s, _, t)| (*s, -1, *t)).collect();
+        post.extend([(8, -1, "E2000106"), (9, -1, "E2000107"), (1, back + 30_000 - t108, "E2000108"), (2, back + 30_000 - t109, "E2000109")]);
+        send(&a, "ESP-FINISH", "f2", back + 30_000, &post);
+        let new = count(&a, "SELECT COUNT(*) FROM reads WHERE device_id='ESP-FINISH'") - before;
+        check("Reboot: only the 4 reads not yet delivered are new (106, 107, 108, 109)", json!(4), json!(new));
+        check(
+            "Reboot: 108 and 109, read after the reboot, are kept",
+            json!(["E2000108", "E2000109"]),
+            json!(lock(&a).prepare("SELECT tag FROM reads WHERE device_id='ESP-FINISH' AND tag IN ('E2000108','E2000109') ORDER BY tag").unwrap().query_map([], |r| r.get::<_, String>(0)).unwrap().map(Result::unwrap).collect::<Vec<_>>()),
+        );
+        check("Reboot: the voided double read of 103 does not come back unvoided", json!(1), json!(count(&a, "SELECT COUNT(*) FROM reads WHERE tag='E2000103' AND device_id='ESP-FINISH' AND voided=0")));
+        check(
+            "Reboot: recovered 106/107 are flagged as arrival time, not read time",
+            json!([false, false]),
+            json!(lock(&a).prepare("SELECT time_exact FROM reads WHERE tag IN ('E2000106','E2000107') AND device_id='ESP-FINISH' ORDER BY tag").unwrap().query_map([], |r| Ok(r.get::<_, i64>(0)? == 1)).unwrap().map(Result::unwrap).collect::<Vec<_>>()),
+        );
+        db::manual_read(&mut lock(&a), "110", finish, gun + 28 * MIN).unwrap();
+        sync_once(&a, &sa, false);
+        check("Finish: everything uploaded after the reboot", json!([0, ""]), left(&sa));
+
+        // what the central side should now show, checked by esp-race.mjs
+        let expect = json!({"gun": gun, "t106": t106, "t107": t107, "arrival": back + 30_000, "t108": t108, "t109": t109});
+        std::fs::write(dir.join("expected-times.json"), expect.to_string()).unwrap();
+        for (db, name) in [(&a, "A-start-finish"), (&b, "B-cp1")] {
+            let c = lock(db);
+            std::fs::write(dir.join(format!("station-{name}-reads.csv")), db::reads_csv(&c, false, "").unwrap()).unwrap();
+            std::fs::write(dir.join(format!("station-{name}-results.csv")), db::results_csv(&c).unwrap()).unwrap();
+        }
+        let failed: Vec<String> = checks.iter().filter(|c| c["ok"] == false).map(|c| c["check"].as_str().unwrap().to_string()).collect();
+        std::fs::write(dir.join("station-checks.json"), serde_json::to_string_pretty(&checks).unwrap()).unwrap();
+        assert!(failed.is_empty(), "{} of {} checks failed: {failed:#?}", failed.len(), checks.len());
     }
 
     #[test]

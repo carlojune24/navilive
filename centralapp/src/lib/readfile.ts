@@ -2,7 +2,7 @@
 // The duplicate check on the server is (event, device, read time, tag), so those must come through EXACTLY as the live upload sent them.
 import { splitLine } from './import';
 
-export type FileRead = { tag: string; bib: string | null; station: string; read_at_ms: number; device_id: string; voided: boolean };
+export type FileRead = { tag: string; bib: string | null; station: string; read_at_ms: number; device_id: string; voided: boolean; src: string };
 
 const MAX_ROWS = 50_000;
 
@@ -23,6 +23,8 @@ function fromObject(o: Record<string, unknown>): FileRead | string {
 		station: String(o.station ?? '').trim(),
 		read_at_ms: Math.round(t),
 		device_id: unquote(String(dev)),
+		// the station "merge" export carries the read's own identity, the same one the live upload sends
+		src: o.boot_id !== undefined && o.seq !== undefined ? `${o.boot_id}:${o.seq}` : '',
 		voided: o.voided === true || o.voided === 1 || o.voided === 'true' || o.voided === '1'
 	};
 }

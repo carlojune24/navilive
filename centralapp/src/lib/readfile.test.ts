@@ -7,13 +7,15 @@ describe('parseReadsFile', () => {
 	it('reads the station app CSV with the exact device, time and tag the live upload sends', () => {
 		const { reads, error } = parseReadsFile('reads.csv', CSV);
 		expect(error).toBeUndefined();
-		expect(reads[0]).toEqual({ tag: 'AB12', bib: '3', station: 'Checkpoint1', read_at_ms: 1760000000123, device_id: 'MANUAL', voided: false });
+		expect(reads[0]).toEqual({ tag: 'AB12', bib: '3', station: 'Checkpoint1', read_at_ms: 1760000000123, device_id: 'MANUAL', voided: false, src: '' });
 		expect(reads[1]).toMatchObject({ tag: '-5', station: 'Check, 2', bib: null, device_id: 'R1', voided: true }); // formula-guard quote removed
 	});
 	it('reads both JSON exports', () => {
 		const merge = JSON.stringify({ format: 'race-tracker-reads-v1', reads: [{ device_id: 'D', tag: 'T', read_at_ms: 5, station: null, voided: 0 }] });
 		const all = JSON.stringify({ reads: [{ device: 'D', tag: 'T', time_ms: 5, station: 'S', bib: '9', voided: true }] });
-		expect(parseReadsFile('a.json', merge).reads[0]).toMatchObject({ device_id: 'D', tag: 'T', read_at_ms: 5, station: '', voided: false });
+		expect(parseReadsFile('a.json', merge).reads[0]).toMatchObject({ device_id: 'D', tag: 'T', read_at_ms: 5, station: '', voided: false, src: '' });
+		const withId = JSON.stringify({ format: 'race-tracker-reads-v1', reads: [{ device_id: 'D', boot_id: 'b7', seq: 3, tag: 'T', read_at_ms: 5 }] });
+		expect(parseReadsFile('c.json', withId).reads[0].src).toBe('b7:3'); // same identity the live upload sends
 		expect(parseReadsFile('b.json', all).reads[0]).toMatchObject({ device_id: 'D', bib: '9', voided: true });
 	});
 	it('rejects the whole file rather than guess: no device column, bad time, wrong file', () => {

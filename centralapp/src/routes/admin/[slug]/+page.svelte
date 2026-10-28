@@ -566,6 +566,7 @@
 					</li>
 				{/each}
 			</ul>
+			{#if form?.coursesSaved}<p class="border-2 border-border bg-card p-3 font-bold">Courses saved.</p>{/if}
 			<CourseEditor categories={data.categories} stations={data.stations} courses={data.courses} />
 		</div>
 		{/if}
