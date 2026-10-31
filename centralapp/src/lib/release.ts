@@ -19,9 +19,11 @@ export function applyRelease(cats: Cat[], levelOf: (bib: string) => Level): Cat[
 				const lv = levelOf(r.bib);
 				if (lv === 'released') return [r];
 				if (lv === 'hidden') return [];
-				// checkpoints only: the finish read goes, so a finisher looks like they are still on course
+				// results pending ('checkpoints'): the finish read goes. A finisher shows their start and "Finished", but no time or rank,
+				// so nobody can pick the winner before the results are settled.
 				const at = r.at.map((t, i) => (c.course[i]?.kind === 'finish' ? null : t));
 				const furthest = at.reduce<number>((m, t, i) => (t !== null ? i : m), -1);
+				if (r.state === 'finished') return [{ ...r, at, rank: null, time: null, missed: [] } as typeof r];
 				const state = furthest >= 0 || r.start !== null ? 'on-course' : 'not-started';
 				return [{ ...r, at, state, rank: null, time: null, last: furthest >= 0 ? c.course[furthest].name : null, missed: [] } as typeof r];
 			})

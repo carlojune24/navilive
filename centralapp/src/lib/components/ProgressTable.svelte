@@ -14,13 +14,16 @@
 	// the start station shows the clock time; every later station shows the race time at that point
 	// r.start is what the race time is measured from (the gun start in gun mode), so the Start column shows it even for a runner with no start read
 	const isStart = (i: number) => course[i].kind === 'start';
+	// a finisher whose finish read is held back until the results are released
+	const held = (r: ProgressRow) => r.state === 'finished' && course.some((s, i) => s.kind === 'finish' && r.at[i] === null);
 	const cell = (r: ProgressRow, i: number) => {
 		const t = r.at[i];
 		if (isStart(i)) return r.start !== null ? clock(r.start) : t === null ? null : clock(t);
-		if (t === null) return null;
+		if (t === null) return course[i].kind === 'finish' && r.state === 'finished' ? 'FINISHED' : null;
+		if (course[i].kind === 'finish') return clock(t); // the race time is the Total time column, so Finish shows the time of day
 		return r.start === null ? clock(t) : fmt(Math.max(0, t - r.start));
 	};
-	const arrived = (i: number) => rows.filter((r) => (isStart(i) ? r.start !== null : r.at[i] !== null)).length;
+	const arrived = (i: number) => rows.filter((r) => (isStart(i) ? r.start !== null : course[i].kind === 'finish' ? r.state === 'finished' : r.at[i] !== null)).length;
 	const status = { 'not-started': 'Not started', 'on-course': 'On course', finished: 'Finished' } as const;
 	const text = $derived(big ? 'text-xl md:text-3xl' : 'text-base');
 	const head = $derived(big ? 'text-base md:text-xl' : 'text-sm');
@@ -52,7 +55,7 @@
 					<td class="font-display px-3 py-1 text-3xl leading-[0.9] font-black {big ? 'md:text-5xl' : ''}">{r.bib}</td>
 					<td class="px-3 py-1 font-bold uppercase {text}">{r.name || '—'}</td>
 					<td class="px-3 py-1 whitespace-nowrap {text}">
-						{#if r.state === 'finished'}<b>Finished</b>{:else if r.state === 'on-course'}{r.last ? `At ${r.last}` : 'Started'}{:else}{status[r.state]}{/if}
+						{#if held(r)}<b>Verifying</b>{:else if r.state === 'finished'}<b>Finished</b>{:else if r.state === 'on-course'}{r.last ? `At ${r.last}` : 'Started'}{:else}{status[r.state]}{/if}
 					</td>
 					{#each course as s, i (s.id)}
 						{@const v = cell(r, i)}
@@ -60,7 +63,7 @@
 								{v ?? '—'}
 								<!-- the read time as the station recorded it; the first line is the race time since the start -->
 								{#if flags && r.by[i]}<span class="block font-sans text-xs font-bold normal-case" title="Tagged by">{r.by[i] === 'MANUAL-CENTRAL' ? 'Manual' : r.by[i]}</span>{/if}
-								{#if v !== null && r.at[i] !== null && (!isStart(i) ? r.start !== null : r.at[i] !== r.start)}<span class="block font-sans {big ? 'text-base' : 'text-xs'} font-normal text-muted-foreground">{isStart(i) ? 'read ' : ''}{clock(r.at[i]!)}</span>{/if}
+								{#if v !== null && r.at[i] !== null && course[i].kind !== 'finish' && (!isStart(i) ? r.start !== null : r.at[i] !== r.start)}<span class="block font-sans {big ? 'text-base' : 'text-xs'} font-normal text-muted-foreground">{isStart(i) ? 'read ' : ''}{clock(r.at[i]!)}</span>{/if}
 							</td>
 					{/each}
 					<td class="px-3 py-1 font-display whitespace-nowrap {big ? 'text-3xl' : 'text-xl'} font-black">{r.time !== null ? fmt(r.time) : '—'}</td>

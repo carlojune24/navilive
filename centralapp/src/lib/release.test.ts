@@ -15,12 +15,17 @@ const cat = { id: 1, name: '5K', course, rows: [{ bib: 'A', rank: 1 }, { bib: 'B
 const run = (m: Record<string, Level>) => applyRelease([cat], (b) => m[b] ?? 'checkpoints')[0];
 
 describe('applyRelease', () => {
-	it('checkpoints: finishers look on course, no rank, time or awards', () => {
+	it('checkpoints: finishers show Finished and their start, but no rank, finish time or awards', () => {
 		const c = run({});
 		expect(c.rows).toEqual([]);
 		expect(c.awards).toEqual([]);
 		const a = c.progress.find((r) => r.bib === 'A')!;
-		expect(a).toMatchObject({ state: 'on-course', rank: null, time: null, at: [1, 2, null], last: 'CP1' });
+		expect(a).toMatchObject({ state: 'finished', rank: null, time: null, start: 0, at: [1, 2, null] });
+		expect(c.progress.find((r) => r.bib === 'C')).toMatchObject({ state: 'on-course', last: 'CP1' });
+	});
+	it('start + finish only: a held finisher keeps the start and loses the finish', () => {
+		const sf = { ...cat, course: [course[0], course[2]], progress: [{ ...prog('A', true), at: [1, 3] }] } as unknown as Cat;
+		expect(applyRelease([sf], () => 'checkpoints')[0].progress[0]).toMatchObject({ state: 'finished', rank: null, time: null, start: 0, at: [1, null] });
 	});
 	it('hidden: the runner is gone from progress', () => expect(run({ A: 'hidden' }).progress.map((r) => r.bib)).toEqual(['B', 'C']));
 	it('a released batch shows its true ranks, awards stay held back', () => {

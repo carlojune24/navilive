@@ -11,6 +11,7 @@
 	import CourseEditor from '$lib/components/CourseEditor.svelte';
 	import RouteEditor from '$lib/components/RouteEditor.svelte';
 	import ProgressTable from '$lib/components/ProgressTable.svelte';
+	import { groupTally } from '$lib/tally';
 	import { onMount } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { ago } from '$lib/time';
@@ -22,10 +23,10 @@
 
 	let { data, form } = $props();
 	// the left menu picks the section with ?tab=...
-	const sections = ['participants', 'categories', 'stations', 'route', 'progress', 'results', 'awards', 'reads', 'data', 'connect'];
-	const titles: Record<string, string> = { participants: 'Participants', categories: 'Categories', stations: 'Stations', route: 'Route & map', progress: 'Progress', results: 'Results', awards: 'Awards', reads: 'Reads', data: 'Station data', connect: 'Connect stations' };
+	const sections = ['participants', 'categories', 'stations', 'route', 'progress', 'results', 'awards', 'reads', 'tally', 'data', 'connect'];
+	const titles: Record<string, string> = { participants: 'Participants', categories: 'Categories', stations: 'Stations', route: 'Route & map', progress: 'Progress', results: 'Results', awards: 'Awards', reads: 'Reads', tally: 'Tally sheets', data: 'Station data', connect: 'Connect stations' };
 	// Results page: the finish-time override panel for one runner
-	let ovr = $state<{ bib: string; name: string; at: string } | null>(null);
+	let ovr = $state<{ bib: string; name: string; at: string; day: string } | null>(null);
 	let ovrBy = $state(typeof localStorage === 'undefined' ? '' : (localStorage.getItem('nv.admin.name') ?? ''));
 	let ovrReason = $state('');
 	let ovrFile = $state<File | null>(null);
@@ -33,14 +34,16 @@
 	let ovrBusy = $state(false);
 	const overrideOf = (bib: string) => data.overrides.find((o) => o.bib === bib);
 	function openOverride(r: { bib: string; name: string; finishAt: number | null }) {
-		ovr = { bib: r.bib, name: r.name, at: r.finishAt ? new Date(r.finishAt - new Date(r.finishAt).getTimezoneOffset() * 60000).toISOString().slice(0, 23) : '' };
+		// time of day only; the date is the runner's own finish day, or today (shortcut: a race past midnight needs the finish day, not today)
+		const local = new Date((r.finishAt ?? Date.now()) - new Date(r.finishAt ?? Date.now()).getTimezoneOffset() * 60000).toISOString();
+		ovr = { bib: r.bib, name: r.name, day: local.slice(0, 10), at: r.finishAt ? local.slice(11, 23) : '' };
 		ovrReason = '';
 		ovrFile = null;
 		ovrErr = '';
 	}
 	async function saveOverride() {
 		if (!ovr) return;
-		const ms = new Date(ovr.at).getTime();
+		const ms = ovr.at ? new Date(`${ovr.day}T${ovr.at.length === 5 ? ovr.at + ':00' : ovr.at}`).getTime() : NaN;
 		if (!Number.isFinite(ms)) return (ovrErr = 'Enter the finish time.');
 		if (!ovrFile) return (ovrErr = 'Attach the proof photo.');
 		ovrBusy = true;
@@ -64,7 +67,7 @@
 			ovrBusy = false;
 		}
 	}
-	const levelName = { hidden: 'Hidden', checkpoints: 'Checkpoints only', released: 'Released' } as const;
+	const levelName = { hidden: 'Hidden', checkpoints: 'Results pending', released: 'Released' } as const;
 	// The live-board buttons answer at once: the new level shows immediately and is saved in the background,
 	// then the real value from the server replaces it (or the change is rolled back with a message).
 	let relOpt = $state<Record<string, string | null>>({}); // `c<id>` / `b<id>` -> level, pending
@@ -256,12 +259,16 @@
 {/snippet}
 
 {#snippet overridePanel()}
+<Dialog.Root open={ovr !== null} onOpenChange={(o) => !o && (ovr = null)}>
 {#if ovr}
-				<div class="space-y-3 border-2 border-border bg-card p-4 print:hidden" role="dialog" aria-label="Override finish time">
-					<h3 class="font-display text-2xl font-black uppercase">Override finish — {ovr.bib} {ovr.name}</h3>
-					<p class="text-muted-foreground">Replaces this runner's finish time in the ranking. The original reads are kept. Needs a reason and a photo as proof.</p>
+	<Dialog.Content class="max-h-[90vh] overflow-y-auto border-2 border-border sm:max-w-md">
+				<div class="space-y-3">
+					<Dialog.Header>
+						<Dialog.Title class="font-display text-4xl leading-[0.85] font-black uppercase">Override finish — {ovr.bib} {ovr.name}</Dialog.Title>
+						<Dialog.Description>Replaces this runner's finish time in the ranking. The original reads are kept. Needs a reason and a photo as proof.</Dialog.Description>
+					</Dialog.Header>
 					{#if ovrErr}<p class="font-bold text-destructive" role="alert">{ovrErr}</p>{/if}
-					<label class="block font-bold uppercase">Finish time (your local time)<input type="datetime-local" step="0.001" bind:value={ovr.at} class="mt-1 block h-12 w-full border-2 border-border bg-background px-3" /></label>
+					<label class="block font-bold uppercase">Finish time (time of day)<input type="time" step="0.001" bind:value={ovr.at} class="mt-1 block h-12 w-full border-2 border-border bg-background px-3" /></label>
 					<label class="block font-bold uppercase">Reason<input bind:value={ovrReason} maxlength="300" placeholder="e.g. Read delayed; photo shows runner first" class="mt-1 block h-12 w-full border-2 border-border bg-background px-3 font-normal normal-case" /></label>
 					<label class="block font-bold uppercase">Your name<input bind:value={ovrBy} maxlength="80" class="mt-1 block h-12 w-full border-2 border-border bg-background px-3 font-normal normal-case" /></label>
 					<label class="block font-bold uppercase">Proof photo<input type="file" accept="image/*" onchange={(e) => (ovrFile = e.currentTarget.files?.[0] ?? null)} class="mt-1 block" /></label>
@@ -270,11 +277,15 @@
 						<Button variant="outline" class="h-11 border-2 font-bold uppercase" onclick={() => (ovr = null)}>Cancel</Button>
 					</div>
 				</div>
-			{/if}
+	</Dialog.Content>
+{/if}
+</Dialog.Root>
 {/snippet}
 
+<svelte:head>{#if tab === 'tally'}{@html '<style>@page{size:8.5in 13in;margin:0.5in}</style>'}{/if}</svelte:head>
+
 <main class="space-y-5 p-5 print:p-0">
-	<header>
+	<header class={tab === 'tally' ? 'print:hidden' : ''}>
 		<h1 class="font-display text-5xl leading-[0.85] font-black uppercase">{titles[tab]}</h1>
 		<p class="mt-1 text-muted-foreground">{data.event.name} &middot; {data.participants.length} participants &middot; {data.categories.length} categories</p>
 	</header>
@@ -593,7 +604,6 @@
 		<!-- PROGRESS: who has reached which station -->
 		{#if tab === 'progress'}
 		<div class="space-y-5">
-			{@render overridePanel()}
 			<div class="space-y-2 border-2 border-border bg-card p-4">
 				<h2 class="flex flex-wrap items-baseline gap-3 font-display text-2xl font-black uppercase">What the public live board shows {#if relMsg}<span class="text-base font-bold tracking-wide {relMsg.startsWith('Not') ? 'text-destructive' : 'text-muted-foreground'}" role="status">{relMsg}</span>{/if}</h2>
 				{#snippet releaseButtons(scope: 'all' | 'category' | 'batch', id: number, current: string | null, follow = false)}
@@ -604,7 +614,7 @@
 						{#if follow}<button type="button" onclick={() => setRelease(scope, id, 'inherit')} class="h-10 border-2 border-border px-3 font-bold uppercase {current === null ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-accent'}">Follow category</button>{/if}
 					</div>
 				{/snippet}
-				<p class="text-muted-foreground">Finishes stay off the live board until you release them. <b>Checkpoints only</b> keeps live checkpoint progress but holds back ranks, times and awards. <b>Hidden</b> removes the group completely.</p>
+				<p class="text-muted-foreground">Finishes stay off the live board until you release them. <b>Results pending</b> shows live progress and marks finishers as FINISHED with their start time, but holds back finish times, ranks and awards. <b>Hidden</b> removes the group completely.</p>
 				<div class="space-y-1"><span class="font-bold uppercase">All categories</span>{@render releaseButtons('all', 0, allLevel)}</div>
 				{#if progShown}
 					{#each data.categories.filter((c) => c.id === progShown.id) as cat (cat.id)}
@@ -671,7 +681,6 @@
 		{#if tab === 'results' || (tab === 'awards' && awardsView === 'list')}
 		{@const isRes = tab === 'results'}
 		<div class="space-y-5">
-			{#if isRes}{@render overridePanel()}{/if}
 			<div class="flex flex-wrap items-center gap-2 print:hidden">
 				<a class="inline-flex h-11 items-center border-2 border-border bg-card px-5 font-bold uppercase hover:bg-accent" href="/admin/{data.event.slug}/export?kind={isRes ? 'results' : 'winners'}&mode=gun" download>Download CSV</a>
 				{#if resSel === 'all'}<Button class="h-11 font-bold uppercase" onclick={() => window.print()}>Print all</Button>{/if}
@@ -754,10 +763,49 @@
 		</div>
 		{/if}
 
+		<!-- TALLY: printable sheets to write finish times by hand, one batch per long bond page -->
+		{#if tab === 'tally'}
+		{@const sheets = groupTally(data.categories, data.batches, data.participants)}
+		<div class="space-y-5">
+			<div class="flex flex-wrap items-center gap-3 print:hidden">
+				<Button class="h-11 font-bold uppercase" onclick={() => window.print()} disabled={!sheets.length}>Print tally sheets</Button>
+				<p class="text-muted-foreground">One page per category and batch, runners by bib. Prints on long bond paper (8.5 &times; 13 in): pick that size in the print dialog if it is not already selected.</p>
+			</div>
+			{#each sheets as s, i}
+				<section class="border-2 border-border bg-card p-4 print:break-inside-auto print:border-0 print:p-0 {i ? 'print:break-before-page' : ''}">
+					<div class="mb-1 flex items-baseline justify-between gap-3">
+						<div>
+							<h2 class="font-display text-xl leading-none font-black uppercase">{s.category} &middot; {s.batch} <span class="font-sans text-xs font-bold">&mdash; {data.event.name}</span></h2>
+						</div>
+						<div class="flex items-baseline gap-4 text-xs font-bold whitespace-nowrap uppercase"><span>Checkpoint #: <span class="inline-block w-24 border-b border-black align-baseline">&nbsp;</span></span><span>{s.runners.length} runners</span></div>
+					</div>
+					<table class="w-full table-fixed border-collapse border-2 border-black text-left">
+						<thead>
+							<tr class="border-b-2 border-black bg-black/5 text-xs font-bold uppercase">
+								<th class="border border-black w-8 px-1 py-0.5">#</th><th class="border border-black w-16 px-1 py-0.5">Bib</th><th class="border border-black px-1 py-0.5">Name of participant</th><th class="border border-black w-60 px-1 py-0.5">Time (write here)</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each s.runners as r, n (r.bib)}
+								<tr class="h-[0.3in] border-b border-black print:break-inside-avoid">
+									<td class="border border-black px-1 text-xs">{n + 1}</td>
+									<td class="font-display border border-black px-1 text-lg leading-none font-black">{r.bib}</td>
+									<td class="border border-black px-1 text-sm leading-tight font-bold break-words uppercase">{r.name || '—'}</td>
+									<td class="border border-black"></td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</section>
+			{:else}
+				<p class="text-muted-foreground">No participants yet.</p>
+			{/each}
+		</div>
+		{/if}
+
 		<!-- READS: manual corrections -->
 		{#if tab === 'reads'}
 		<div class="space-y-4">
-			{@render overridePanel()}
 			<form method="POST" action="?tab={tab}&/manualRead" use:enhance class="space-y-3 border-2 border-border bg-card p-4">
 				<h2 class="font-display text-3xl font-black uppercase">Add a read by hand</h2>
 				<p class="text-muted-foreground">For a missed tag, or to test the board before the event. Pick a runner and a station; leave the time empty to use now.</p>
@@ -1008,6 +1056,8 @@
 			{#if !data.publicUrl}<p class="text-muted-foreground">Admin pages open only on this laptop at <code>http://localhost:{data.port}</code>. Stations and phones use the address above.</p>{/if}
 		</div>
 		{/if}
+
+	{@render overridePanel()}
 
 	<Dialog.Root open={batchDlg !== null} onOpenChange={(o) => !o && (batchDlg = null)}>
 		<Dialog.Content class="border-2 border-border sm:max-w-md">

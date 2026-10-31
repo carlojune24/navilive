@@ -19,6 +19,7 @@
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import MapIcon from '@lucide/svelte/icons/map';
 	import KeyRound from '@lucide/svelte/icons/key-round';
+	import ClipboardList from '@lucide/svelte/icons/clipboard-list';
 
 	let { children } = $props();
 	let now = $state(Date.now());
@@ -78,6 +79,7 @@
 		['results', 'Results', ListOrdered],
 		['awards', 'Awards', Trophy],
 		['reads', 'Reads', ListChecks],
+		['tally', 'Tally sheets', ClipboardList],
 		['data', 'Station data', Activity],
 		['connect', 'Connect', Plug]
 	] as const;
