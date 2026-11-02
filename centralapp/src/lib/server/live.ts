@@ -18,11 +18,11 @@ export async function loadResults(slug: string, mode: Mode, opts: { includeHidde
 	if (!ev) return null;
 	const [cats, ps, stations, reads, last, courseRows, batches] = await Promise.all([
 		q('select id, name, gun_ms, rank_by from categories where event_id=$1 and archived_at is null order by name', [ev.id]),
-		q('select p.id, p.bib, p.name, p.category_id, p.batch_id, p.gender, p.age, p.extra, (select (extract(epoch from ph.updated_at)*1000)::bigint from participant_photos ph where ph.participant_id=p.id) as photo, (select o.finish_ms::float8 from finish_overrides o where o.participant_id=p.id) as "finishOverride", coalesce(b.release, c.release) as release from participants p left join batches b on b.id=p.batch_id left join categories c on c.id=p.category_id where p.event_id=$1', [ev.id]),
+		q(`select p.id, p.bib, p.name, p.category_id, p.batch_id, p.gender, p.age, p.extra, (select (extract(epoch from ph.updated_at)*1000)::bigint from participant_photos ph where ph.participant_id=p.id) as photo, (select o.finish_ms::float8 from finish_overrides o where o.participant_id=p.id) as "finishOverride", coalesce(b.release, c.release) as release, (select coalesce(json_agg(json_build_object('id',tm.id,'name',tm.name) order by tm.leg, tm.id),'[]'::json) from team_members tm where tm.participant_id=p.id) as members from participants p left join batches b on b.id=p.batch_id left join categories c on c.id=p.category_id where p.event_id=$1`, [ev.id]),
 		q('select id, name, kind, ord from stations where event_id=$1', [ev.id]),
 		// a read belongs to the participant whose bib it carries, else whose tag matches
 		q(
-			`select p.id as pid, r.station_id, r.read_at_ms, r.device_id from reads r
+			`select p.id as pid, r.station_id, r.read_at_ms, r.device_id, (select tm.id from team_members tm where tm.participant_id=p.id and r.bib is null and tm.tag<>'' and upper(tm.tag)=upper(r.tag)) as mid from reads r
 			 join participants p on ${MATCH}
 			 where r.event_id=$1 and not r.voided and r.station_id is not null`,
 			[ev.id]

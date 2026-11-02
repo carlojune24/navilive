@@ -5,6 +5,7 @@ import { q } from './db';
 // read's tag also counts (the station app applies the same rule).
 export const MATCH = `p.event_id=r.event_id and (p.bib=r.bib or (r.bib is null and (
 	(p.tag<>'' and upper(p.tag)=upper(r.tag))
+	or exists (select 1 from team_members tm where tm.participant_id=p.id and tm.tag<>'' and upper(tm.tag)=upper(r.tag))
 	or (p.bib=r.tag and not exists (select 1 from participants q where q.event_id=r.event_id and q.tag<>'' and upper(q.tag)=upper(r.tag)))
 )))`;
 const INGESTED = `(extract(epoch from max(ingested_at))*1000)::bigint`;

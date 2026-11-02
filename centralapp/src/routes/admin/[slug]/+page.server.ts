@@ -2,13 +2,13 @@ import { error, fail } from '@sveltejs/kit';
 import { pool, q } from '$lib/server/db';
 import { hashKey, newKey } from '$lib/server/apikey';
 import { lanAddresses } from '$lib/server/network';
-import { parseBibs, parseCsv, normGender, parseAge } from '$lib/import';
+import { parseBibs, parseCsv, parseTeamCsv, isTeamCsv, normGender, parseAge } from '$lib/import';
 import { parseBrackets } from '$lib/results';
 import { parseConfig } from '$lib/awardcfg';
 import { LEVELS } from '$lib/release';
 import { MAX_PHOTO_BYTES, sniffImage } from '$lib/image';
 import { loadResults } from '$lib/server/live';
-import { importBibs, importRows } from '$lib/server/participants';
+import { importBibs, importRows, importTeams } from '$lib/server/participants';
 import { stationOverview, MATCH } from '$lib/server/stationdata';
 import { loadLaptops } from '$lib/server/monitor';
 import { insertReads } from '$lib/server/ingest';
@@ -46,7 +46,7 @@ export const load = async ({ params, url }) => {
 		q('select c.id, c.name, c.gun_ms, c.rank_by, c.release, count(p.id)::int as n from categories c left join participants p on p.category_id=c.id where c.event_id=$1 and c.archived_at is null group by c.id order by c.name', [e.id]),
 		q('select id, name from categories where event_id=$1 and archived_at is not null order by name', [e.id]),
 		q('select b.id, b.category_id, b.name, b.gun_ms, b.release, count(p.id)::int as n from batches b join categories c on c.id=b.category_id left join participants p on p.batch_id=b.id where c.event_id=$1 group by b.id order by b.name', [e.id]),
-		q('select p.id, p.bib, p.name, p.tag, p.gender, p.age, p.category_id, p.batch_id, c.name as category, (select (extract(epoch from ph.updated_at)*1000)::bigint from participant_photos ph where ph.participant_id=p.id) as photo from participants p left join categories c on c.id=p.category_id where p.event_id=$1 order by p.bib', [e.id]),
+		q('select p.id, p.bib, p.name, p.tag, p.gender, p.age, p.category_id, p.batch_id, c.name as category, (select (extract(epoch from ph.updated_at)*1000)::bigint from participant_photos ph where ph.participant_id=p.id) as photo, (select coalesce(json_agg(json_build_object(\'name\', m.name, \'gender\', m.gender, \'age\', m.age, \'tag\', m.tag) order by m.leg, m.id), \'[]\') from team_members m where m.participant_id=p.id) as members from participants p left join categories c on c.id=p.category_id where p.event_id=$1 order by p.bib', [e.id]),
 		q('select id, name, kind, ord, services from stations where event_id=$1 order by ord, id', [e.id]),
 		q(
 			`select r.id, r.read_at_ms, r.tag, r.device_id, r.voided, s.name as station,
@@ -232,11 +232,24 @@ export const actions = {
 		// the category is picked in the form, so files never need category names in them
 		const catRaw = String(f.get('category') ?? '');
 		if (catRaw === '') return fail(400, { error: 'Choose a category for this file, or "Don\'t change categories".' });
-		const text = file instanceof File && file.size ? await file.text() : String(f.get('csv') ?? '');
-		const { rows, errors } = parseCsv(text);
-		if (!rows.length) return fail(400, { error: errors.join('; ') || 'No rows found' });
+		// Excel "CSV (Comma delimited)" saves ANSI, not UTF-8, so ñ arrives as one invalid byte; fall back to Windows-1252 instead of storing �
+		const bytes = file instanceof File && file.size ? new Uint8Array(await file.arrayBuffer()) : null;
+		const text = bytes ? (() => { try { return new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch { return new TextDecoder('windows-1252').decode(bytes); } })() : String(f.get('csv') ?? '');
 		const def = Number(catRaw) || null; // "keep" -> null: existing categories are left as they are
 		if (def && !(await q('select 1 from categories where id=$1 and event_id=$2', [def, e.id])).length) return fail(400, { error: 'Unknown category' });
+		// the client's per-runner relay/duo listing: grouped into teams
+		if (isTeamCsv(text)) {
+			const { teams, errors: bad } = parseTeamCsv(text);
+			if (!teams.length) return fail(400, { error: bad.join('; ') || 'No rows found' });
+			try {
+				const res = await importTeams(e.id, teams, def);
+				return { imported: res.teams, teamsImported: res, skipped: bad };
+			} catch (err: any) {
+				return fail(400, { error: err.message });
+			}
+		}
+		const { rows, errors } = parseCsv(text);
+		if (!rows.length) return fail(400, { error: errors.join('; ') || 'No rows found' });
 		return { imported: await importRows(e.id, rows, def), skipped: errors };
 	},
 	// A station app export file uploaded by hand (e.g. a laptop that was offline). Same insert as the live upload, so re-uploading is harmless.

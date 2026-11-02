@@ -10,6 +10,7 @@
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"test:e2e": "node --test e2e/station-api.e2e.mjs",
+		"test:pw": "playwright test",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"migrate": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/migrate.ps1",
 		"deploy": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/deploy.ps1"
@@ -17,6 +18,7 @@
 	"devDependencies": {
 		"@internationalized/date": "^3.12.4",
 		"@lucide/svelte": "^1.57.0",
+		"@playwright/test": "^1.64.1",
 		"@sveltejs/adapter-node": "^6.0.0",
 		"@sveltejs/kit": "^3.0.0",
 		"@sveltejs/vite-plugin-svelte": "^7.2.0",

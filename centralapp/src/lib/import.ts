@@ -56,7 +56,7 @@ export function splitLine(line: string, d: string): string[] {
 }
 
 /** CSV with a header row. `bib` is required; name/category/tag optional; other columns kept in extra. */
-export function parseCsv(text: string): { rows: Row[]; errors: string[] } {
+export function parseCsv(text: string, on = new Date()): { rows: Row[]; errors: string[] } {
 	const lines = text.replace(/^﻿/, '').split(/\r?\n/).filter((l) => l.trim());
 	if (!lines.length) return { rows: [], errors: ['Empty file'] };
 	const d = [',', ';', '\t'].reduce((best, c) => (lines[0].split(c).length > lines[0].split(best).length ? c : best));
@@ -66,27 +66,93 @@ export function parseCsv(text: string): { rows: Row[]; errors: string[] } {
 	const idx = (n: string) => head.indexOf(n);
 	const rows: Row[] = [];
 	const errors: string[] = [];
-	const seen = new Set<string>();
-	lines.slice(1).forEach((line, i) => {
-		const c = splitLine(line, d);
-		const bib = c[bi] ?? '';
-		if (!bib) return errors.push(`Line ${i + 2}: empty bib`);
-		if (seen.has(bib)) return errors.push(`Line ${i + 2}: duplicate bib ${bib}`);
-		seen.add(bib);
+	const split = lines.slice(1).map((l) => splitLine(l, d));
+	const count = new Map<string, number>();
+	for (const c of split) count.set(c[bi] ?? '', (count.get(c[bi] ?? '') ?? 0) + 1);
+	const seen = new Map<string, number>();
+	split.forEach((c, i) => {
+		const bib0 = c[bi] ?? '';
+		if (!bib0) return errors.push(`Line ${i + 2}: empty bib`);
+		// a shared bib is kept, not dropped: later runners get "K109-2" and every sharer is flagged so the bibs can be fixed by hand
+		const n = (seen.get(bib0) ?? 0) + 1;
+		seen.set(bib0, n);
+		const shared = count.get(bib0)! > 1;
+		const bib = n > 1 ? `${bib0}-${n}` : bib0;
+		if (n > 1) errors.push(`Line ${i + 2}: bib ${bib0} is shared, imported as ${bib} and flagged`);
 		const get = (n: string) => (idx(n) >= 0 ? (c[idx(n)] ?? '') : '');
 		const gi = idx('gender') >= 0 ? 'gender' : 'sex';
 		const rawGender = get(gi);
 		const rawAge = get('age');
 		const gender = normGender(rawGender);
-		const age = parseAge(rawAge);
+		const age = parseAge(rawAge) ?? ageFromDob(get('dob'), on);
 		// the row is still imported; a value we cannot read is reported instead of guessed
 		if (rawGender && !gender) errors.push(`Line ${i + 2}: gender "${rawGender}" not understood (use M or F), left blank`);
 		if (rawAge && age === null) errors.push(`Line ${i + 2}: age "${rawAge}" not understood (use a number), left blank`);
 		const extra: Record<string, string> = {};
 		head.forEach((h, k) => {
-			if (!['bib', 'name', 'category', 'tag', gi, 'age'].includes(h) && h && c[k]) extra[h] = c[k];
+			if (!['bib', 'name', 'first name', 'last name', 'dob', 'category', 'tag', gi, 'age'].includes(h) && h && c[k]) extra[h] = c[k];
 		});
-		rows.push({ bib, name: get('name'), category: get('category'), tag: get('tag'), gender, age, extra });
+		if (shared) extra['bib flag'] = `shared bib ${bib0}, change it`;
+		const name = get('name') || `${get('first name')} ${get('last name')}`.replace(/\s+/g, ' ').trim();
+		rows.push({ bib, name, category: get('category'), tag: get('tag'), gender, age, extra });
 	});
 	return { rows, errors };
+}
+
+export type TeamMember = { name: string; gender: string; age: number | null; tag: string; extra: Record<string, string> };
+export type TeamRow = { bib: string; team: string; category: string; members: TeamMember[] };
+
+/** The client's per-runner listing (First Name, Last Name, Team Name, DOB, ...). Rows with the same category + team name become one team. */
+export function isTeamCsv(text: string): boolean {
+	const lines = text.replace(/^﻿/, '').split(/\r?\n/).filter((l) => l.trim());
+	if (!/(^|[,;\t])\s*"?team[ _]name"?\s*([,;\t]|$)/i.test(lines[0] ?? '')) return false;
+	// a solo sheet also has Team Name (a club) plus Role=Solo; with a Role column it is a team file only if someone is Captain/Teammate
+	const d = [',', ';', '\t'].reduce((best, c) => (lines[0].split(c).length > lines[0].split(best).length ? c : best));
+	const ri = splitLine(lines[0], d).findIndex((h) => h.toLowerCase() === 'role');
+	return ri < 0 || lines.slice(1).some((l) => /^(teammate|captain)$/i.test(splitLine(l, d)[ri] ?? ''));
+}
+
+/** Age in whole years on `on` from an ISO date (YYYY-MM-DD); anything else is null. */
+export function ageFromDob(dob: string, on = new Date()): number | null {
+	const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dob.trim());
+	if (!m) return null;
+	let a = on.getFullYear() - Number(m[1]);
+	if (on.getMonth() + 1 < Number(m[2]) || (on.getMonth() + 1 === Number(m[2]) && on.getDate() < Number(m[3]))) a--;
+	return a >= 1 && a <= 120 ? a : null;
+}
+
+export function parseTeamCsv(text: string, on = new Date()): { teams: TeamRow[]; errors: string[] } {
+	const lines = text.replace(/^﻿/, '').split(/\r?\n/).filter((l) => l.trim());
+	if (!lines.length) return { teams: [], errors: ['Empty file'] };
+	const d = [',', ';', '\t'].reduce((best, c) => (lines[0].split(c).length > lines[0].split(best).length ? c : best));
+	const head = splitLine(lines[0], d).map((h) => h.toLowerCase().replace(/_/g, ' ').trim());
+	const idx = (...n: string[]) => head.findIndex((h) => n.includes(h));
+	const [bi, ti, fi, li, ni, ci, gi, di, ai, tgi] = [idx('bib'), idx('team name'), idx('first name'), idx('last name'), idx('name'), idx('category'), idx('gender', 'sex'), idx('dob', 'date of birth'), idx('age'), idx('tag')];
+	if (ti < 0) return { teams: [], errors: ['Header row needs a "Team Name" column'] };
+	const used = new Set([bi, ti, fi, li, ni, ci, gi, di, ai, tgi]);
+	const teams = new Map<string, TeamRow>();
+	const errors: string[] = [];
+	const tags = new Set<string>();
+	lines.slice(1).forEach((line, i) => {
+		const c = splitLine(line, d);
+		const at = (k: number) => (k >= 0 ? (c[k] ?? '') : '');
+		const team = at(ti).trim();
+		const name = (ni >= 0 && at(ni) ? at(ni) : `${at(fi)} ${at(li)}`).replace(/\s+/g, ' ').trim();
+		if (!name) return errors.push(`Line ${i + 2}: runner has no name`);
+		const category = at(ci).trim();
+		const bib = at(bi).trim();
+		if (!team && !bib) return errors.push(`Line ${i + 2}: row has neither Team Name nor Bib`);
+		// the shared bib identifies a team; two teams may share a name, and a team may have no name
+		const key = bib ? `bib|${category.toLowerCase()}|${bib.toLowerCase()}` : `${category.toLowerCase()}|${team.toLowerCase()}`;
+		const t = teams.get(key) ?? teams.set(key, { bib, team: team || bib, category, members: [] }).get(key)!;
+		if (team && t.team === t.bib) t.team = team;
+		const tag = at(tgi).trim();
+		if (tag && tags.has(tag.toUpperCase())) return errors.push(`Line ${i + 2}: tag ${tag} is used twice`);
+		if (tag) tags.add(tag.toUpperCase());
+		if (t.members.some((m) => m.name.toLowerCase() === name.toLowerCase())) return errors.push(`Line ${i + 2}: ${name} is listed twice in ${team}`);
+		const extra: Record<string, string> = {};
+		head.forEach((h, k) => h && !used.has(k) && c[k] && (extra[h] = c[k]));
+		t.members.push({ name, gender: normGender(at(gi)), age: parseAge(at(ai)) ?? ageFromDob(at(di), on), tag, extra });
+	});
+	return { teams: [...teams.values()], errors };
 }

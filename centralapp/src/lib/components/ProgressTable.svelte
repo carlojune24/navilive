@@ -55,7 +55,7 @@
 					<td class="font-display px-3 py-1 text-3xl leading-[0.9] font-black {big ? 'md:text-5xl' : ''}">{r.bib}</td>
 					<td class="px-3 py-1 font-bold uppercase {text}">{r.name || '—'}</td>
 					<td class="px-3 py-1 whitespace-nowrap {text}">
-						{#if held(r)}<b>Verifying</b>{:else if r.state === 'finished'}<b>Finished</b>{:else if r.state === 'on-course'}{r.last ? `At ${r.last}` : 'Started'}{:else}{status[r.state]}{/if}
+						{#if held(r)}<b>Verifying</b>{:else if r.state === 'finished'}<b>Finished</b>{:else if r.state === 'on-course'}{r.last ? `At ${r.last}` : 'Started'}{#if r.team && r.team.done}<span class="block text-xs font-bold" data-testid="team-done">{r.team.done}/{r.team.of} at finish</span>{/if}{:else}{status[r.state]}{/if}
 					</td>
 					{#each course as s, i (s.id)}
 						{@const v = cell(r, i)}

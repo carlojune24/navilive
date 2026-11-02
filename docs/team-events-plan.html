@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Relay and Duo (team events) - design plan</title>
+<style>
+:root{
+  --bg:#f3f4f7; --fg:#15161c; --card:#fff; --muted:#e9eaf0; --muted-fg:#4a4d5a; --border:#15161c;
+  --start:#1f8a4c; --cp:#d9822b; --finish:#c4372a; --blue:#2b5fd9;
+  --sans:'Segoe UI',system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root{--bg:#14151b;--fg:#f1f2f6;--card:#1d1f27;--muted:#272a34;--muted-fg:#a9adbb;--border:#b8bccb;--start:#3fb274;--cp:#eb9a4a;--finish:#e5574a;--blue:#6b94f0}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:16.5px;line-height:1.55}
+header{background:var(--card);border-bottom:2px solid var(--border);padding:26px 16px}
+header div,main{max-width:1000px;margin:0 auto}
+main{padding:0 16px 80px}
+h1{margin:0;font-size:2.2rem;text-transform:uppercase;letter-spacing:-.01em}
+.sub{color:var(--muted-fg);margin:6px 0 0}
+h2{text-transform:uppercase;font-size:1.5rem;margin:44px 0 12px;padding-bottom:6px;border-bottom:2px solid var(--border)}
+h3{font-size:1.1rem;margin:24px 0 6px}
+p,ul,ol{max-width:75ch}
+code{font-family:ui-monospace,Consolas,monospace;font-size:.88em;background:var(--muted);padding:1px 5px;border:1px solid var(--border)}
+pre{background:var(--card);border:2px solid var(--border);padding:12px;overflow-x:auto}
+pre code{background:none;border:0;padding:0}
+table{border-collapse:collapse;width:100%;margin:0 0 18px;font-size:.93rem;background:var(--card)}
+th,td{border:2px solid var(--border);padding:7px 9px;text-align:left;vertical-align:top}
+th{background:var(--muted);text-transform:uppercase;font-size:.78rem;letter-spacing:.04em}
+.box{border:2px solid var(--border);border-left-width:10px;background:var(--card);padding:10px 14px;margin:0 0 16px}
+.box.good{border-left-color:var(--start)}.box.warn{border-left-color:var(--finish)}.box.note{border-left-color:var(--cp)}
+.fig{background:var(--card);border:2px solid var(--border);padding:10px;margin:0 0 6px;overflow-x:auto}
+.cap{color:var(--muted-fg);font-size:.88rem;margin:0 0 20px}
+svg text{font-family:var(--sans);fill:var(--fg)}
+svg .bx{fill:var(--card);stroke:var(--border);stroke-width:2}
+svg .ln{stroke:var(--border);stroke-width:2;fill:none}
+svg .sm{font-size:12px;fill:var(--muted-fg)}
+svg .hd{font-size:14px;font-weight:700}
+.ok{color:var(--start);font-weight:700}.bad{color:var(--finish);font-weight:700}.wait{color:var(--cp);font-weight:700}
+</style>
+</head>
+<body>
+<header><div>
+<h1>Relay and Duo: team events</h1>
+<p class="sub">Design plan. One bib per team on the boards, one tag per runner so every member's finish is proven.</p>
+</div></header>
+<main>
+
+<h2>1. The problem</h2>
+<p>The client's listing has <b>one row per runner</b> (First Name, Last Name, <b>Team Name</b>, Gender, DOB, Category = RELAY / DUO). Our import wants <code>bib, name, gender, age, tag</code>: one row per participant, one bib each, one tag each, and <code>(event, bib)</code> is unique.</p>
+<ul>
+<li>Teams exist in the system only as a free-text extra column. There is no team, no leg and no member.</li>
+<li>If every teammate shares one bib and one tag, a single read at the finish looks like "the team finished". We can not tell whether the second runner of a duo, or the third of a relay, ever crossed.</li>
+<li>The import can not take the client's file as it is (no bib, name split in two columns, team name).</li>
+</ul>
+
+<h2>2. Decision</h2>
+<div class="box good"><b>Team = one bib. Member = one tag.</b>
+<ul>
+<li>The <b>team</b> is the one ranked participant. Its bib is the team bib, its name is the Team Name. Boards, release levels, ranking and override keep working as they do today.</li>
+<li>Each <b>member</b> is a row under that team with its own RFID tag (or bib sticker) and a leg order. A read of a member's tag resolves to the team bib <i>and</i> remembers who it was.</li>
+<li>The team is <b>FINISHED only when every member has a finish read</b> after the start (or an admin override). Team finish time = the last member's finish read.</li>
+</ul></div>
+<table>
+<tr><th>Question</th><th>Answer</th></tr>
+<tr><td>Same bib for duo and relay?</td><td>Same bib per <i>team</i>, never per runner. The tag is what separates people.</td></tr>
+<tr><td>How do we know everyone crossed?</td><td>The team has N members and needs N distinct member finish reads. The board shows progress such as 1/2 until complete.</td></tr>
+<tr><td>What if a chip fails to read?</td><td>The team stays "in progress, incomplete". An admin reconciles it with the existing override (reason + proof photo).</td></tr>
+<tr><td>Live board vs final board?</td><td>Live: Team Name only, then FINISHED. Final (after reconcile): names and every split.</td></tr>
+</table>
+
+<h2>3. Diagram A: data model</h2>
+<div class="fig">
+<svg viewBox="0 0 900 250" width="100%" role="img" aria-label="Data model">
+<rect class="bx" x="20" y="30" width="250" height="150"/>
+<text class="hd" x="34" y="54">participants (the TEAM)</text>
+<text class="sm" x="34" y="80">bib = 201 (team bib)</text>
+<text class="sm" x="34" y="100">name = CROSSFIT CRANIUM</text>
+<text class="sm" x="34" y="120">category = RELAY</text>
+<text class="sm" x="34" y="140">team_size = 4 (from category)</text>
+<text class="sm" x="34" y="160">unique (event_id, bib)</text>
+<rect class="bx" x="340" y="30" width="270" height="150"/>
+<text class="hd" x="354" y="54">team_members (NEW)</text>
+<text class="sm" x="354" y="80">participant_id -> team</text>
+<text class="sm" x="354" y="100">name, gender, age</text>
+<text class="sm" x="354" y="120">leg (1..N)</text>
+<text class="sm" x="354" y="140">tag  (unique per event)</text>
+<text class="sm" x="354" y="160">email / phone kept in extra</text>
+<rect class="bx" x="680" y="30" width="200" height="150"/>
+<text class="hd" x="694" y="54">reads (existing)</text>
+<text class="sm" x="694" y="80">tag, station, read_at_ms</text>
+<text class="sm" x="694" y="100">bib  (team bib)</text>
+<text class="sm" x="694" y="120">member_id (NEW, who)</text>
+<text class="sm" x="694" y="140">voided, src ...</text>
+<path class="ln" d="M270 105 H340"/><text class="sm" x="276" y="98">1</text><text class="sm" x="322" y="98">N</text>
+<path class="ln" d="M610 105 H680"/><text class="sm" x="616" y="98">1</text><text class="sm" x="662" y="98">N</text>
+<text class="sm" x="20" y="220">Solo runners keep working exactly as now: no team_members rows, the participant is its own single member.</text>
+</svg>
+</div>
+<p class="cap">One team row, many members, many reads per member. Reads still carry the team bib so existing result code keeps matching on bib.</p>
+
+<h2>4. Diagram B: how a read becomes a team result</h2>
+<div class="fig">
+<svg viewBox="0 0 900 200" width="100%" role="img" aria-label="Read flow">
+<defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8z" fill="currentColor"/></marker></defs>
+<g style="color:var(--border)">
+<rect class="bx" x="10" y="60" width="150" height="70"/><text class="hd" x="22" y="86">Station reader</text><text class="sm" x="22" y="106">tag E200...A1</text>
+<rect class="bx" x="200" y="60" width="170" height="70"/><text class="hd" x="212" y="86">MATCH (extended)</text><text class="sm" x="212" y="106">tag in team_members?</text>
+<rect class="bx" x="410" y="60" width="200" height="70"/><text class="hd" x="422" y="86">Resolve</text><text class="sm" x="422" y="106">member = Cris (leg 2)</text><text class="sm" x="422" y="120">team bib = 201</text>
+<rect class="bx" x="650" y="60" width="240" height="70"/><text class="hd" x="662" y="86">computeResults (per team)</text><text class="sm" x="662" y="106">finish = every member has</text><text class="sm" x="662" y="120">a finish read after start</text>
+<path class="ln" d="M160 95H198" marker-end="url(#a)"/><path class="ln" d="M370 95H408" marker-end="url(#a)"/><path class="ln" d="M610 95H648" marker-end="url(#a)"/>
+</g>
+<text class="sm" x="10" y="170">Fallback unchanged: tag not in team_members -> match participants.tag, then bib typed by hand (marshal / manual entry).</text>
+</svg>
+</div>
+<p class="cap">The station app needs the member tags in its local runner table so the same lookup works offline.</p>
+
+<h2>5. Diagram C: finish rule for a duo</h2>
+<div class="fig">
+<svg viewBox="0 0 900 270" width="100%" role="img" aria-label="Finish timeline">
+<line class="ln" x1="40" y1="60" x2="860" y2="60"/>
+<text class="sm" x="40" y="40">time</text>
+<circle cx="80" cy="60" r="8" fill="var(--start)"/><text class="sm" x="50" y="86">START 08:00:00</text>
+<circle cx="440" cy="60" r="8" fill="var(--cp)"/><text class="sm" x="360" y="86">A crosses finish 08:41:10</text>
+<circle cx="760" cy="60" r="8" fill="var(--finish)"/><text class="sm" x="680" y="86">B crosses finish 08:43:55</text>
+<rect class="bx" x="40" y="110" width="250" height="120"/>
+<text class="hd" x="52" y="134">Before A crosses</text><text class="sm" x="52" y="156">Team: in progress</text><text class="sm" x="52" y="176">Members at finish: 0/2</text>
+<rect class="bx" x="320" y="110" width="270" height="120"/>
+<text class="hd" x="332" y="134">After A, before B</text><text class="sm" x="332" y="156">Team: still in progress (incomplete 1/2)</text><text class="sm" x="332" y="176">NOT FINISHED, NOT RANKED</text><text class="sm" x="332" y="196">Stays here if B's chip never reads</text>
+<rect class="bx" x="620" y="110" width="250" height="120"/>
+<text class="hd" x="632" y="134">After B</text><text class="sm" x="632" y="156">Team: FINISHED 2/2</text><text class="sm" x="632" y="176">Team time = 43:55 (last member)</text><text class="sm" x="632" y="196">Ranked</text>
+</svg>
+</div>
+<p class="cap">If B never reads: admin sets the finish override on the team (reason + proof photo, existing flow). Reads are never deleted.</p>
+<div class="box note"><b>Relay legs.</b> The rule is the same: N members, N finish reads. The leg order is stored for display (who ran leg 1, 2, 3...). Per-leg times are only shown if exchange checkpoints exist; otherwise the final shows each member's finish read.</div>
+
+<h2>6. Import: the client file as it is</h2>
+<table>
+<tr><th>Client column</th><th>Becomes</th><th>Notes</th></tr>
+<tr><td>Bib (blank)</td><td>team bib</td><td>Blank: auto-assigned, next free bib in the category. Filled: used, same value for all rows of the team.</td></tr>
+<tr><td>First Name + Last Name</td><td>member name</td><td>Joined with a space.</td></tr>
+<tr><td>Team Name</td><td>team participant name + grouping key</td><td>Group key = (Category, Team Name), trimmed and case-insensitive.</td></tr>
+<tr><td>Category (RELAY / DUO)</td><td>category</td><td>Team size: DUO = 2, RELAY = configurable (default 4), shown as a warning on mismatch.</td></tr>
+<tr><td>Gender, DOB</td><td>member gender, member age</td><td>Age computed from DOB at event date. Team gender (for awards) rule stays as per category.</td></tr>
+<tr><td>Email, Phone, T-Shirt, Tier...</td><td>member extra</td><td>Kept, never shown publicly.</td></tr>
+<tr><td>tag (optional column)</td><td>member tag</td><td>If absent, tags are added later on the admin team page or scanned in.</td></tr>
+</table>
+<h3>Before and after</h3>
+<pre><code>client rows                                   system
+Eric  Zamora        CROSSFIT CRANIUM  RELAY   ->  team  #201 CROSSFIT CRANIUM (RELAY)
+Cris  Jay Gonzales  CROSSFIT CRANIUM  RELAY         member 1 Eric Zamora         tag -
+Karrel Catalino     CROSSFIT CRANIUM  RELAY         member 2 Cris Jay Gonzales   tag -
+Eitho Obero         CROSSFIT CRANIUM  RELAY         member 3 Karrel Catalino     tag -
+Jayvee Tyron Lim Uy Davao Durian Strong  RELAY  ->  team  #202 Davao Durian Strong ...</code></pre>
+<p>The old <code>bib, name, gender, age, tag</code> file keeps working unchanged. The importer decides by the presence of a <code>Team Name</code> column plus a team category.</p>
+<div class="box warn"><b>Import checks:</b> duplicate tag anywhere in the event is rejected; a team with the wrong number of members is flagged (not blocked); re-importing the same file updates members instead of creating duplicates.</div>
+
+<h2>7. What each board shows</h2>
+<h3>While the race is on (public live board)</h3>
+<table>
+<tr><th>TEAM NAME</th><th>START</th><th>CP1</th><th>FINISH</th></tr>
+<tr><td>CROSSFIT CRANIUM</td><td>08:00:00</td><td>08:19:30</td><td class="wait">in progress</td></tr>
+<tr><td>Davao Durian Strong</td><td>08:00:00</td><td>08:21:02</td><td class="ok">FINISHED</td></tr>
+</table>
+<p>No runner names, no finish time, same release rules as today. A team is only marked FINISHED when all members crossed.</p>
+<h3>Final results (after reconcile)</h3>
+<table>
+<tr><th>TEAM NAME</th><th>RUNNERS</th><th>START</th><th>CP1</th><th>CP2</th><th>CP3</th><th>FINISH</th><th>TOTAL TIME</th></tr>
+<tr><td>Davao Durian Strong</td><td>Jayvee Tyron Lim Uy, Kevin Ryan Tan</td><td>08:00:00</td><td>08:21:02</td><td>08:33:10</td><td>08:40:55</td><td>08:43:55</td><td>43:55</td></tr>
+</table>
+<p>Checkpoint columns only appear if the course has checkpoints. In admin each team row expands to show every member's own read times, so a missing member is obvious.</p>
+
+<h2>8. Edge cases</h2>
+<table>
+<tr><th>Case</th><th>Behaviour</th></tr>
+<tr><td>Member chip does not read at finish</td><td>Team stays incomplete 1/2. Marshal can type the member's tag/bib manually; otherwise admin override.</td></tr>
+<tr><td>Same member read twice at finish</td><td>Counts once (distinct members). First read after start is used, as for solo.</td></tr>
+<tr><td>Member read before the start</td><td>Ignored for finish, same as the existing "reads never hidden by a later start" rule.</td></tr>
+<tr><td>Tag given to two people</td><td>Blocked at import and when editing a member.</td></tr>
+<tr><td>Team missing a member at import</td><td>Warning. Team size can be edited; the finish rule uses the actual member count.</td></tr>
+<tr><td>Substitute runner on race day</td><td>Admin replaces a member's tag/name; old reads stay attached to the old member.</td></tr>
+<tr><td>Duo where one runner is only counted at the finish</td><td>Both must cross; team time = last. Gaps between the two are shown in the admin expand row.</td></tr>
+</table>
+
+<h2>9. Build order</h2>
+<ol>
+<li>Migration <code>team_members</code> plus <code>reads.member_id</code>.</li>
+<li>Importer: parse client headers, group by team, auto bibs, validations, tests.</li>
+<li><code>MATCH</code> / live loader: resolve member tag to team bib and member.</li>
+<li><code>computeResults</code>: all-members finish rule, member split data, tests.</li>
+<li>Boards: team name only while in progress, names and splits in final, admin expand row.</li>
+<li>Station app: carry member tags in the runner sync.</li>
+<li>E2E: simulate a duo and a relay through the existing harness.</li>
+</ol>
+<h3>Files touched</h3>
+<ul>
+<li><code>centralapp/db/</code> new migration</li>
+<li><code>centralapp/src/lib/import.ts</code>, <code>src/lib/server/participants.ts</code></li>
+<li><code>centralapp/src/lib/server/stationdata.ts</code>, <code>live.ts</code></li>
+<li><code>centralapp/src/lib/results.ts</code>, <code>ProgressTable.svelte</code>, results view, admin participants page</li>
+<li><code>perstationapp/src-tauri/src/db.rs</code> and sync</li>
+</ul>
+
+<h2>10. Open items to confirm</h2>
+<ul>
+<li>Default relay team size (4?) or per-category setting.</li>
+<li>Whether relay exchange points get readers (needed for per-leg times). Without them the final shows finish times only.</li>
+<li>Team gender for awards (mixed / male / female derived from members).</li>
+<li>The station app tag lookup (<code>sync.rs</code>) has not been read yet; the sync change is sized from <code>db.rs</code> only.</li>
+</ul>
+
+</main>
+</body>
+</html>

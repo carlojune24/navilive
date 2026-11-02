@@ -162,7 +162,7 @@
 		const words = search.toLowerCase().split(/\s+/).filter(Boolean);
 		return data.participants.filter((p) => {
 			if (catFilter === 'none' ? p.category_id !== null : catFilter !== '' && String(p.category_id) !== catFilter) return false;
-			const hay = `${p.bib} ${p.name} ${p.tag} ${p.category ?? ''} ${p.gender === 'M' ? 'male men' : p.gender === 'F' ? 'female women' : ''} ${p.age ?? ''}`.toLowerCase();
+			const hay = `${p.bib} ${p.name} ${p.members?.map((m: { name: string; tag: string }) => `${m.name} ${m.tag}`).join(' ') ?? ''} ${p.tag} ${p.category ?? ''} ${p.gender === 'M' ? 'male men' : p.gender === 'F' ? 'female women' : ''} ${p.age ?? ''}`.toLowerCase();
 			return words.every((w) => hay.includes(w)); // every word must match somewhere, so "maria 10k" narrows
 		});
 	});
@@ -293,7 +293,7 @@
 	{#if form?.error && !importOpen && !batchDlg}<p class="border-2 border-destructive p-3 font-bold text-destructive" role="alert">{form.error}</p>{/if}
 	{#if form?.imported}
 		<p class="border-2 border-border bg-card p-3 font-bold">
-			Imported {form.imported} participants.
+			Imported {form.imported} {form.teamsImported ? `teams (${form.teamsImported.members} runners)` : 'participants'}.
 			{#if form.skipped?.length}Notes: {form.skipped.join('; ')}{/if}
 		</p>
 	{/if}
@@ -333,7 +333,7 @@
 				<Table.Root>
 					<Table.Header>
 						<Table.Row class="bg-primary hover:bg-primary">
-							{#each ['Bib', 'Name', 'Category', 'Gender', 'Age', 'Tag', ''] as h}
+							{#each ['Bib', 'Name', 'Team name', 'Category', 'Gender', 'Age', 'Tag', ''] as h}
 								<Table.Head class="font-bold tracking-wide text-primary-foreground uppercase">{h}</Table.Head>
 							{/each}
 						</Table.Row>
@@ -342,7 +342,7 @@
 						{#each filtered as p (p.id)}
 							{#if editing === p.id}
 								<Table.Row class="bg-accent">
-									<Table.Cell colspan={7}>
+									<Table.Cell colspan={8}>
 										<form method="POST" action="?tab={tab}&/updateParticipant" use:enhance={closeOnSave} class="flex flex-wrap items-end gap-2">
 											<input type="hidden" name="id" value={p.id} />
 											<div class="w-28"><Label class={lbl} for="eb{p.id}">Bib</Label><Input id="eb{p.id}" name="bib" value={p.bib} class="h-11 border-2" required /></div>
@@ -380,25 +380,31 @@
 									</Table.Cell>
 								</Table.Row>
 							{:else}
+								<!-- a relay/duo team shows one row per runner (team name beside them); Edit/Delete act on the whole team from its first row -->
+								{#each p.members?.length ? p.members : [p] as m, mi}
 								<Table.Row>
 									<Table.Cell class="font-display text-3xl font-black">{p.bib}</Table.Cell>
-									<Table.Cell class="text-lg">{p.name || '—'}</Table.Cell>
+									<Table.Cell class="text-lg">{m.name || '—'}</Table.Cell>
+									<Table.Cell class="text-lg">{p.members?.length ? p.name : '—'}</Table.Cell>
 									<Table.Cell>{p.category ?? '—'}</Table.Cell>
-									<Table.Cell>{p.gender === 'M' ? 'Male' : p.gender === 'F' ? 'Female' : '—'}</Table.Cell>
-									<Table.Cell>{p.age ?? '—'}</Table.Cell>
-									<Table.Cell>{p.tag || '—'}</Table.Cell>
+									<Table.Cell>{m.gender === 'M' ? 'Male' : m.gender === 'F' ? 'Female' : '—'}</Table.Cell>
+									<Table.Cell>{m.age ?? '—'}</Table.Cell>
+									<Table.Cell>{m.tag || '—'}</Table.Cell>
 									<Table.Cell class="text-right whitespace-nowrap">
+										{#if mi === 0}
 										<Button variant="outline" size="sm" class={small} onclick={() => (editing = p.id)}>Edit</Button>
 										<form method="POST" action="?tab={tab}&/deleteParticipant" use:enhance class="inline">
 											<input type="hidden" name="id" value={p.id} />
 											<Button type="submit" variant="outline" size="sm" class={small}>Delete</Button>
 										</form>
+										{/if}
 									</Table.Cell>
 								</Table.Row>
+								{/each}
 							{/if}
 						{:else}
 							<Table.Row>
-								<Table.Cell colspan={7} class="p-6 text-muted-foreground">{filtering ? 'No participants match this search.' : 'No participants yet. Press Import participants.'}</Table.Cell>
+								<Table.Cell colspan={8} class="p-6 text-muted-foreground">{filtering ? 'No participants match this search.' : 'No participants yet. Press Import participants.'}</Table.Cell>
 							</Table.Row>
 						{/each}
 					</Table.Body>

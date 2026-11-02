@@ -287,13 +287,14 @@
 							<span class="font-display leading-[0.85] font-black {big ? 'text-3xl md:text-7xl' : 'text-xl md:text-4xl'}">{r.bib}</span>
 							<span class="flex min-w-0 items-center gap-2 md:gap-4">
 								{#if big}{@render face(r.photo, r.bib, 'size-12 md:size-20')}{/if}
-								<span class="truncate font-bold uppercase {big ? 'text-lg md:text-5xl' : 'text-base md:text-3xl'}">{r.name || 'Bib ' + r.bib}</span>
+								<span class="min-w-0 truncate font-bold uppercase {big ? 'text-lg md:text-5xl' : 'text-base md:text-3xl'}">{r.name || 'Bib ' + r.bib}{#if r.members}<span class="block truncate text-sm font-normal normal-case md:text-2xl" data-testid="team-runners">{r.members.map((m) => m.name).join(', ')}</span>{/if}</span>
 								{#if big && r.rank! <= 3}{@render medal(r.rank!, 'size-6 md:size-14')}{/if}
 							</span>
 							<span class="font-display leading-[0.85] font-black {big ? 'text-4xl md:text-8xl' : 'text-2xl md:text-5xl'}">{fmt(r.time!)}</span>
 						</button>
 						{#if open.has(key)}
 							<p class="px-4 pb-3 text-xl md:pl-[10.5rem]">
+								{#if r.members}{#each r.members as m}<span class="mr-6 font-bold uppercase">{m.name} <span class="font-normal">{m.finishAt !== null ? `finished ${fmt(m.finishAt - (r.finishAt! - r.time!))}` : 'no finish read'}</span></span>{/each}<br />{/if}
 								{#each r.splits as sp}<span class="mr-6 font-bold uppercase">{sp.station} <span class="font-normal">{fmt(sp.elapsed)}</span></span>{:else}<span class="text-muted-foreground">No checkpoint splits.</span>{/each}
 							</p>
 						{/if}

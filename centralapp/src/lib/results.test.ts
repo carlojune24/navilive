@@ -142,3 +142,30 @@ describe('fmt', () => {
 		expect(fmt(3725000)).toBe('1:02:05');
 	});
 });
+
+describe('team (relay / duo)', () => {
+	const team: P[] = [{ id: 1, bib: '201', name: 'DUO', category_id: 10, members: [{ id: 7, name: 'Ann' }, { id: 8, name: 'Bob' }] }];
+	const start = { pid: 1, station_id: 1, read_at_ms: 1000 };
+	const fin = (mid: number | null, at: number): R => ({ pid: 1, station_id: 3, read_at_ms: at, mid });
+	const run = (reads: R[], p = team) => computeResults(cats, p, st, reads, 'own')[0];
+	it('is not finished until every member has crossed', () => {
+		const c = run([start, fin(7, 601000)]);
+		expect(c.rows).toEqual([]);
+		expect(c.progress[0].state).toBe('on-course');
+		expect(c.progress[0].team).toEqual({ done: 1, of: 2 });
+	});
+	it('finishes at the last member and lists each member time', () => {
+		const c = run([start, fin(8, 701000), fin(7, 601000), fin(7, 650000)]);
+		expect(c.rows[0].time).toBe(700000);
+		expect(c.rows[0].members).toEqual([{ name: 'Ann', finishAt: 601000 }, { name: 'Bob', finishAt: 701000 }]);
+	});
+	it('a read made by bib stands in for a member without a read', () => {
+		expect(run([start, fin(7, 601000), fin(null, 701000)]).rows[0].time).toBe(700000);
+	});
+	it('an override finishes the team', () => {
+		expect(run([start, fin(7, 601000)], [{ ...team[0], finishOverride: 801000 }]).rows[0].time).toBe(800000);
+	});
+	it('a solo runner is unaffected', () => {
+		expect(run([start, fin(null, 601000)], [{ id: 1, bib: '1', name: 'S', category_id: 10 }]).rows[0].time).toBe(600000);
+	});
+});

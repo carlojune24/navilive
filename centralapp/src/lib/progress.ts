@@ -13,6 +13,7 @@ export type ProgressRow = {
 	by: (string | null)[]; // who tagged that first read (marshal name or laptop), per course station
 	last: string | null; // the furthest station reached
 	missed: string[]; // course stations with no read although the runner has a read at a later one
+	team?: { done: number; of: number }; // relay/duo: members who have crossed the finish
 };
 
 const KIND_RANK: Record<string, number> = { start: 0, checkpoint: 1, finish: 2 };
