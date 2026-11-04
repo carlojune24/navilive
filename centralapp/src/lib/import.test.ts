@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseBibs, parseCsv, parseTeamCsv, isTeamCsv } from './import';
+import { cleanTag, parseBibs, parseCsv, parseTeamCsv, isTeamCsv } from './import';
 
 describe('parseBibs', () => {
 	it('expands ranges, keeps literals and leading zeros', () => {
@@ -82,5 +82,13 @@ describe('parseTeamCsv (client relay/duo listing)', () => {
 		const r = parseTeamCsv('Team Name,First Name,Tag\nA,x,T1\nA,y,t1\nA,x,');
 		expect(r.errors).toHaveLength(2);
 		expect(r.teams[0].members).toHaveLength(1);
+	});
+});
+
+describe('cleanTag', () => {
+	it('drops the Excel =" wrapper but keeps leading zeros', () => {
+		expect(cleanTag('="000000000000000000000001"')).toBe('000000000000000000000001');
+		expect(cleanTag('=000000000000000000000001')).toBe('000000000000000000000001');
+		expect(cleanTag('E200 3412')).toBe('E200 3412');
 	});
 });

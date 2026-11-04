@@ -2,7 +2,7 @@ import { error, fail } from '@sveltejs/kit';
 import { pool, q } from '$lib/server/db';
 import { hashKey, newKey } from '$lib/server/apikey';
 import { lanAddresses } from '$lib/server/network';
-import { splitLine, parseBibs, parseCsv, parseTeamCsv, isTeamCsv, normGender, parseAge } from '$lib/import';
+import { cleanTag, splitLine, parseBibs, parseCsv, parseTeamCsv, isTeamCsv, normGender, parseAge } from '$lib/import';
 import { parseBrackets } from '$lib/results';
 import { parseConfig } from '$lib/awardcfg';
 import { LEVELS } from '$lib/release';
@@ -265,7 +265,7 @@ export const actions = {
 			const notes: string[] = [];
 			for (const line of lines.slice(1)) {
 				const c = splitLine(line, d);
-				const bib = c[bi] ?? '', tag = (c[ti] ?? '').toUpperCase();
+				const bib = c[bi] ?? '', tag = cleanTag(c[ti] ?? '').toUpperCase();
 				if (!bib || !tag) continue;
 				const [p] = await q<{ id: number; team: boolean }>('select id, exists (select 1 from team_members m where m.participant_id=p.id) as team from participants p where event_id=$1 and bib=$2', [e.id, bib]);
 				if (!p) { notes.push(`Bib ${bib}: not a participant`); continue; }

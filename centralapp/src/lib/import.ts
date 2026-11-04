@@ -37,6 +37,9 @@ export function parseAge(s: string): number | null {
 	return n >= 1 && n <= 120 ? n : null;
 }
 
+/** Excel-safe export writes a tag as ="000123" so zeros survive; the leading = is not part of the tag. Zeros are kept. */
+export const cleanTag = (t: string) => t.replace(/^=/, '').replace(/^"|"$/g, '').trim();
+
 export function splitLine(line: string, d: string): string[] {
 	const out: string[] = [];
 	let cur = '';
@@ -94,7 +97,7 @@ export function parseCsv(text: string, on = new Date()): { rows: Row[]; errors: 
 		});
 		if (shared) extra['bib flag'] = `shared bib ${bib0}, change it`;
 		const name = get('name') || `${get('first name')} ${get('last name')}`.replace(/\s+/g, ' ').trim();
-		rows.push({ bib, name, category: get('category'), tag: get('tag'), gender, age, extra });
+		rows.push({ bib, name, category: get('category'), tag: cleanTag(get('tag')), gender, age, extra });
 	});
 	return { rows, errors };
 }
