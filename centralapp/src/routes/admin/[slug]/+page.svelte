@@ -167,7 +167,7 @@
 		});
 	});
 	const filtering = $derived(search.trim() !== '' || catFilter !== '');
-	let importMode = $state<'bibs' | 'csv' | 'one'>('bibs');
+	let importMode = $state<'bibs' | 'csv' | 'one' | 'tags'>('bibs');
 	let importOpen = $state(false);
 	let batchDlg = $state<{ kind: 'add' | 'assign' | 'find'; cat: number } | null>(null); // which category's batch dialog is open
 	const dlgCat = $derived(batchDlg ? data.categories.find((c) => c.id === batchDlg!.cat) : null);
@@ -1147,6 +1147,7 @@
 						<Button variant={importMode === 'bibs' ? 'default' : 'outline'} class="h-11 border-2 font-bold uppercase" onclick={() => (importMode = 'bibs')}>Bib numbers into a category</Button>
 						<Button variant={importMode === 'csv' ? 'default' : 'outline'} class="h-11 border-2 font-bold uppercase" onclick={() => (importMode = 'csv')}>Full detail (CSV)</Button>
 						<Button variant={importMode === 'one' ? 'default' : 'outline'} class="h-11 border-2 font-bold uppercase" onclick={() => (importMode = 'one')}>Add one runner</Button>
+						<Button variant={importMode === 'tags' ? 'default' : 'outline'} class="h-11 border-2 font-bold uppercase" onclick={() => (importMode = 'tags')}>Assign RFID tags (CSV)</Button>
 					</div>
 
 					{#if importMode === 'bibs'}
@@ -1193,12 +1194,14 @@
 							</div>
 							<Button type="submit" class="h-11 font-bold uppercase">Save runner</Button>
 						</form>
-					{:else}
+					{:else if importMode === 'tags'}
 						<form method="POST" action="?tab={tab}&/importTags" enctype="multipart/form-data" use:enhance={importEnhance} class="space-y-3 border-2 border-border bg-card p-4">
 								<p class="text-muted-foreground"><b>Assign RFID tags:</b> upload the RFID writer CSV (<b>bib</b> and <b>tag</b> columns). Runners are matched by bib; only their tag is set. A relay/duo bib appears once in the file; its tag is written to every member of that bib. Re-uploading overwrites.</p>
 								<input type="file" name="file" accept=".csv,text/csv,text/plain" required class={field + ' py-2'} aria-label="RFID writer CSV" />
 								<Button type="submit" class="h-11 font-bold uppercase">Assign tags</Button>
 							</form>
+						{:else}
+						
 							<form method="POST" action="?tab={tab}&/importCsv" enctype="multipart/form-data" use:enhance={importEnhance} class="space-y-3 border-2 border-border bg-card p-4">
 							<p class="text-muted-foreground">
 								<b>One file per category:</b> choose the category below, then upload the runners of that distance. Header row required. Columns: <b>bib</b> (required), <b>name</b>, <b>gender</b> (M or F), <b>age</b> (a number), <b>tag</b>. Any other column (team, club…) is kept as extra data. Blank cells never erase existing data.
