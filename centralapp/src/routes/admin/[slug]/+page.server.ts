@@ -2,7 +2,7 @@ import { error, fail } from '@sveltejs/kit';
 import { pool, q } from '$lib/server/db';
 import { hashKey, newKey } from '$lib/server/apikey';
 import { lanAddresses } from '$lib/server/network';
-import { parseBibs, parseCsv, parseTeamCsv, isTeamCsv, normGender, parseAge } from '$lib/import';
+import { splitLine, parseBibs, parseCsv, parseTeamCsv, isTeamCsv, normGender, parseAge } from '$lib/import';
 import { parseBrackets } from '$lib/results';
 import { parseConfig } from '$lib/awardcfg';
 import { LEVELS } from '$lib/release';
@@ -252,7 +252,40 @@ export const actions = {
 		if (!rows.length) return fail(400, { error: errors.join('; ') || 'No rows found' });
 		return { imported: await importRows(e.id, rows, def), skipped: errors };
 	},
-	// A station app export file uploaded by hand (e.g. a laptop that was offline). Same insert as the live upload, so re-uploading is harmless.
+	// RFID writer export (bib,name,category,tag,encoded_at). A team bib gives its tag to every member; only existing bibs are touched.
+		importTags: async ({ request, params }) => {
+			const e = await ev(params.slug);
+			const file = (await request.formData()).get('file');
+			const lines = (file instanceof File && file.size ? await file.text() : '').replace(/^\uFEFF/, '').split(/\r?\n/).filter((l) => l.trim());
+			const d = [',', ';', '\t'].reduce((best, c) => ((lines[0] ?? '').split(c).length > (lines[0] ?? '').split(best).length ? c : best));
+			const head = lines.length ? splitLine(lines[0], d).map((h) => h.toLowerCase()) : [];
+			const [bi, ni, ti] = ['bib', 'name', 'tag'].map((h) => head.indexOf(h));
+			if (bi < 0 || ti < 0) return fail(400, { error: 'Header row needs "bib" and "tag" columns' });
+			// one row per bib (a team shows once, under its team name); the tag goes to every member of that bib. Shared bibs are not renamed here.
+			const notes: string[] = [];
+			for (const line of lines.slice(1)) {
+				const c = splitLine(line, d);
+				const bib = c[bi] ?? '', tag = (c[ti] ?? '').toUpperCase();
+				if (!bib || !tag) continue;
+				const [p] = await q<{ id: number; team: boolean }>('select id, exists (select 1 from team_members m where m.participant_id=p.id) as team from participants p where event_id=$1 and bib=$2', [e.id, bib]);
+				if (!p) { notes.push(`Bib ${bib}: not a participant`); continue; }
+				// a team's own tag stays blank: a read must resolve to a member, not to the team row
+				await q(p.team ? 'update team_members set tag=$2 where participant_id=$1' : 'update participants set tag=$2 where id=$1', [p.id, tag]);
+			}
+			// participants = one per bib (a team counts once); tags = distinct tags in use
+			const [r] = await q<{ participants: number; tags: number }>(
+				`select (select count(*) from participants where event_id=$1)::int as participants,
+				        (select count(distinct upper(t)) from (select tag t from participants where event_id=$1 and tag<>'' union all select tag from team_members where event_id=$1 and tag<>'') x)::int as tags`,
+				[e.id]
+			);
+			const missing = await q<{ bib: string }>(
+				`select p.bib from participants p where event_id=$1 and case when exists (select 1 from team_members m where m.participant_id=p.id)
+				   then exists (select 1 from team_members m where m.participant_id=p.id and m.tag='') else p.tag='' end order by p.bib`,
+				[e.id]
+			);
+			return { tagReport: { participants: r.participants, tags: r.tags, missing: missing.map((m) => m.bib), notes } };
+		},
+		// A station app export file uploaded by hand (e.g. a laptop that was offline). Same insert as the live upload, so re-uploading is harmless.
 	uploadReads: async ({ request, params }) => {
 		const e = await ev(params.slug);
 		const file = (await request.formData()).get('file');

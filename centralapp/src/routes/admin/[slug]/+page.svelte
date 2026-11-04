@@ -297,6 +297,15 @@
 			{#if form.skipped?.length}Notes: {form.skipped.join('; ')}{/if}
 		</p>
 	{/if}
+	{#if form?.tagReport}
+		{@const t = form.tagReport}
+		<div class="space-y-1 border-2 border-border bg-card p-3 font-bold" role="status">
+			<p>{t.tags} tags for {t.participants} participants (a team counts once).</p>
+			<p class={t.missing.length ? 'text-destructive' : ''}>{t.missing.length ? `${t.missing.length} participants without a tag: ${t.missing.join(', ')}` : 'Everyone has a tag.'}</p>
+			{#if t.tags > t.participants}<p class="text-destructive">More tags than participants.</p>{/if}
+			{#if t.notes.length}<p class="text-destructive">Skipped: {t.notes.join('; ')}</p>{/if}
+		</div>
+	{/if}
 	{#if form?.awardsSaved}<p class="border-2 border-border bg-card p-3 font-bold">Awards settings saved.</p>{/if}
 	{#if form?.revealSet !== undefined}<p class="border-2 border-border bg-card p-3 font-bold">{form.revealSet ? 'Awards are now visible on the live board.' : 'Awards are now hidden from the public board.'}</p>{/if}
 	{#if form?.saved}<p class="border-2 border-border bg-card p-3 font-bold">Participant saved.</p>{/if}
@@ -1185,7 +1194,12 @@
 							<Button type="submit" class="h-11 font-bold uppercase">Save runner</Button>
 						</form>
 					{:else}
-						<form method="POST" action="?tab={tab}&/importCsv" enctype="multipart/form-data" use:enhance={importEnhance} class="space-y-3 border-2 border-border bg-card p-4">
+						<form method="POST" action="?tab={tab}&/importTags" enctype="multipart/form-data" use:enhance={importEnhance} class="space-y-3 border-2 border-border bg-card p-4">
+								<p class="text-muted-foreground"><b>Assign RFID tags:</b> upload the RFID writer CSV (<b>bib</b> and <b>tag</b> columns). Runners are matched by bib; only their tag is set. A relay/duo bib appears once in the file; its tag is written to every member of that bib. Re-uploading overwrites.</p>
+								<input type="file" name="file" accept=".csv,text/csv,text/plain" required class={field + ' py-2'} aria-label="RFID writer CSV" />
+								<Button type="submit" class="h-11 font-bold uppercase">Assign tags</Button>
+							</form>
+							<form method="POST" action="?tab={tab}&/importCsv" enctype="multipart/form-data" use:enhance={importEnhance} class="space-y-3 border-2 border-border bg-card p-4">
 							<p class="text-muted-foreground">
 								<b>One file per category:</b> choose the category below, then upload the runners of that distance. Header row required. Columns: <b>bib</b> (required), <b>name</b>, <b>gender</b> (M or F), <b>age</b> (a number), <b>tag</b>. Any other column (team, club…) is kept as extra data. Blank cells never erase existing data.
 							</p>

@@ -22,8 +22,9 @@ export async function loadResults(slug: string, mode: Mode, opts: { includeHidde
 		q('select id, name, kind, ord from stations where event_id=$1', [ev.id]),
 		// a read belongs to the participant whose bib it carries, else whose tag matches
 		q(
-			`select p.id as pid, r.station_id, r.read_at_ms, r.device_id, (select tm.id from team_members tm where tm.participant_id=p.id and r.bib is null and tm.tag<>'' and upper(tm.tag)=upper(r.tag)) as mid from reads r
+			`select p.id as pid, r.station_id, r.read_at_ms, r.device_id, tm.id as mid from reads r
 			 join participants p on ${MATCH}
+			 left join team_members tm on tm.participant_id=p.id and r.bib is null and tm.tag<>'' and upper(tm.tag)=upper(r.tag)
 			 where r.event_id=$1 and not r.voided and r.station_id is not null`,
 			[ev.id]
 		),
