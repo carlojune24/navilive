@@ -121,6 +121,25 @@ fn explain(e: ureq::Error) -> String {
     }
 }
 
+/// The central app holds the writer's hex EPC (00000000C8); the reader sends the last 4 bytes as a 10-digit decimal (0000000200).
+/// shortcut: every all-hex tag from central is treated as an EPC, so a reader number typed into central would be converted too; add a tag-format flag if that happens.
+pub fn epc_to_card(tag: &str) -> String {
+    let t = tag.trim();
+    if t.is_empty() || !t.chars().all(|c| c.is_ascii_hexdigit()) {
+        return t.to_string(); // also keeps the byte slice below on ASCII
+    }
+    format!("{:010}", u32::from_str_radix(&t[t.len().saturating_sub(8)..], 16).unwrap())
+}
+
+#[test]
+fn epc_to_card_matches_reader_output() {
+    assert_eq!(epc_to_card("00000000C8"), "0000000200");
+    assert_eq!(epc_to_card("000000000000000000000192"), "0000000402");
+    assert_eq!(epc_to_card("e2000000ffffffff"), "4294967295");
+    assert_eq!(epc_to_card(""), "");
+    assert_eq!(epc_to_card("BIB-12"), "BIB-12");
+}
+
 fn pull(db: &Mutex<Connection>, cfg: &Cfg) -> Result<i64, String> {
     let rows: Vec<Value> = agent()
         .get(&format!("{}/api/events/{}/participants", cfg.url, cfg.event))
@@ -131,6 +150,10 @@ fn pull(db: &Mutex<Connection>, cfg: &Cfg) -> Result<i64, String> {
         .map_err(|e| format!("Bad roster reply: {e}"))?;
     let c = lock(db);
     let (mut ok, mut bad) = (0, Vec::new());
+    let rows: Vec<Value> = rows.into_iter().map(|mut p| {
+        if let Some(t) = p.get("tag").and_then(Value::as_str).map(epc_to_card) { p["tag"] = t.into(); }
+        p
+    }).collect();
     let mut tags = std::collections::HashMap::new(); // tag -> bib, to catch the same tag on two runners in the central app
     for p in &rows {
         let f = |k: &str| p.get(k).and_then(Value::as_str).unwrap_or("");
@@ -394,7 +417,7 @@ mod live_tests {
             db::ingest(&mut lock(db), &b, "192.168.1.50", now).unwrap().len()
         };
         let count = |db: &Mutex<Connection>, sql: &str| -> i64 { lock(db).query_row(sql, [], |r| r.get(0)).unwrap() };
-        let tag = |bib: i64| format!("E2000{bib}");
+        let tag = |bib: i64| epc_to_card(&format!("E2000{bib}"));
         let (a, b) = (laptop("station-A-start-finish.db", &[("Start", "start", 0), ("Finish", "finish", 2)]), laptop("station-B-cp1.db", &[("CP1", "checkpoint", 1)]));
         let (sa, sb) = (Sync::default(), Sync::default());
         let left = |s: &Sync| { let st = s.status.lock().unwrap(); json!([st.pending, st.last_error]) }; // reads still queued, last error
@@ -422,12 +445,12 @@ mod live_tests {
         // CP1 on laptop B: 109 misses it; 104's tag arrives in lower case with spaces
         send(&b, "ESP-CP1", "c1", gun, &[]); // the reader's first contact registers it
         db::assign_device(&mut lock(&b), "ESP-CP1", "CP1 arch", Some(cp1)).unwrap();
-        let cp: Vec<(i64, i64, String)> = (101..=108).map(|bib| (bib - 100, 600, if bib == 104 { " e2000104 ".into() } else { tag(bib) })).collect();
+        let cp: Vec<(i64, i64, String)> = (101..=108).map(|bib| (bib - 100, 600, if bib == 104 { format!(" {} ", epc_to_card("E2000104")) } else { tag(bib) })).collect();
         let cp: Vec<(i64, i64, &str)> = cp.iter().map(|(s, a, t)| (*s, *a, t.as_str())).collect();
         for (i, r) in cp.iter().enumerate() {
             send(&b, "ESP-CP1", "c1", gun + 12 * MIN + i as i64 * 20_000, std::slice::from_ref(r));
         }
-        check("CP1: tag normalised to upper case", json!(1), json!(count(&b, "SELECT COUNT(*) FROM reads WHERE tag='E2000104'")));
+        check("CP1: tag trimmed", json!(1), json!(count(&b, "SELECT COUNT(*) FROM reads WHERE tag=\x273791651076\x27")));
         sync_once(&b, &sb, false);
         check("CP1: everything uploaded", json!([0, ""]), left(&sb));
 
@@ -437,7 +460,7 @@ mod live_tests {
         send(&a, "ESP-FINISH", "f1", gun, &[]);
         db::assign_device(&mut lock(&a), "ESP-FINISH", "Finish arch", Some(finish)).unwrap();
         let t_fin = gun + 22 * MIN;
-        let f1: Vec<(i64, i64, &str)> = ["E2000101", "E2000102", "E2000103", "E2000104", "E2000105", "E2000103", "E2009999"]
+        let f1: Vec<(i64, i64, &str)> = ["3791651073", "3791651074", "3791651075", "3791651076", "3791651077", "3791651075", "E2009999"]
             .iter()
             .enumerate()
             .map(|(i, t)| (i as i64 + 1, (7 - i as i64) * 30_000, *t))
@@ -460,20 +483,20 @@ mod live_tests {
         let back = cut + 3 * MIN;
         let (t108, t109) = (back + 10_000, back + 25_000);
         let mut post: Vec<(i64, i64, &str)> = f1.iter().map(|(s, _, t)| (*s, -1, *t)).collect();
-        post.extend([(8, -1, "E2000106"), (9, -1, "E2000107"), (1, back + 30_000 - t108, "E2000108"), (2, back + 30_000 - t109, "E2000109")]);
+        post.extend([(8, -1, "3791651078"), (9, -1, "3791651079"), (1, back + 30_000 - t108, "3791651080"), (2, back + 30_000 - t109, "3791651081")]);
         send(&a, "ESP-FINISH", "f2", back + 30_000, &post);
         let new = count(&a, "SELECT COUNT(*) FROM reads WHERE device_id='ESP-FINISH'") - before;
         check("Reboot: only the 4 reads not yet delivered are new (106, 107, 108, 109)", json!(4), json!(new));
         check(
             "Reboot: 108 and 109, read after the reboot, are kept",
-            json!(["E2000108", "E2000109"]),
-            json!(lock(&a).prepare("SELECT tag FROM reads WHERE device_id='ESP-FINISH' AND tag IN ('E2000108','E2000109') ORDER BY tag").unwrap().query_map([], |r| r.get::<_, String>(0)).unwrap().map(Result::unwrap).collect::<Vec<_>>()),
+            json!(["3791651080", "3791651081"]),
+            json!(lock(&a).prepare("SELECT tag FROM reads WHERE device_id='ESP-FINISH' AND tag IN (\x273791651080\x27,\x273791651081\x27) ORDER BY tag").unwrap().query_map([], |r| r.get::<_, String>(0)).unwrap().map(Result::unwrap).collect::<Vec<_>>()),
         );
-        check("Reboot: the voided double read of 103 does not come back unvoided", json!(1), json!(count(&a, "SELECT COUNT(*) FROM reads WHERE tag='E2000103' AND device_id='ESP-FINISH' AND voided=0")));
+        check("Reboot: the voided double read of 103 does not come back unvoided", json!(1), json!(count(&a, "SELECT COUNT(*) FROM reads WHERE tag=\x273791651075\x27 AND device_id='ESP-FINISH' AND voided=0")));
         check(
             "Reboot: recovered 106/107 are flagged as arrival time, not read time",
             json!([false, false]),
-            json!(lock(&a).prepare("SELECT time_exact FROM reads WHERE tag IN ('E2000106','E2000107') AND device_id='ESP-FINISH' ORDER BY tag").unwrap().query_map([], |r| Ok(r.get::<_, i64>(0)? == 1)).unwrap().map(Result::unwrap).collect::<Vec<_>>()),
+            json!(lock(&a).prepare("SELECT time_exact FROM reads WHERE tag IN (\x273791651078\x27,\x273791651079\x27) AND device_id='ESP-FINISH' ORDER BY tag").unwrap().query_map([], |r| Ok(r.get::<_, i64>(0)? == 1)).unwrap().map(Result::unwrap).collect::<Vec<_>>()),
         );
         db::manual_read(&mut lock(&a), "110", finish, gun + 28 * MIN).unwrap();
         sync_once(&a, &sa, false);
