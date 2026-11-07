@@ -11,6 +11,6 @@ create table if not exists team_members (
   tag text not null default '',
   extra jsonb not null default '{}'::jsonb
 );
-create unique index if not exists team_members_tag_key on team_members(event_id, upper(tag)) where tag <> '';
+-- no unique tag index here: 024 lets a team share one tag, and every file re-runs on each deploy
 create unique index if not exists team_members_name_key on team_members(participant_id, lower(name));
 create index if not exists team_members_participant on team_members(participant_id);
