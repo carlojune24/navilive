@@ -45,7 +45,8 @@ if (-not (Test-Path build\index.js)) { Write-Host 'Build produced no build\index
 Step 'Packing (no secrets: .env is never included)'
 $pack = Join-Path $env:TEMP 'race-central-deploy.tar.gz'
 if (Test-Path $pack) { Remove-Item $pack }
-Run 'pack' { tar -czf $pack build package.json package-lock.json db scripts }
+# Windows' own tar: Git Bash's GNU tar (first on PATH when started from bash) reads "C:\..." as a remote host
+Run 'pack' { & "$env:SystemRoot\System32\tar.exe" -czf $pack build package.json package-lock.json db scripts }
 Write-Host ("  {0:N0} KB" -f ((Get-Item $pack).Length / 1KB))
 
 Step "Uploading to $Server (enter the server password if asked)"
