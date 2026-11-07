@@ -23,8 +23,8 @@
 
 	let { data, form } = $props();
 	// the left menu picks the section with ?tab=...
-	const sections = ['participants', 'categories', 'stations', 'route', 'progress', 'results', 'awards', 'reads', 'tally', 'data', 'connect'];
-	const titles: Record<string, string> = { participants: 'Participants', categories: 'Categories', stations: 'Stations', route: 'Route & map', progress: 'Progress', results: 'Results', awards: 'Awards', reads: 'Reads', tally: 'Tally sheets', data: 'Station data', connect: 'Connect stations' };
+	const sections = ['participants', 'categories', 'stations', 'route', 'progress', 'results', 'awards', 'reads', 'tally', 'bibs', 'data', 'connect'];
+	const titles: Record<string, string> = { participants: 'Participants', categories: 'Categories', stations: 'Stations', route: 'Route & map', progress: 'Progress', results: 'Results', awards: 'Awards', reads: 'Reads', tally: 'Tally sheets', bibs: 'Bib list',data: 'Station data', connect: 'Connect stations' };
 	// Results page: the finish-time override panel for one runner
 	let ovr = $state<{ bib: string; name: string; at: string; day: string } | null>(null);
 	let ovrBy = $state(typeof localStorage === 'undefined' ? '' : (localStorage.getItem('nv.admin.name') ?? ''));
@@ -282,10 +282,10 @@
 </Dialog.Root>
 {/snippet}
 
-<svelte:head>{#if tab === 'tally'}{@html '<style>@page{size:8.5in 13in;margin:0.5in}</style>'}{/if}</svelte:head>
+<svelte:head>{#if tab === 'tally' || tab === 'bibs'}{@html '<style>@page{size:8.5in 13in;margin:0.5in}</style>'}{/if}</svelte:head>
 
 <main class="space-y-5 p-5 print:p-0">
-	<header class={tab === 'tally' ? 'print:hidden' : ''}>
+	<header class={tab === 'tally' || tab === 'bibs' ? 'print:hidden' : ''}>
 		<h1 class="font-display text-5xl leading-[0.85] font-black uppercase">{titles[tab]}</h1>
 		<p class="mt-1 text-muted-foreground">{data.event.name} &middot; {data.participants.length} participants &middot; {data.categories.length} categories</p>
 	</header>
@@ -811,6 +811,50 @@
 							{/each}
 						</tbody>
 					</table>
+				</section>
+			{:else}
+				<p class="text-muted-foreground">No participants yet.</p>
+			{/each}
+		</div>
+		{/if}
+
+		<!-- BIB LIST: organizer checklist, tick each runner once registered and their bib is written -->
+		{#if tab === 'bibs'}
+		<!-- teams (duo/relay) expand to one row per runner, all under the team's bib -->
+		{@const sheets = groupTally(data.categories, data.batches, data.participants.flatMap((p) => (p.members?.length ? p.members.map((m: { name: string }) => ({ ...p, name: m.name })) : [p])))}
+		<div class="space-y-5">
+			<div class="flex flex-wrap items-center gap-3 print:hidden">
+				<Button class="h-11 font-bold uppercase" onclick={() => window.print()} disabled={!sheets.length}>Print bib list</Button>
+				<p class="text-muted-foreground">Checklist for the organizer: tick each runner once they have registered and their bib is written. One page per category and batch, runners by bib. Prints on long bond paper (8.5 &times; 13 in).</p>
+			</div>
+			{#each sheets as s, i}
+				<section class="border-2 border-border bg-card p-4 print:break-inside-auto print:border-0 print:p-0 {i ? 'print:break-before-page' : ''}">
+					<div class="mb-1 flex items-baseline justify-between gap-3">
+						<h2 class="font-display text-xl leading-none font-black uppercase">{s.category} &middot; {s.batch} <span class="font-sans text-xs font-bold">&mdash; {data.event.name}</span></h2>
+						<span class="text-xs font-bold whitespace-nowrap uppercase">{s.runners.length} runners</span>
+					</div>
+					<table class="w-full table-fixed border-collapse border-2 border-black text-left">
+						<thead>
+							<tr class="border-b-2 border-black bg-black/5 text-xs font-bold uppercase">
+								<th class="border border-black w-10 px-1 py-0.5 text-center">&check;</th><th class="border border-black w-8 px-1 py-0.5">#</th><th class="border border-black w-20 px-1 py-0.5">Bib</th><th class="border border-black px-1 py-0.5">Name of participant</th><th class="border border-black w-48 px-1 py-0.5">Remarks</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each s.runners as r, n (n)}
+								<tr class="h-[0.3in] border-b border-black print:break-inside-avoid">
+									<td class="border border-black text-center"><span class="inline-block size-4 border-2 border-black align-middle"></span></td>
+									<td class="border border-black px-1 text-xs">{n + 1}</td>
+									<td class="font-display border border-black px-1 text-lg leading-none font-black">{r.bib}</td>
+									<td class="border border-black px-1 text-sm leading-tight font-bold break-words uppercase">{r.name || '—'}</td>
+									<td class="border border-black"></td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+					<div class="mt-2 flex justify-end gap-6 text-xs font-bold uppercase">
+						<span>Checked: <span class="inline-block w-12 border-b border-black">&nbsp;</span> / {s.runners.length}</span>
+						<span>Checked by: <span class="inline-block w-40 border-b border-black">&nbsp;</span></span>
+					</div>
 				</section>
 			{:else}
 				<p class="text-muted-foreground">No participants yet.</p>

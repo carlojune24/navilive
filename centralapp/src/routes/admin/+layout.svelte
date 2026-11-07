@@ -20,6 +20,7 @@
 	import MapIcon from '@lucide/svelte/icons/map';
 	import KeyRound from '@lucide/svelte/icons/key-round';
 	import ClipboardList from '@lucide/svelte/icons/clipboard-list';
+	import IdCard from '@lucide/svelte/icons/id-card';
 
 	let { children } = $props();
 	let now = $state(Date.now());
@@ -80,6 +81,7 @@
 		['awards', 'Awards', Trophy],
 		['reads', 'Reads', ListChecks],
 		['tally', 'Tally sheets', ClipboardList],
+		['bibs', 'Bib list', IdCard],
 		['data', 'Station data', Activity],
 		['connect', 'Connect', Plug]
 	] as const;
