@@ -13,9 +13,18 @@ async function newSlug(name: string): Promise<{ slug: string } | { error: string
 	return { slug };
 }
 
-export const load = async () => ({
-	events: await q('select id, name, slug, date, published from events order by id desc')
-});
+export const load = async () => {
+	// no scheduler here: events deleted more than 30 days ago are removed for good whenever this page loads (cascades to all their data)
+	await q("delete from events where deleted_at < now() - interval '30 days'");
+	const events = await q<{ id: number; name: string; slug: string; date: string | null; published: boolean; archived_at: string | null; deleted_at: string | null; days_left: number | null }>(
+		"select id, name, slug, date, published, archived_at, deleted_at, greatest(0, ceil(extract(epoch from (deleted_at + interval '30 days' - now())) / 86400))::int as days_left from events order by id desc"
+	);
+	return {
+		events: events.filter((e) => !e.archived_at),
+		archived: events.filter((e) => e.archived_at && !e.deleted_at),
+		deleted: events.filter((e) => e.deleted_at)
+	};
+};
 
 export const actions = {
 	// a draft event 404s on the live board; see hooks.server.ts
@@ -23,6 +32,21 @@ export const actions = {
 		const f = await request.formData();
 		await q('update events set published=$2 where id=$1', [Number(f.get('id')), f.get('published') === 'true']);
 		return { published: true };
+	},
+	// archived events leave the main list and the public board
+	archive: async ({ request }) => {
+		const f = await request.formData();
+		await q('update events set archived_at=now(), published=false where id=$1 and archived_at is null', [Number(f.get('id'))]);
+	},
+	// back to the main list, from Archived or from Deleted
+	restore: async ({ request }) => {
+		const f = await request.formData();
+		await q('update events set archived_at=null, deleted_at=null where id=$1', [Number(f.get('id'))]);
+	},
+	// only an archived event can be deleted; nothing is removed for 30 days
+	remove: async ({ request }) => {
+		const f = await request.formData();
+		await q('update events set deleted_at=now() where id=$1 and archived_at is not null and deleted_at is null', [Number(f.get('id'))]);
 	},
 	create: async ({ request }) => {
 		const f = await request.formData();

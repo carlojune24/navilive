@@ -8,6 +8,7 @@
 	let { data, form } = $props();
 	let copy = $state<{ id: number; name: string; date: string } | null>(null); // the event being duplicated
 	let copyError = $state('');
+	let del = $state<{ id: number; name: string } | null>(null); // the archived event waiting for "delete?" confirmation
 </script>
 
 <main class="max-w-3xl space-y-6 p-5">
@@ -34,12 +35,68 @@
 					<Button type="submit" variant="outline" class="h-11 border-2 font-bold uppercase">{e.published ? 'Unpublish' : 'Publish'}</Button>
 				</form>
 				<Button type="button" variant="outline" class="h-11 border-2 font-bold uppercase" onclick={() => ((copyError = ''), (copy = { id: e.id, name: `${e.name} copy`, date: '' }))}>Duplicate</Button>
+				<form method="POST" action="?/archive">
+					<input type="hidden" name="id" value={e.id} />
+					<Button type="submit" variant="outline" class="h-11 border-2 font-bold uppercase" title="Hide this event from the list and the public board. You can restore it.">Archive</Button>
+				</form>
 			</li>
 		{:else}
 			<li class="p-4 text-muted-foreground">No events yet. Create the first one above.</li>
 		{/each}
 	</ul>
+
+	{#if data.archived.length}
+		<section class="space-y-2">
+			<h2 class="font-display text-3xl leading-none font-black uppercase">Archived ({data.archived.length})</h2>
+			<ul class="divide-y-2 divide-border border-2 border-border bg-card">
+				{#each data.archived as e (e.id)}
+					<li class="flex flex-wrap items-center gap-3 p-4">
+						<a href="/admin/{e.slug}" class="flex-1 text-xl font-bold text-muted-foreground uppercase hover:underline">{e.name}</a>
+						<form method="POST" action="?/restore">
+							<input type="hidden" name="id" value={e.id} />
+							<Button type="submit" variant="outline" class="h-11 border-2 font-bold uppercase">Restore</Button>
+						</form>
+						<Button type="button" variant="outline" class="h-11 border-2 border-destructive font-bold text-destructive uppercase" onclick={() => (del = { id: e.id, name: e.name })}>Delete</Button>
+					</li>
+				{/each}
+			</ul>
+		</section>
+	{/if}
+
+	{#if data.deleted.length}
+		<section class="space-y-2">
+			<h2 class="font-display text-3xl leading-none font-black uppercase">Deleted ({data.deleted.length})</h2>
+			<ul class="divide-y-2 divide-border border-2 border-border bg-card">
+				{#each data.deleted as e (e.id)}
+					<li class="flex flex-wrap items-center gap-3 p-4">
+						<span class="flex-1 text-xl font-bold text-muted-foreground uppercase line-through">{e.name}</span>
+						<span class="font-bold uppercase">Removed for good in {e.days_left} day{e.days_left === 1 ? '' : 's'}</span>
+						<form method="POST" action="?/restore">
+							<input type="hidden" name="id" value={e.id} />
+							<Button type="submit" variant="outline" class="h-11 border-2 font-bold uppercase">Restore</Button>
+						</form>
+					</li>
+				{/each}
+			</ul>
+		</section>
+	{/if}
 </main>
+
+<Dialog.Root open={del !== null} onOpenChange={(o) => !o && (del = null)}>
+	{#if del}
+		<Dialog.Content class="border-2 border-border sm:max-w-md">
+			<Dialog.Header>
+				<Dialog.Title class="font-display text-4xl leading-[0.85] font-black uppercase">Delete event?</Dialog.Title>
+				<Dialog.Description><b>{del.name}</b> moves to Deleted and is removed for good, with all its runners and reads, in 30 days. You can restore it until then.</Dialog.Description>
+			</Dialog.Header>
+			<form method="POST" action="?/remove" use:enhance={() => async ({ update }) => { await update(); del = null; }} class="flex gap-2">
+				<input type="hidden" name="id" value={del.id} />
+				<Button type="submit" class="h-11 font-bold uppercase">Delete</Button>
+				<Button type="button" variant="outline" class="h-11 border-2 font-bold uppercase" onclick={() => (del = null)}>Cancel</Button>
+			</form>
+		</Dialog.Content>
+	{/if}
+</Dialog.Root>
 
 <Dialog.Root open={copy !== null} onOpenChange={(o) => !o && (copy = null)}>
 	{#if copy}
