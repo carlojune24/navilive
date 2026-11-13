@@ -7,6 +7,7 @@
 	import Users from '@lucide/svelte/icons/users';
 	import Tags from '@lucide/svelte/icons/tags';
 	import Flag from '@lucide/svelte/icons/flag';
+	import Play from '@lucide/svelte/icons/play';
 	import ListOrdered from '@lucide/svelte/icons/list-ordered';
 	import Trophy from '@lucide/svelte/icons/trophy';
 	import ListChecks from '@lucide/svelte/icons/list-checks';
@@ -74,6 +75,7 @@
 	const eventItems = [
 		['participants', 'Participants', Users],
 		['categories', 'Categories', Tags],
+		['starts', 'Starts', Play],
 		['stations', 'Stations', Flag],
 		['route', 'Route & map', MapIcon],
 		['progress', 'Progress', Route],

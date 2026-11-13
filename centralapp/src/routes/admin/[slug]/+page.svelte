@@ -23,8 +23,8 @@
 
 	let { data, form } = $props();
 	// the left menu picks the section with ?tab=...
-	const sections = ['participants', 'categories', 'stations', 'route', 'progress', 'results', 'awards', 'reads', 'tally', 'bibs', 'data', 'connect'];
-	const titles: Record<string, string> = { participants: 'Participants', categories: 'Categories', stations: 'Stations', route: 'Route & map', progress: 'Progress', results: 'Results', awards: 'Awards', reads: 'Reads', tally: 'Tally sheets', bibs: 'Bib list',data: 'Station data', connect: 'Connect stations' };
+	const sections = ['participants', 'categories', 'starts', 'stations', 'route', 'progress', 'results', 'awards', 'reads', 'tally', 'bibs', 'data', 'connect'];
+	const titles: Record<string, string> = { participants: 'Participants', categories: 'Categories', starts: 'Starts', stations: 'Stations', route: 'Route & map', progress: 'Progress', results: 'Results', awards: 'Awards', reads: 'Reads', tally: 'Tally sheets', bibs: 'Bib list',data: 'Station data', connect: 'Connect stations' };
 	// Results page: the finish-time override panel for one runner
 	let ovr = $state<{ bib: string; name: string; at: string; day: string } | null>(null);
 	let ovrBy = $state(typeof localStorage === 'undefined' ? '' : (localStorage.getItem('nv.admin.name') ?? ''));
@@ -79,8 +79,13 @@
 		const overridden = data.batches.some((b) => batchLevel(b) !== null);
 		return lv.size === 1 && !overridden ? [...lv][0] : null;
 	});
-	async function setRelease(scope: 'all' | 'category' | 'batch', id: number, level: string) {
-		if (level === 'released' && !confirm('Show these results on the public live board?')) return;
+	// in-page replacement for the browser's confirm(): `run` happens only when the organizer presses the button
+	let ask = $state<{ title: string; text: string; ok: string; run: () => void } | null>(null);
+	const setRelease = (scope: 'all' | 'category' | 'batch', id: number, level: string) =>
+		level === 'released'
+			? (ask = { title: 'Release results?', text: 'Show these results on the public live board?', ok: 'Release', run: () => void saveRelease(scope, id, level) })
+			: void saveRelease(scope, id, level);
+	async function saveRelease(scope: 'all' | 'category' | 'batch', id: number, level: string) {
 		const before = relOpt;
 		if (scope === 'all') {
 			relOpt = { ...Object.fromEntries(data.categories.map((c) => [`c${c.id}`, level])), ...Object.fromEntries(data.batches.map((b) => [`b${b.id}`, null])) };
@@ -117,6 +122,25 @@
 	});
 	const catLoose = $derived(data.participants.filter((p) => p.category_id === catShown?.id && !p.batch_id));
 	const batchShown = $derived(catBatch === 'none' ? null : (catBatches.find((b) => b.id === catBatch) ?? catBatches[0]));
+	// Starts page: tick runners of one category -> next batch; each batch is started and released on its own
+	let stCat = $state<number | null>(null);
+	const stShown = $derived(data.categories.find((c) => c.id === stCat) ?? data.categories[0]);
+	let stQ = $state('');
+	let picked = $state<number[]>([]);
+	const stFree = $derived.by(() => {
+		const words = stQ.toLowerCase().split(/\s+/).filter(Boolean);
+		return data.participants.filter((p) => p.category_id === stShown?.id && !p.batch_id && words.every((w) => `${p.bib} ${p.name}`.toLowerCase().includes(w)));
+	});
+	let rmTarget = $state<{ id: number; bib: string; name: string; batch: string } | null>(null); // runner waiting for "remove from batch?" confirmation
+	let stBatch = $state<number | null>(null); // which batch tab is open
+	const stBatches = $derived(data.batches.filter((b) => b.category_id === stShown?.id));
+	const stBatchShown = $derived(stBatches.find((b) => b.id === stBatch) ?? stBatches[0]);
+	const stNext = $derived(Math.max(0, ...data.batches.filter((b) => b.category_id === stShown?.id).map((b) => Number(b.name) || 0)) + 1);
+	const stateOf = $derived(new Map(data.progressData.flatMap((c) => c.progress.map((r) => [r.bib, r.state] as const))));
+	const countStates = (bibs: string[]) => {
+		const s = bibs.map((b) => stateOf.get(b));
+		return { finished: s.filter((x) => x === 'finished').length, course: s.filter((x) => x === 'on-course').length, waiting: s.filter((x) => x !== 'finished' && x !== 'on-course').length };
+	};
 	let awardsView = $state<'list' | 'settings'>('list'); // Awards page: the winners list or the settings
 	let resSel = $state<number | 'all' | null>(null); // Results / Award list: which category is shown
 	const resShown = $derived(resSel === 'all' ? data.resultsData : data.resultsData.filter((c) => c.id === (resSel ?? data.resultsData[0]?.id)));
@@ -209,8 +233,10 @@
 		formData.set('ms', String(t));
 		return ({ update }: { update: (o?: { reset?: boolean }) => Promise<void> }) => update({ reset: false }); // keep the typed time in the field
 	};
-	const confirmReset = (label: string) => ({ cancel }: { cancel: () => void }) => {
-		if (!confirm(`Reset the start of ${label}? It goes back to Not started. Reads are kept.`)) cancel();
+	// the Reset button asks first, then submits its own form
+	const confirmReset = (label: string, e: MouseEvent) => {
+		const form = (e.currentTarget as HTMLElement).closest('form');
+		ask = { title: 'Reset start?', text: `Reset the start of ${label}? It goes back to Not started. Reads are kept.`, ok: 'Reset', run: () => form?.requestSubmit() };
 	};
 	const kindColor = (k: string) => (k === 'start' ? 'var(--start)' : k === 'finish' ? 'var(--finish)' : 'var(--checkpoint)');
 
@@ -238,10 +264,10 @@
 {#snippet gunControls(kind: 'category' | 'batch', id: number, gun: number | string | null, label: string)}
 	<span class="text-sm font-bold uppercase {gun ? '' : 'text-muted-foreground'}">{gun ? `Started ${whenText(gun)}` : 'Not started'}</span>
 	{#if gun}
-		<form method="POST" action="?tab={tab}&/clearGun" use:enhance={confirmReset(label)}>
+		<form method="POST" action="?tab={tab}&/clearGun" use:enhance>
 			<input type="hidden" name="kind" value={kind} />
 			<input type="hidden" name="id" value={id} />
-			<Button type="submit" variant="outline" size="sm" class={small} title="Back to not started, so Start can be pressed again" aria-label="Reset start of {label}">Reset</Button>
+			<Button type="button" onclick={(e) => confirmReset(label, e)} variant="outline" size="sm" class={small} title="Back to not started, so Start can be pressed again" aria-label="Reset start of {label}">Reset</Button>
 		</form>
 	{:else}
 		<form method="POST" action="?tab={tab}&/startGun" use:enhance>
@@ -256,6 +282,15 @@
 		<input type="datetime-local" step="1" name="at" value={localInput(gun)} class="h-9 border-2 border-border bg-card px-2 text-sm" aria-label="Start time for {label}" required />
 		<Button type="submit" variant="outline" size="sm" class={small}>{gun ? 'Correct time' : 'Set time'}</Button>
 	</form>
+{/snippet}
+
+{#snippet releaseButtons(scope: 'all' | 'category' | 'batch', id: number, current: string | null, follow = false)}
+	<div class="flex flex-wrap gap-2">
+		{#each ['hidden', 'checkpoints', 'released'] as lv}
+			<button type="button" onclick={() => setRelease(scope, id, lv)} class="h-10 border-2 border-border px-3 font-bold uppercase {current === lv ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-accent'}">{levelName[lv as keyof typeof levelName]}</button>
+		{/each}
+		{#if follow}<button type="button" onclick={() => setRelease(scope, id, 'inherit')} class="h-10 border-2 border-border px-3 font-bold uppercase {current === null ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-accent'}">Follow category</button>{/if}
+	</div>
 {/snippet}
 
 {#snippet overridePanel()}
@@ -313,6 +348,22 @@
 	{#if form?.readsUploaded}<p class="border-2 border-border bg-card p-3 font-bold">File read: {form.readsUploaded.received} reads. {form.readsUploaded.inserted} new, {form.readsUploaded.duplicates} already here (skipped){form.readsUploaded.updated ? `, ${form.readsUploaded.updated} void changes applied` : ''}.</p>{/if}
 	{#if form?.cleared !== undefined}<p class="border-2 border-border bg-card p-3 font-bold">Cleared {form.cleared} reads.</p>{/if}
 
+
+		<!-- one confirmation dialog for Reset start and Release results, on every tab -->
+		<Dialog.Root open={ask !== null} onOpenChange={(o) => !o && (ask = null)}>
+			{#if ask}
+				<Dialog.Content class="border-2 border-border sm:max-w-md">
+					<Dialog.Header>
+						<Dialog.Title class="font-display text-4xl leading-[0.85] font-black uppercase">{ask.title}</Dialog.Title>
+						<Dialog.Description>{ask.text}</Dialog.Description>
+					</Dialog.Header>
+					<div class="flex gap-2">
+						<Button class="h-11 font-bold uppercase" onclick={() => { const go = ask?.run; ask = null; go?.(); }}>{ask.ok}</Button>
+						<Button variant="outline" class="h-11 border-2 font-bold uppercase" onclick={() => (ask = null)}>Cancel</Button>
+					</div>
+				</Dialog.Content>
+			{/if}
+		</Dialog.Root>
 
 		<!-- PARTICIPANTS -->
 		{#if tab === 'participants'}
@@ -553,6 +604,134 @@
 		</div>
 		{/if}
 
+		<!-- STARTS: tick runners -> batch; start and release each batch; watch every category -->
+		{#if tab === 'starts'}
+		<div class="space-y-5">
+			{#if form?.batchCreated}<p class="border-2 border-border bg-card p-3 font-bold" role="status">Batch {form.batchCreated.name} created with {form.batchCreated.n} runner(s). It is queued until you press Start.</p>{/if}
+			{#if relMsg}<p class="font-bold {relMsg.startsWith('Not') ? 'text-destructive' : 'text-muted-foreground'}" role="status">{relMsg}</p>{/if}
+			<!-- one card per category: what has started and what the public board shows. Click one to work on it -->
+			<div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+				{#each data.categories as c (c.id)}
+					{@const bs = data.batches.filter((b) => b.category_id === c.id)}
+					{@const st = countStates(data.participants.filter((p) => p.category_id === c.id).map((p) => p.bib))}
+					{@const on = c.id === stShown?.id}
+					<button type="button" aria-pressed={on} onclick={() => ((stCat = c.id), (stBatch = null), (picked = []), (stQ = ''))} class="space-y-0.5 border-2 border-border p-2.5 text-left text-sm {on ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-accent'}">
+						<span class="flex items-baseline justify-between gap-2 font-display text-2xl leading-none font-black uppercase"><span>{c.name}</span><span>{c.n}</span></span>
+						<span class="block font-bold uppercase">{bs.length ? `${bs.filter((b) => b.gun_ms).length} of ${bs.length} batches started` : 'No batches yet'} · {data.participants.filter((p) => p.category_id === c.id && !p.batch_id).length} not batched</span>
+						<span class="block">{st.finished} finished · {st.course} on course · {st.waiting} not started</span>
+						<span class="block">Live board: {levelName[catLevel(c.id) as keyof typeof levelName]}</span>
+					</button>
+				{:else}
+					<p class="border-2 border-border bg-card p-4 text-muted-foreground">No categories yet. Import participants first.</p>
+				{/each}
+			</div>
+
+			{#if stShown}
+				<section class="border-2 border-border bg-card">
+					<h2 class="bg-primary px-4 py-2 font-display text-3xl font-black text-primary-foreground uppercase">New batch from {stShown.name}</h2>
+					<form method="POST" action="?tab=starts&/createBatch" use:enhance={() => async ({ result, update }) => {
+						await update();
+						if (result.type !== 'success') return;
+						picked = [];
+						// open the tab of the batch just created
+						const made = (result.data as { batchCreated?: { name: string } } | undefined)?.batchCreated?.name;
+						stBatch = data.batches.find((b) => b.category_id === stShown?.id && b.name === made)?.id ?? null;
+					}} class="space-y-3 p-4">
+						<input type="hidden" name="category" value={stShown.id} />
+						<!-- the selection lives in `picked`, so it survives searching; hidden ticked runners are still submitted -->
+						{#each picked as id (id)}<input type="hidden" name="ids" value={id} />{/each}
+						<div class="flex flex-wrap items-center gap-2">
+							<Input bind:value={stQ} placeholder="Search by bib or name" class="h-11 w-full border-2 sm:w-72" aria-label="Search runners in {stShown.name}" />
+							<Button type="button" variant="outline" class="h-11 border-2 font-bold uppercase" onclick={() => (picked = [...new Set([...picked, ...stFree.map((p) => p.id)])])}>Tick all shown ({stFree.length})</Button>
+							<Button type="button" variant="outline" class="h-11 border-2 font-bold uppercase" onclick={() => (picked = [])}>Clear</Button>
+							<Button type="submit" class="h-11 font-bold uppercase" disabled={!picked.length}>Create Batch {stNext} with {picked.length} runner{picked.length === 1 ? '' : 's'}</Button>
+						</div>
+						<ul class="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
+							{#each stFree as p (p.id)}
+								{@const on = picked.includes(p.id)}
+								<li><label class="flex h-full cursor-pointer items-center gap-2 border-2 border-border px-2.5 py-1.5 text-sm {on ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-accent'}"><input type="checkbox" checked={on} onchange={() => (picked = on ? picked.filter((x) => x !== p.id) : [...picked, p.id])} class="size-4 shrink-0" /><span class="min-w-0 leading-tight"><span class="block font-bold">{p.bib}</span><span class="block break-words">{p.name}</span></span></label></li>
+							{:else}
+								<li class="col-span-full py-2 text-muted-foreground">{stQ ? 'No free runner matches that.' : 'Everyone in this category is already in a batch.'}</li>
+							{/each}
+						</ul>
+					</form>
+				</section>
+
+				<section class="border-2 border-border bg-card">
+					<h2 class="bg-primary px-4 py-2 font-display text-3xl font-black text-primary-foreground uppercase">{stShown.name} batches</h2>
+					{#if stBatches.length}
+						<div class="flex flex-wrap gap-2 border-b-2 border-border/15 p-3" role="tablist" aria-label="Batch">
+							{#each stBatches as b (b.id)}
+								<button type="button" role="tab" aria-selected={b.id === stBatchShown?.id} onclick={() => (stBatch = b.id)} class="h-11 border-2 border-border px-4 text-lg font-bold uppercase {b.id === stBatchShown?.id ? 'bg-primary text-primary-foreground' : 'bg-card'}">
+									Batch {b.name} ({b.n}){#if b.gun_ms}<span class="ml-1" title="Started">&#9679;</span>{/if}
+								</button>
+							{/each}
+						</div>
+					{/if}
+					{#each stBatchShown ? [stBatchShown] : [] as b (b.id)}
+						{@const members = data.participants.filter((p) => p.batch_id === b.id)}
+						{@const st = countStates(members.map((p) => p.bib))}
+						{@const own = batchLevel(b)}
+						<div class="space-y-2 border-t-2 border-border/15 p-4 first:border-t-0">
+							<div class="flex flex-wrap items-center justify-between gap-3">
+								<div>
+									<span class="text-xl font-bold uppercase">Batch {b.name} <span class="font-normal text-muted-foreground">({members.length} runner{members.length === 1 ? '' : 's'})</span></span>
+									{#if members.length}<p class="font-bold break-words">{members.map((p) => p.bib).join(', ')}</p>{/if}
+								</div>
+								<span class="border-2 border-border px-2 py-1 font-bold uppercase {b.gun_ms ? 'bg-primary text-primary-foreground' : ''}">{b.gun_ms ? 'Started' : 'Queued'}</span>
+							</div>
+							<div class="flex flex-wrap items-center gap-3">{@render gunControls('batch', b.id, b.gun_ms, `${stShown.name} Batch ${b.name}`)}</div>
+							<div class="space-y-1">
+								<span class="font-bold uppercase">Live board: {levelName[(own ?? catLevel(stShown.id)) as keyof typeof levelName]}{own === null ? ' (follows category)' : ''}</span>
+								{@render releaseButtons('batch', b.id, own, true)}
+							</div>
+							<p>{st.finished} finished · {st.course} on course · {st.waiting} not started</p>
+							<ul class="flex flex-wrap gap-2" aria-label="Runners in Batch {b.name}">
+								{#each members as p (p.id)}
+									<li class="flex items-center gap-2 border-2 border-border/30 py-1 pr-1 pl-2" title={stateOf.get(p.bib) ?? ''}>
+										<span class="font-bold">{p.bib}</span>
+										<span>{p.name}</span>
+										{#if !b.gun_ms}
+											<button type="button" onclick={() => (rmTarget = { id: p.id, bib: p.bib, name: p.name, batch: b.name })} class="size-7 font-bold hover:bg-accent" aria-label="Remove {p.bib} from Batch {b.name}">&times;</button>
+										{/if}
+									</li>
+								{:else}
+									<li class="text-muted-foreground">No runners in this batch.</li>
+								{/each}
+							</ul>
+							{#if !b.gun_ms}
+								<form method="POST" action="?tab={tab}&/deleteBatch" use:enhance>
+									<input type="hidden" name="id" value={b.id} />
+									<Button type="submit" variant="outline" size="sm" class={small} title="Its runners go back to the list above">Delete batch</Button>
+								</form>
+							{/if}
+						</div>
+					{:else}
+						<p class="p-4 text-muted-foreground">No batches yet. Tick runners above and create one.</p>
+					{/each}
+				</section>
+			{/if}
+		</div>
+		{/if}
+
+		{#if tab === 'starts'}
+		<Dialog.Root open={rmTarget !== null} onOpenChange={(o) => !o && (rmTarget = null)}>
+			{#if rmTarget}
+				<Dialog.Content class="border-2 border-border sm:max-w-md">
+					<Dialog.Header>
+						<Dialog.Title class="font-display text-4xl leading-[0.85] font-black uppercase">Remove runner?</Dialog.Title>
+						<Dialog.Description><b>{rmTarget.bib} {rmTarget.name}</b> will be taken out of Batch {rmTarget.batch} and go back to the free list.</Dialog.Description>
+					</Dialog.Header>
+					<form method="POST" action="?tab=starts&/removeFromBatch" use:enhance={() => async ({ update }) => { await update(); rmTarget = null; }} class="flex gap-2">
+						<input type="hidden" name="id" value={rmTarget.id} />
+						<Button type="submit" class="h-11 font-bold uppercase">Remove</Button>
+						<Button type="button" variant="outline" class="h-11 border-2 font-bold uppercase" onclick={() => (rmTarget = null)}>Cancel</Button>
+					</form>
+				</Dialog.Content>
+			{/if}
+		</Dialog.Root>
+		{/if}
+
 		<!-- STATIONS -->
 		{#if tab === 'stations'}
 		<div class="space-y-4">
@@ -621,14 +800,6 @@
 		<div class="space-y-5">
 			<div class="space-y-2 border-2 border-border bg-card p-4">
 				<h2 class="flex flex-wrap items-baseline gap-3 font-display text-2xl font-black uppercase">What the public live board shows {#if relMsg}<span class="text-base font-bold tracking-wide {relMsg.startsWith('Not') ? 'text-destructive' : 'text-muted-foreground'}" role="status">{relMsg}</span>{/if}</h2>
-				{#snippet releaseButtons(scope: 'all' | 'category' | 'batch', id: number, current: string | null, follow = false)}
-					<div class="flex flex-wrap gap-2">
-						{#each ['hidden', 'checkpoints', 'released'] as lv}
-							<button type="button" onclick={() => setRelease(scope, id, lv)} class="h-10 border-2 border-border px-3 font-bold uppercase {current === lv ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-accent'}">{levelName[lv as keyof typeof levelName]}</button>
-						{/each}
-						{#if follow}<button type="button" onclick={() => setRelease(scope, id, 'inherit')} class="h-10 border-2 border-border px-3 font-bold uppercase {current === null ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-accent'}">Follow category</button>{/if}
-					</div>
-				{/snippet}
 				<p class="text-muted-foreground">Finishes stay off the live board until you release them. <b>Results pending</b> shows live progress and marks finishers as FINISHED with their start time, but holds back finish times, ranks and awards. <b>Hidden</b> removes the group completely.</p>
 				<div class="space-y-1"><span class="font-bold uppercase">All categories</span>{@render releaseButtons('all', 0, allLevel)}</div>
 				{#if progShown}

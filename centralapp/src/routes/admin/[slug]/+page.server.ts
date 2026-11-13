@@ -127,6 +127,37 @@ export const actions = {
 		if (!cat || !name) return fail(400, { error: 'Batch name required' });
 		await q('insert into batches(category_id, name) values($1,$2) on conflict do nothing', [cat, name]);
 	},
+	// Starts tab: the ticked runners of one category become the next numbered batch ("1", "2", ... shown as "Batch 1").
+	createBatch: async ({ request, params }) => {
+		const e = await ev(params.slug);
+		const f = await request.formData();
+		const cat = await categoryOf(e.id, f);
+		if (!cat) return fail(400, { error: 'Unknown category' });
+		const ids = [...new Set(f.getAll('ids').map(Number).filter(Number.isInteger))];
+		if (!ids.length) return fail(400, { error: 'Tick at least one runner' });
+		const c = await pool.connect();
+		try {
+			await c.query('begin');
+			await c.query('select 1 from categories where id=$1 for update', [cat]); // two clicks at once cannot take the same number
+			// all or nothing: a runner from another category or already in a batch stops the whole batch
+			const ok = await c.query('select id from participants where event_id=$1 and category_id=$2 and batch_id is null and id = any($3)', [e.id, cat, ids]);
+			if (ok.rows.length !== ids.length) {
+				await c.query('rollback');
+				return fail(400, { error: 'Nothing created. Some ticked runners are no longer free (already in a batch). Reload and tick again.' });
+			}
+			const next = await c.query("select coalesce(max(name::int), 0) + 1 as n from batches where category_id=$1 and name ~ '^[0-9]{1,9}$'", [cat]);
+			const name = String(next.rows[0].n);
+			const b = await c.query('insert into batches(category_id, name) values($1,$2) returning id', [cat, name]);
+			await c.query('update participants set batch_id=$1 where id = any($2)', [b.rows[0].id, ids]);
+			await c.query('commit');
+			return { batchCreated: { name, n: ids.length } };
+		} catch (err) {
+			await c.query('rollback');
+			throw err;
+		} finally {
+			c.release();
+		}
+	},
 	deleteBatch: async ({ request, params }) => {
 		const e = await ev(params.slug);
 		await q('delete from batches where id=$1 and category_id in (select id from categories where event_id=$2)', [await id(request), e.id]);
