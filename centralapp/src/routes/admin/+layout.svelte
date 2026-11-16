@@ -20,8 +20,7 @@
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import MapIcon from '@lucide/svelte/icons/map';
 	import KeyRound from '@lucide/svelte/icons/key-round';
-	import ClipboardList from '@lucide/svelte/icons/clipboard-list';
-	import IdCard from '@lucide/svelte/icons/id-card';
+	import Printer from '@lucide/svelte/icons/printer';
 
 	let { children } = $props();
 	let now = $state(Date.now());
@@ -82,8 +81,7 @@
 		['results', 'Results', ListOrdered],
 		['awards', 'Awards', Trophy],
 		['reads', 'Reads', ListChecks],
-		['tally', 'Tally sheets', ClipboardList],
-		['bibs', 'Bib list', IdCard],
+		['printables', 'Printables', Printer],
 		['data', 'Station data', Activity],
 		['connect', 'Connect', Plug]
 	] as const;
@@ -97,6 +95,10 @@
 	const reporting = $derived(stations.filter((s) => s.last_in_ms && now - Number(s.last_in_ms) < 10 * 60_000).length);
 	const receiving = $derived(lastIn !== null && now - lastIn < 10 * 60_000);
 
+	// Printables is one menu item; its sheets are tabs inside the page
+	const PRINT_TABS = ['tally', 'bibs', 'release'];
+	const isOn = (id: string) => activeTab === id || (id === 'printables' && PRINT_TABS.includes(activeTab));
+
 	const base = 'flex h-10 items-center gap-3 border-2 px-3 text-sm font-bold uppercase';
 	const on = 'border-border bg-primary text-primary-foreground';
 	const off = 'border-transparent hover:border-border';
@@ -105,7 +107,7 @@
 {#snippet nav(compact: boolean)}
 	{#if ev}
 		{#each eventItems as [id, label, Icon]}
-			<a href="/admin/{ev.slug}?tab={id}" class="{base} {activeTab === id ? on : off}" aria-current={activeTab === id ? 'page' : undefined}>
+			<a href="/admin/{ev.slug}?tab={id === 'printables' ? 'tally' : id}" class="{base} {isOn(id) ? on : off}" aria-current={isOn(id) ? 'page' : undefined}>
 				<Icon class="size-5 shrink-0" />{label}
 			</a>
 		{/each}

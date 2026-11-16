@@ -23,8 +23,8 @@
 
 	let { data, form } = $props();
 	// the left menu picks the section with ?tab=...
-	const sections = ['participants', 'categories', 'starts', 'stations', 'route', 'progress', 'results', 'awards', 'reads', 'tally', 'bibs', 'data', 'connect'];
-	const titles: Record<string, string> = { participants: 'Participants', categories: 'Categories', starts: 'Starts', stations: 'Stations', route: 'Route & map', progress: 'Progress', results: 'Results', awards: 'Awards', reads: 'Reads', tally: 'Tally sheets', bibs: 'Bib list',data: 'Station data', connect: 'Connect stations' };
+	const sections = ['participants', 'categories', 'starts', 'stations', 'route', 'progress', 'results', 'awards', 'reads', 'tally', 'bibs', 'release', 'data', 'connect'];
+	const titles: Record<string, string> = { participants: 'Participants', categories: 'Categories', starts: 'Starts', stations: 'Stations', route: 'Route & map', progress: 'Progress', results: 'Results', awards: 'Awards', reads: 'Reads', tally: 'Tally sheets', bibs: 'Bib list', release: 'Batch release tally', data: 'Station data', connect: 'Connect stations' };
 	// Results page: the finish-time override panel for one runner
 	let ovr = $state<{ bib: string; name: string; at: string; day: string } | null>(null);
 	let ovrBy = $state(typeof localStorage === 'undefined' ? '' : (localStorage.getItem('nv.admin.name') ?? ''));
@@ -260,6 +260,9 @@
 		const who = n ? `Its ${n} runner${n === 1 ? '' : 's'} go back to no batch.` : 'It has no runners.';
 		ask = { title: 'Delete batch?', text: `Delete ${label}? ${who}${started ? ' It has started: its runners will be timed from the category start instead.' : ''}`, ok: 'Delete', run: () => form?.requestSubmit() };
 	};
+	// Batch release tally: 0.45in rows on A4 (0.5in margins). Chrome fits 22 on one page; 21 leaves room for other browsers' margins
+	const RELEASE_ROWS_A4 = 21;
+	let releaseRows = $state(RELEASE_ROWS_A4);
 	const kindColor = (k: string) => (k === 'start' ? 'var(--start)' : k === 'finish' ? 'var(--finish)' : 'var(--checkpoint)');
 
 	const addr = $derived(data.addresses[addrIdx]);
@@ -339,14 +342,22 @@
 </Dialog.Root>
 {/snippet}
 
-<svelte:head>{#if tab === 'tally' || tab === 'bibs'}{@html '<style>@page{size:8.5in 13in;margin:0.5in}</style>'}{/if}</svelte:head>
+<svelte:head>{#if tab === 'tally' || tab === 'bibs'}{@html '<style>@page{size:8.5in 13in;margin:0.5in}</style>'}{:else if tab === 'release'}{@html '<style>@page{size:A4;margin:0.5in}</style>'}{/if}</svelte:head>
 
 <main class="space-y-5 p-5 print:p-0">
-	<header class={tab === 'tally' || tab === 'bibs' ? 'print:hidden' : ''}>
-		<h1 class="font-display text-5xl leading-[0.85] font-black uppercase">{titles[tab]}</h1>
+	<header class={tab === 'tally' || tab === 'bibs' || tab === 'release' ? 'print:hidden' : ''}>
+		<h1 class="font-display text-5xl leading-[0.85] font-black uppercase">{tab === 'tally' || tab === 'bibs' || tab === 'release' ? 'Printables' : titles[tab]}</h1>
 		<p class="mt-1 text-muted-foreground">{data.event.name} &middot; {data.participants.length} participants &middot; {data.categories.length} categories</p>
 	</header>
 
+	{#if tab === 'tally' || tab === 'bibs' || tab === 'release'}
+		<!-- Printables: one menu item, one tab per sheet -->
+		<div class="flex flex-wrap gap-2 print:hidden" role="tablist" aria-label="Printables">
+			{#each [['tally', 'Tally sheets'], ['bibs', 'Bib list'], ['release', 'Batch release tally']] as [id, label]}
+				<a href="?tab={id}" role="tab" aria-selected={tab === id} class="flex h-11 items-center border-2 border-border px-4 text-lg font-bold uppercase {tab === id ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-accent'}">{label}</a>
+			{/each}
+		</div>
+	{/if}
 	{#if form?.error && !importOpen && !batchDlg}<p class="border-2 border-destructive p-3 font-bold text-destructive" role="alert">{form.error}</p>{/if}
 	{#if form?.imported}
 		<p class="border-2 border-border bg-card p-3 font-bold">
@@ -1065,6 +1076,36 @@
 			{:else}
 				<p class="text-muted-foreground">No participants yet.</p>
 			{/each}
+		</div>
+		{/if}
+
+		<!-- BATCH RELEASE TALLY: blank A4 sheet, filled in by hand as each batch is sent off -->
+		{#if tab === 'release'}
+		<div class="space-y-5">
+			<div class="flex flex-wrap items-center gap-3 print:hidden">
+				<Button class="h-11 font-bold uppercase" onclick={() => window.print()}>Print batch release tally</Button>
+				<label class="flex items-center gap-2 font-bold uppercase">Rows <input type="number" min="1" max="200" bind:value={releaseRows} class="h-11 w-20 border-2 border-border bg-card px-2" /></label>
+				<Button variant="outline" class="h-11 border-2 font-bold uppercase" onclick={() => (releaseRows = RELEASE_ROWS_A4)}>Fit one page</Button>
+				<p class="text-muted-foreground">A blank sheet to fill in by hand. {RELEASE_ROWS_A4} rows fill one A4 page; more rows continue on the next page. Pick A4 in the print dialog if it is not already selected.</p>
+			</div>
+			<section class="border-2 border-border bg-card p-4 print:border-0 print:p-0">
+				<div class="mb-2 flex items-baseline justify-between gap-4">
+					<h2 class="font-display text-2xl leading-none font-black uppercase">Batch release tally <span class="font-sans text-xs font-bold">&mdash; {data.event.name}</span></h2>
+					<span class="text-sm font-bold whitespace-nowrap uppercase">Category: <span class="inline-block w-56 border-b-2 border-black align-baseline">&nbsp;</span></span>
+				</div>
+				<table class="w-full table-fixed border-collapse border-2 border-black text-left">
+					<thead>
+						<tr class="border-b-2 border-black bg-black/5 text-xs font-bold uppercase">
+							<th class="w-20 border border-black px-1 py-1">Batch</th><th class="border border-black px-1 py-1">Bibs</th><th class="w-32 border border-black px-1 py-1">Time</th><th class="w-44 border border-black px-1 py-1">Signature</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each { length: Math.max(1, Math.min(200, Math.floor(releaseRows) || RELEASE_ROWS_A4)) } as _, n (n)}
+							<tr class="h-[0.45in] border-b border-black print:break-inside-avoid"><td class="border border-black"></td><td class="border border-black"></td><td class="border border-black"></td><td class="border border-black"></td></tr>
+						{/each}
+					</tbody>
+				</table>
+			</section>
 		</div>
 		{/if}
 
