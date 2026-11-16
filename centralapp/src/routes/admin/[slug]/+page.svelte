@@ -309,12 +309,13 @@
 	</form>
 {/snippet}
 
-{#snippet releaseButtons(scope: 'all' | 'category' | 'batch', id: number, current: string | null, follow = false)}
-	<div class="flex flex-wrap gap-2">
+{#snippet releaseButtons(scope: 'all' | 'category' | 'batch', id: number, current: string | null, follow = false, grid = false)}
+	<!-- grid: the batch cards on Progress, two buttons per row so they fit a narrow card -->
+	<div class={grid ? 'grid grid-cols-2 gap-1.5' : 'flex flex-wrap gap-2'}>
 		{#each ['hidden', 'checkpoints', 'released'] as lv}
-			<button type="button" onclick={() => setRelease(scope, id, lv)} class="h-10 border-2 border-border px-3 font-bold uppercase {current === lv ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-accent'}">{levelName[lv as keyof typeof levelName]}</button>
+			<button type="button" aria-pressed={current === lv} onclick={() => setRelease(scope, id, lv)} class="h-10 border-2 border-border px-3 font-bold uppercase {grid ? 'text-sm' : ''} {current === lv ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-accent'}">{levelName[lv as keyof typeof levelName]}</button>
 		{/each}
-		{#if follow}<button type="button" onclick={() => setRelease(scope, id, 'inherit')} class="h-10 border-2 border-border px-3 font-bold uppercase {current === null ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-accent'}">Follow category</button>{/if}
+		{#if follow}<button type="button" aria-pressed={current === null} onclick={() => setRelease(scope, id, 'inherit')} class="h-10 border-2 border-border px-3 font-bold uppercase {grid ? 'text-sm' : ''} {current === null ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-accent'}">Follow category</button>{/if}
 	</div>
 {/snippet}
 
@@ -847,19 +848,34 @@
 			<div class="space-y-2 border-2 border-border bg-card p-4">
 				<h2 class="flex flex-wrap items-baseline gap-3 font-display text-2xl font-black uppercase">What the public live board shows {#if relMsg}<span class="text-base font-bold tracking-wide {relMsg.startsWith('Not') ? 'text-destructive' : 'text-muted-foreground'}" role="status">{relMsg}</span>{/if}</h2>
 				<p class="text-muted-foreground">Finishes stay off the live board until you release them. <b>Results pending</b> shows live progress and marks finishers as FINISHED with their start time, but holds back finish times, ranks and awards. <b>Hidden</b> removes the group completely.</p>
-				<div class="space-y-1"><span class="font-bold uppercase">All categories</span>{@render releaseButtons('all', 0, allLevel)}</div>
+				<div class="flex flex-wrap items-center gap-3 border-b-2 border-border/15 pb-3"><span class="w-40 font-bold uppercase">All categories</span>{@render releaseButtons('all', 0, allLevel)}</div>
 				{#if progShown}
 					{#each data.categories.filter((c) => c.id === progShown.id) as cat (cat.id)}
-						<div class="space-y-1"><span class="font-bold uppercase">{cat.name}</span>{@render releaseButtons('category', cat.id, catLevel(cat.id))}</div>
+						<div class="flex flex-wrap items-center gap-3"><span class="w-40 font-display text-2xl leading-none font-black uppercase">{cat.name}</span>{@render releaseButtons('category', cat.id, catLevel(cat.id))}</div>
 					{/each}
-					{#each progBatches as b (b.id)}
-						{@const own = batchLevel(b)}
-						<div class="space-y-1">
-							<span class="font-bold uppercase">Batch {b.name}</span>
-							<span class="ml-2 text-muted-foreground">showing: {levelName[(own ?? catLevel(b.category_id)) as keyof typeof levelName]}{own === null ? ' (follows category)' : ''}</span>
-							{@render releaseButtons('batch', b.id, own, true)}
-						</div>
-					{/each}
+					{#if progBatches.length}
+						<!-- one card per batch: its bibs, how many finished, what the board shows, and its own buttons -->
+						<ul class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+							{#each progBatches as b (b.id)}
+								{@const own = batchLevel(b)}
+								{@const shows = own ?? catLevel(b.category_id)}
+								{@const bibs = data.participants.filter((p) => p.batch_id === b.id).map((p) => p.bib)}
+								{@const st = countStates(bibs)}
+								<li class="flex flex-col gap-2 border-2 p-3 {shows === 'released' ? 'border-start' : 'border-border'}">
+									<button type="button" onclick={() => (progBatch = b.id)} class="text-left" title="Show only this batch in the table below">
+										<span class="flex items-baseline justify-between gap-2">
+											<span class="font-display text-2xl leading-none font-black uppercase">Batch {b.name} <span class="text-lg">({bibs.length})</span></span>
+											<span class="text-xs font-bold uppercase">{b.gun_ms ? '● Started' : 'Queued'}</span>
+										</span>
+										<span class="mt-1 block font-bold break-words">{bibs.join(', ') || 'No runners'}</span>
+										<span class="block text-sm text-muted-foreground">{st.finished} of {bibs.length} finished · {st.course} on course</span>
+									</button>
+									<span class="text-sm font-bold uppercase">Live board: <span class={shows === 'released' ? 'text-start' : ''}>{levelName[shows as keyof typeof levelName]}</span>{own === null ? ' (follows category)' : ''}</span>
+									{@render releaseButtons('batch', b.id, own, true, true)}
+								</li>
+							{/each}
+						</ul>
+					{/if}
 				{/if}
 			</div>
 			<p class="text-muted-foreground">Live: who has reached which station in each category. Times are the race time at that station (the start shows the clock time). A runner who has a later read but none at an earlier station on their course is flagged, so the missed read can be added on the Reads page. Their result is kept.</p>
