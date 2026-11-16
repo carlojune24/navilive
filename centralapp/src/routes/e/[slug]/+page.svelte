@@ -7,6 +7,9 @@
 	import { flip } from 'svelte/animate';
 	import { fly } from 'svelte/transition';
 	import { fmt, type Cat, type Mode } from '$lib/results';
+	import * as Dialog from '$lib/components/ui/dialog/index.js';
+	import { deserialize } from '$app/forms';
+	import type { StartCat, StartRunner } from '$lib/server/batches';
 
 	let { data } = $props();
 
@@ -28,7 +31,7 @@
 	let seen: Set<string> | null = null; // null until the first load, so the initial list does not flash
 	let cycleSec = $state(data.cycle); // seconds each category stays on screen while auto-cycling
 	const CYCLE_CHOICES = [5, 8, 12, 20, 30, 60];
-	let view = $state<'results' | 'awards' | 'progress' | 'map'>(data.view); // what the board shows for the selected category
+	let view = $state<'results' | 'awards' | 'progress' | 'map' | 'start'>(data.view); // what the board shows for the selected category
 
 	const cat = $derived(res.categories.find((c) => c.id === active) ?? res.categories[0]);
 	// race clock: the server's start time against the server's clock (this browser's own clock may be off)
@@ -60,6 +63,7 @@
 	}
 
 	async function refresh() {
+		void refreshStarts();
 		try {
 			const r = await fetch(`/e/${data.slug}/results?mode=${mode}`);
 			if (!r.ok) return;
@@ -69,6 +73,101 @@
 			fetchedAt = Date.now();
 		} catch {
 			/* connection state shows the problem */
+		}
+	}
+
+	// ---- Start view: roll random runners of a category into the next batch, then start it (organizer only) ----
+	type Starts = { size: number; serverMs: number; categories: StartCat[] };
+	let starts = $state<Starts | null>(data.starts);
+	let startsAt = $state(Date.now());
+	async function refreshStarts() {
+		try {
+			const r = await fetch(`/e/${data.slug}/starts`);
+			starts = r.ok ? await r.json() : null; // 404 = the organizer turned the Start menu off
+			startsAt = Date.now();
+			if (!starts && view === 'start') view = 'results';
+		} catch {
+			/* connection state shows the problem */
+		}
+	}
+	const sc = $derived(starts?.categories.find((c) => c.id === cat?.id));
+	let perGender = $state(false);
+	const genderName = { M: 'Men', F: 'Women' } as const;
+	const batchGender = (ms: StartRunner[]) => (ms.length && ms.every((m) => m.gender === ms[0].gender) && ms[0].gender in genderName ? genderName[ms[0].gender as 'M' | 'F'] : '');
+	const poolOf = (c: StartCat, g: 'M' | 'F' | null) => c.free.filter((p) => !g || p.gender === g);
+	const sinceStart = (gun: number) => fmt(Math.max(0, now + ((starts?.serverMs ?? 0) - startsAt) - gun));
+
+	async function act(name: string, fields: Record<string, string>) {
+		const fd = new FormData();
+		for (const [k, v] of Object.entries(fields)) fd.set(k, v);
+		const r = await fetch(`?/${name}`, { method: 'POST', body: fd, headers: { 'x-sveltekit-action': 'true' } });
+		const res = deserialize(await r.text());
+		if (res.type !== 'success') throw new Error((res.type === 'failure' && (res.data as { error?: string })?.error) || 'Something went wrong. Try again.');
+		return res.data;
+	}
+
+	// the roll dialog: N empty boxes, then each box spins and lands one at a time on the runner the server drew
+	type Roll = { cat: StartCat; gender: 'M' | 'F' | null; boxes: { shown: StartRunner | null; landed: boolean }[]; phase: 'ready' | 'rolling' | 'done'; err: string; batch: { id: number; name: string } | null };
+	let roll = $state<Roll | null>(null);
+	let rollRun = 0; // closing the dialog stops a spin that is still going
+	function openRoll(c: StartCat, gender: 'M' | 'F' | null) {
+		const n = Math.min(starts?.size ?? 5, poolOf(c, gender).length);
+		roll = { cat: c, gender, boxes: Array.from({ length: n }, () => ({ shown: null, landed: false })), phase: 'ready', err: '', batch: null };
+	}
+	const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+	async function runRoll() {
+		if (!roll || roll.phase !== 'ready') return;
+		const run = ++rollRun;
+		roll.phase = 'rolling';
+		roll.err = '';
+		let got: { batch: { id: number; name: string }; picks: StartRunner[] };
+		try {
+			got = (await act('roll', { category: String(roll.cat.id), ...(roll.gender ? { gender: roll.gender } : {}) })) as typeof got;
+		} catch (err) {
+			roll.phase = 'ready';
+			roll.err = err instanceof Error ? err.message : 'Could not roll.';
+			return;
+		}
+		// someone else may have rolled meanwhile: show as many boxes as the server actually drew
+		roll.boxes = got.picks.map(() => ({ shown: null, landed: false }));
+		roll.batch = got.batch;
+		const pool = poolOf(roll.cat, roll.gender);
+		const spinMs = reduceMotion ? 0 : 2200;
+		for (let i = 0; i < got.picks.length; i++) {
+			const t0 = Date.now();
+			while (Date.now() - t0 < spinMs) {
+				if (run !== rollRun || !roll) return;
+				roll.boxes[i].shown = pool[Math.floor(Math.random() * pool.length)] ?? null; // display only; the draw is the server's
+				const k = (Date.now() - t0) / spinMs;
+				await wait(45 + 260 * k * k); // slows down before it lands
+			}
+			if (run !== rollRun || !roll) return;
+			roll.boxes[i] = { shown: got.picks[i], landed: true };
+			await wait(reduceMotion ? 150 : 600);
+		}
+		if (run === rollRun && roll) roll.phase = 'done';
+		void refreshStarts();
+	}
+	function closeRoll() {
+		rollRun++;
+		roll = null;
+	}
+
+	// a batch card opens its runner list with the Start button
+	let batchOpen = $state<number | null>(null);
+	const openBatch = $derived(sc?.batches.find((b) => b.id === batchOpen) ?? null);
+	let startErr = $state('');
+	let starting = $state(false);
+	async function startNow(id: number) {
+		starting = true;
+		startErr = '';
+		try {
+			await act('start', { id: String(id) });
+			await refreshStarts();
+		} catch (err) {
+			startErr = err instanceof Error ? err.message : 'Could not start.';
+		} finally {
+			starting = false;
 		}
 	}
 
@@ -171,7 +270,7 @@
 		{#if !data.kiosk}
 			<div class="ml-auto flex flex-wrap gap-2">
 				<div class="flex" role="group" aria-label="Show">
-					{#each [['results', 'Results'], ['awards', 'Awards'], ['progress', 'Progress'], ...(data.hasRoute ? [['map', 'Map']] : [])] as [v, label]}
+					{#each [['results', 'Results'], ['awards', 'Awards'], ['progress', 'Progress'], ...(data.hasRoute ? [['map', 'Map']] : []), ...(starts ? [['start', 'Start']] : [])] as [v, label]}
 						<button
 							aria-pressed={view === v}
 							onclick={() => (view = v as typeof view)}
@@ -195,7 +294,7 @@
 				<a href="?kiosk&mode={mode}&cycle={cycleSec}&view={view}" class="flex h-12 items-center border-2 border-border bg-card px-4 font-bold uppercase hover:bg-accent">Big screen</a>
 			</div>
 		{:else}
-			<p class="ml-auto font-bold uppercase">{view === 'awards' ? 'Awards' : view === 'progress' ? 'Progress' : view === 'map' ? 'Map' : 'Results'}{auto && nextName ? ` · next: ${nextName} in ${remaining}s` : ''}</p>
+			<p class="ml-auto font-bold uppercase">{view === 'awards' ? 'Awards' : view === 'progress' ? 'Progress' : view === 'map' ? 'Map' : view === 'start' ? 'Start' : 'Results'}{auto && nextName ? ` · next: ${nextName} in ${remaining}s` : ''}</p>
 		{/if}
 	</div>
 
@@ -203,6 +302,45 @@
 		{#if view === 'map' && data.hasRoute}
 			<!-- the full route map, for showing the course and the checkpoints live -->
 			<div class="relative h-[calc(100vh-2rem)] min-h-[600px]"><RouteMap slug={data.slug} category={cat?.id ?? null} /></div>
+		{:else if view === 'start' && sc}
+			<!-- START: roll runners into the next batch, then start each batch from its card -->
+			<div class="flex flex-wrap items-center justify-between gap-3 bg-primary px-4 py-2 text-primary-foreground">
+				<h2 class="font-display text-4xl font-black uppercase md:text-6xl">{sc.name} start</h2>
+				<p class="text-lg font-bold tracking-wide uppercase">{sc.freeCount} not yet in a batch · {sc.batches.length} batch{sc.batches.length === 1 ? '' : 'es'}</p>
+			</div>
+			{#if data.admin}
+				<div class="flex flex-wrap items-center gap-3 border-b-2 border-border/15 px-4 py-3">
+					<label class="flex h-12 items-center gap-2 border-2 border-border px-3 font-bold uppercase"><input type="checkbox" bind:checked={perGender} class="size-5" /> Roll per gender</label>
+					{#each perGender ? (['M', 'F'] as const) : [null] as g}
+						{@const n = poolOf(sc, g).length}
+						<button type="button" disabled={!n} onclick={() => openRoll(sc, g)} class="h-12 border-2 border-border bg-primary px-5 text-lg font-bold text-primary-foreground uppercase disabled:opacity-40">
+							Roll {g ? genderName[g] : 'runners'} <span class="opacity-70">({n} left)</span>
+						</button>
+					{/each}
+					{#if perGender && sc.free.some((p) => !p.gender)}<p class="text-muted-foreground">{sc.free.filter((p) => !p.gender).length} runner(s) have no gender and are only rolled with Roll per gender off.</p>{/if}
+				</div>
+			{/if}
+			<ul class="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+				{#each sc.batches as b (b.id)}
+					{@const g = batchGender(b.members)}
+					<li>
+						<button type="button" onclick={() => ((batchOpen = b.id), (startErr = ''))} class="flex h-full w-full flex-col gap-1 border-2 border-border bg-card p-3 text-left hover:bg-accent">
+							<span class="flex items-baseline justify-between gap-2">
+								<span class="font-display text-4xl leading-none font-black uppercase">Batch {b.name}</span>
+								<span class="border-2 border-border px-2 py-0.5 text-sm font-bold uppercase {b.gun_ms ? 'bg-primary text-primary-foreground' : ''}">{b.gun_ms ? 'Started' : 'Waiting'}</span>
+							</span>
+							<span class="font-bold uppercase">{b.members.length} runner{b.members.length === 1 ? '' : 's'}{g ? ` · ${g}` : ''}</span>
+							{#if b.gun_ms}
+								<span class="font-display text-3xl leading-none font-black tabular-nums">{sinceStart(b.gun_ms)}</span>
+								<span class="font-bold uppercase">Started at {new Date(b.gun_ms).toLocaleTimeString()}</span>
+							{/if}
+							<span class="font-display text-2xl leading-tight font-black break-words text-start">{b.members.map((m) => m.bib).join(', ')}</span>
+						</button>
+					</li>
+				{:else}
+					<li class="col-span-full p-6 text-2xl text-muted-foreground">No batches yet in {sc.name}.{data.admin ? ' Press Roll to draw the first one.' : ''}</li>
+				{/each}
+			</ul>
 		{:else if !cat}
 			<p class="p-10 text-2xl text-muted-foreground">No participants registered for this event yet.</p>
 		{:else}
@@ -309,7 +447,80 @@
 	</main>
 </div>
 
+<Dialog.Root open={roll !== null} onOpenChange={(o) => !o && closeRoll()}>
+	{#if roll}
+		<Dialog.Content class="max-h-[95vh] overflow-y-auto border-2 border-border sm:max-w-5xl" interactOutsideBehavior={roll.phase === 'rolling' ? 'ignore' : 'close'}>
+			<Dialog.Header>
+				<Dialog.Title class="font-display text-5xl leading-[0.85] font-black uppercase md:text-7xl">
+					{roll.batch ? `Batch ${roll.batch.name}` : 'Roll'} · {roll.cat.name}{roll.gender ? ` · ${genderName[roll.gender]}` : ''}
+				</Dialog.Title>
+				<Dialog.Description class="text-lg">{roll.phase === 'done' ? `${roll.boxes.length} runner${roll.boxes.length === 1 ? '' : 's'} drawn. The batch is ready to start.` : `${roll.boxes.length} runner${roll.boxes.length === 1 ? '' : 's'} will be drawn at random, one at a time.`}</Dialog.Description>
+			</Dialog.Header>
+			<ol class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5" aria-live="polite">
+				{#each roll.boxes as box, i}
+					<li class="flex min-h-36 flex-col items-center justify-center gap-1 border-4 border-border p-3 text-center {box.landed ? 'landed bg-primary text-primary-foreground' : box.shown ? 'bg-accent' : 'bg-card'}">
+						<span class="text-sm font-bold uppercase opacity-70">Box {i + 1}</span>
+						{#if box.shown}
+							<span class="font-display text-6xl leading-none font-black tabular-nums">{box.shown.bib}</span>
+							<span class="line-clamp-2 font-bold uppercase">{box.shown.name}</span>
+						{:else}
+							<span class="font-display text-6xl leading-none font-black opacity-30">?</span>
+						{/if}
+					</li>
+				{/each}
+			</ol>
+			{#if roll.err}<p class="font-bold text-destructive" role="alert">{roll.err}</p>{/if}
+			<div class="flex flex-wrap gap-2">
+				{#if roll.phase === 'ready'}
+					<button type="button" onclick={runRoll} class="h-14 border-2 border-border bg-primary px-8 text-2xl font-bold text-primary-foreground uppercase">Start roll</button>
+				{:else if roll.phase === 'rolling'}
+					<p class="h-14 content-center text-2xl font-bold uppercase">Rolling…</p>
+				{:else}
+					{@const done = roll.batch}
+					<button type="button" onclick={() => { closeRoll(); batchOpen = done?.id ?? null; startErr = ''; }} class="h-14 border-2 border-border bg-primary px-8 text-2xl font-bold text-primary-foreground uppercase">Open batch</button>
+					<button type="button" onclick={closeRoll} class="h-14 border-2 border-border bg-card px-8 text-2xl font-bold uppercase">Close</button>
+				{/if}
+			</div>
+		</Dialog.Content>
+	{/if}
+</Dialog.Root>
+
+<Dialog.Root open={openBatch !== null} onOpenChange={(o) => !o && (batchOpen = null)}>
+	{#if openBatch && sc}
+		{@const g = batchGender(openBatch.members)}
+		<Dialog.Content class="max-h-[95vh] overflow-y-auto border-2 border-border sm:max-w-3xl">
+			<Dialog.Header>
+				<Dialog.Title class="font-display text-5xl leading-[0.85] font-black uppercase md:text-6xl">{sc.name} · Batch {openBatch.name}{g ? ` · ${g}` : ''}</Dialog.Title>
+				<Dialog.Description class="text-lg">
+					{#if openBatch.gun_ms}Started at {new Date(openBatch.gun_ms).toLocaleTimeString()} · <b class="tabular-nums">{sinceStart(openBatch.gun_ms)}</b>{:else}{openBatch.members.length} runner{openBatch.members.length === 1 ? '' : 's'}, waiting for the start.{/if}
+				</Dialog.Description>
+			</Dialog.Header>
+			<ol class="grid gap-1 sm:grid-cols-2">
+				{#each openBatch.members as m (m.bib)}
+					<li class="flex items-baseline gap-3 border-b-2 border-border/15 py-1.5"><span class="w-20 font-display text-3xl leading-none font-black">{m.bib}</span><span class="text-lg font-bold uppercase">{m.name}</span></li>
+				{/each}
+			</ol>
+			{#if startErr}<p class="font-bold text-destructive" role="alert">{startErr}</p>{/if}
+			{#if data.admin && !openBatch.gun_ms}
+				{@const id = openBatch.id}
+				<button type="button" disabled={starting} onclick={() => startNow(id)} class="h-16 border-2 border-border bg-primary px-8 text-3xl font-bold text-primary-foreground uppercase disabled:opacity-50">{starting ? 'Starting…' : 'Start race'}</button>
+			{/if}
+		</Dialog.Content>
+	{/if}
+</Dialog.Root>
+
 <style>
+	.landed {
+		animation: land 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+	}
+	@keyframes land {
+		from {
+			transform: scale(1.12);
+		}
+		to {
+			transform: scale(1);
+		}
+	}
 	.countdown {
 		transition: width 1s linear;
 	}
@@ -325,6 +536,9 @@
 		}
 	}
 	@media (prefers-reduced-motion: reduce) {
+		.landed {
+			animation: none;
+		}
 		.countdown {
 			transition: none;
 		}

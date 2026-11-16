@@ -161,6 +161,15 @@
 		return () => clearInterval(tick);
 	});
 
+	// Starts and Categories follow batches rolled and started from the live board's Start view without a reload
+	$effect(() => {
+		if (tab !== 'starts' && tab !== 'categories') return;
+		let t: ReturnType<typeof setTimeout>;
+		const es = new EventSource(`/e/${data.event.slug}/stream`);
+		es.onmessage = () => (clearTimeout(t), (t = setTimeout(() => void invalidateAll(), 500)));
+		return () => (clearTimeout(t), es.close());
+	});
+
 	// what the page loaded, unless a live push has something newer
 	const laptops = $derived(monitor.laptops ?? data.laptops);
 	const sd = $derived(monitor.stationData ?? data.stationData);
@@ -609,6 +618,14 @@
 		<div class="space-y-5">
 			{#if form?.batchCreated}<p class="border-2 border-border bg-card p-3 font-bold" role="status">Batch {form.batchCreated.name} created with {form.batchCreated.n} runner(s). It is queued until you press Start.</p>{/if}
 			{#if relMsg}<p class="font-bold {relMsg.startsWith('Not') ? 'text-destructive' : 'text-muted-foreground'}" role="status">{relMsg}</p>{/if}
+			<!-- the live board's Start view: roll random runners into the next batch and start it from the board -->
+			<form method="POST" action="?tab=starts&/setLiveStart" use:enhance={() => async ({ update }) => update({ reset: false })} class="flex flex-wrap items-center gap-3 border-2 border-border bg-card p-3">
+				<label class="flex items-center gap-2 font-bold uppercase"><input type="checkbox" name="on" checked={data.liveStart.on} class="size-5" /> Start menu on the live board</label>
+				<label class="flex items-center gap-2 font-bold uppercase">Runners per roll <input type="number" name="size" min="1" max="500" value={data.liveStart.size} class="h-10 w-20 border-2 border-border bg-card px-2" required /></label>
+				<Button type="submit" variant="outline" class="h-10 border-2 font-bold uppercase">Save</Button>
+				{#if data.liveStart.on}<a href="/e/{data.event.slug}?view=start" target="_blank" class="font-bold underline">Open the live Start view</a>{/if}
+				{#if form?.liveStartSaved}<span class="text-muted-foreground" role="status">Saved ✓</span>{/if}
+			</form>
 			<!-- one card per category: what has started and what the public board shows. Click one to work on it -->
 			<div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
 				{#each data.categories as c (c.id)}

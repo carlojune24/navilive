@@ -17,10 +17,11 @@ import { buildTrack, isTrack, type RawPoint, type Track } from '$lib/gpx';
 import { SERVICE_KEYS } from '$lib/services';
 import { defaultCourse } from '$lib/progress';
 import { PUBLIC_URL } from '$app/env/private';
+import { newBatch, startBatch } from '$lib/server/batches';
 
 async function ev(slug: string) {
-	const [e] = await q<{ id: number; name: string; slug: string; api_key: string | null; award_places: number; age_brackets: string; award_exclusive: boolean; award_config: unknown }>(
-		'select id, name, slug, api_key, award_places, age_brackets, award_exclusive, award_config from events where slug=$1',
+	const [e] = await q<{ id: number; name: string; slug: string; api_key: string | null; award_places: number; age_brackets: string; award_exclusive: boolean; award_config: unknown; live_start: boolean; roll_size: number }>(
+		'select id, name, slug, api_key, award_places, age_brackets, award_exclusive, award_config, live_start, roll_size from events where slug=$1',
 		[slug]
 	);
 	if (!e) error(404, 'Event not found');
@@ -92,7 +93,7 @@ export const load = async ({ params, url }) => {
 		 from finish_overrides o join participants p on p.id=o.participant_id where p.event_id=$1`,
 		[e.id]
 	);
-	return { overrides, routes, stationKm, event: { id: e.id, name: e.name, slug: e.slug }, awards, extraFields, awardPreview, resultsData, progressData, courses, apiKey: e.api_key, port, addresses: lanAddresses(), publicUrl: PUBLIC_URL ?? null, stationData, laptops, categories, archived, batches, participants, stations, reads };
+	return { overrides, routes, stationKm, event: { id: e.id, name: e.name, slug: e.slug }, liveStart: { on: e.live_start, size: e.roll_size }, awards, extraFields, awardPreview, resultsData, progressData, courses, apiKey: e.api_key, port, addresses: lanAddresses(), publicUrl: PUBLIC_URL ?? null, stationData, laptops, categories, archived, batches, participants, stations, reads };
 };
 
 export const actions = {
@@ -145,10 +146,7 @@ export const actions = {
 				await c.query('rollback');
 				return fail(400, { error: 'Nothing created. Some ticked runners are no longer free (already in a batch). Reload and tick again.' });
 			}
-			const next = await c.query("select coalesce(max(name::int), 0) + 1 as n from batches where category_id=$1 and name ~ '^[0-9]{1,9}$'", [cat]);
-			const name = String(next.rows[0].n);
-			const b = await c.query('insert into batches(category_id, name) values($1,$2) returning id', [cat, name]);
-			await c.query('update participants set batch_id=$1 where id = any($2)', [b.rows[0].id, ids]);
+			const { name } = await newBatch(c, cat, ids);
 			await c.query('commit');
 			return { batchCreated: { name, n: ids.length } };
 		} catch (err) {
@@ -157,6 +155,16 @@ export const actions = {
 		} finally {
 			c.release();
 		}
+	},
+	// the live board's Start view (roll runners into batches and start them there) and how many runners one roll takes
+	setLiveStart: async ({ request, params }) => {
+		const e = await ev(params.slug);
+		const f = await request.formData();
+		const size = Number(f.get('size'));
+		if (!Number.isInteger(size) || size < 1 || size > 500) return fail(400, { error: 'Runners per roll must be a whole number from 1 to 500.' });
+		await q('update events set live_start=$2, roll_size=$3 where id=$1', [e.id, f.get('on') === 'on', size]);
+		await q("select pg_notify('reads', $1)", [String(e.id)]);
+		return { liveStartSaved: true };
 	},
 	deleteBatch: async ({ request, params }) => {
 		const e = await ev(params.slug);
@@ -210,8 +218,8 @@ export const actions = {
 		if (!Number.isFinite(ms) || ms <= 0) return fail(400, { error: 'Enter a valid start time' });
 		const target = Number(f.get('id'));
 		if (f.get('kind') === 'batch') {
-			const done = await q('update batches set gun_ms=$3 where id=$1 and category_id in (select id from categories where event_id=$2) and ($4 or gun_ms is null) returning id', [target, e.id, ms, typed]);
-			if (!done.length) return fail(409, { error: 'That batch has already started' });
+			if (!(await startBatch(e.id, target, ms, typed))) return fail(409, { error: 'That batch has already started' });
+			return;
 		} else {
 			const [c] = await q<{ gun_ms: string | null }>('select gun_ms from categories where id=$1 and event_id=$2', [target, e.id]);
 			if (!c) return fail(400, { error: 'Unknown category' });
