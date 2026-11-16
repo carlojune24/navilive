@@ -27,15 +27,24 @@ describe('applyRelease', () => {
 		const sf = { ...cat, course: [course[0], course[2]], progress: [{ ...prog('A', true), at: [1, 3] }] } as unknown as Cat;
 		expect(applyRelease([sf], () => 'checkpoints')[0].progress[0]).toMatchObject({ state: 'finished', rank: null, time: null, start: 0, at: [1, null] });
 	});
+	it('checkpoints: held finishers are listed by bib, not in finish order, after the released ones', () => {
+		const c4 = { ...cat, progress: [prog('Z9', true), prog('B', true), prog('A10', true), prog('A2', true), prog('C', false)] } as unknown as Cat;
+		const order = (m: Record<string, Level>) => applyRelease([c4], (b) => m[b] ?? 'checkpoints')[0].progress.map((r) => r.bib);
+		expect(order({})).toEqual(['A2', 'A10', 'B', 'Z9', 'C']);
+		expect(order({ B: 'released' })).toEqual(['B', 'A2', 'A10', 'Z9', 'C']);
+	});
 	it('hidden: the runner is gone from progress', () => expect(run({ A: 'hidden' }).progress.map((r) => r.bib)).toEqual(['B', 'C']));
-	it('a released batch shows its true ranks, awards stay held back', () => {
+	it('a released batch shows its finish times but no places while others are held; awards stay held back', () => {
 		const c = run({ B: 'released' });
-		expect(c.rows.map((r) => [r.bib, r.rank])).toEqual([['B', 2]]);
+		expect(c.rows.map((r) => [r.bib, r.rank, r.time])).toEqual([['B', null, undefined]]);
+		expect(c.provisional).toBe(true);
+		expect(c.progress.find((r) => r.bib === 'B')).toMatchObject({ state: 'finished', time: 600, rank: null });
 		expect(c.awards).toEqual([]);
 	});
 	it('everyone released: nothing is changed', () => {
 		const c = run({ A: 'released', B: 'released', C: 'released' });
-		expect(c.rows).toHaveLength(2);
+		expect(c.rows.map((r) => r.rank)).toEqual([1, 2]);
+		expect(c.provisional).toBe(false);
 		expect(c.awards).toHaveLength(1);
 		expect(c.progress.find((r) => r.bib === 'A')!.state).toBe('finished');
 	});

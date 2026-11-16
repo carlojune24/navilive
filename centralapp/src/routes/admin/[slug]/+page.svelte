@@ -247,6 +247,12 @@
 		const form = (e.currentTarget as HTMLElement).closest('form');
 		ask = { title: 'Reset start?', text: `Reset the start of ${label}? It goes back to Not started. Reads are kept.`, ok: 'Reset', run: () => form?.requestSubmit() };
 	};
+	// Delete batch asks first too; a started batch's runners lose its start time and fall back to the category's
+	const confirmDeleteBatch = (label: string, n: number, started: boolean, e: MouseEvent) => {
+		const form = (e.currentTarget as HTMLElement).closest('form');
+		const who = n ? `Its ${n} runner${n === 1 ? '' : 's'} go back to no batch.` : 'It has no runners.';
+		ask = { title: 'Delete batch?', text: `Delete ${label}? ${who}${started ? ' It has started: its runners will be timed from the category start instead.' : ''}`, ok: 'Delete', run: () => form?.requestSubmit() };
+	};
 	const kindColor = (k: string) => (k === 'start' ? 'var(--start)' : k === 'finish' ? 'var(--finish)' : 'var(--checkpoint)');
 
 	const addr = $derived(data.addresses[addrIdx]);
@@ -358,7 +364,7 @@
 	{#if form?.cleared !== undefined}<p class="border-2 border-border bg-card p-3 font-bold">Cleared {form.cleared} reads.</p>{/if}
 
 
-		<!-- one confirmation dialog for Reset start and Release results, on every tab -->
+		<!-- one confirmation dialog for Reset start, Delete batch and Release results, on every tab -->
 		<Dialog.Root open={ask !== null} onOpenChange={(o) => !o && (ask = null)}>
 			{#if ask}
 				<Dialog.Content class="border-2 border-border sm:max-w-md">
@@ -554,7 +560,7 @@
 										{@render gunControls('batch', b.id, b.gun_ms, `${c.name} ${b.name}`)}
 										<form method="POST" action="?tab={tab}&/deleteBatch" use:enhance>
 											<input type="hidden" name="id" value={b.id} />
-											<Button type="submit" variant="outline" size="sm" class={small} title="Its runners go back to no batch">Delete</Button>
+											<Button type="button" onclick={(e) => confirmDeleteBatch(`${c.name} Batch ${b.name}`, b.n, !!b.gun_ms, e)} variant="outline" size="sm" class={small} title="Its runners go back to no batch">Delete</Button>
 										</form>
 									</div>
 								</div>
@@ -719,7 +725,7 @@
 							{#if !b.gun_ms}
 								<form method="POST" action="?tab={tab}&/deleteBatch" use:enhance>
 									<input type="hidden" name="id" value={b.id} />
-									<Button type="submit" variant="outline" size="sm" class={small} title="Its runners go back to the list above">Delete batch</Button>
+									<Button type="button" onclick={(e) => confirmDeleteBatch(`${stShown.name} Batch ${b.name}`, members.length, false, e)} variant="outline" size="sm" class={small} title="Its runners go back to the list above">Delete batch</Button>
 								</form>
 							{/if}
 						</div>

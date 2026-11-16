@@ -357,6 +357,7 @@
 			<p class="border-b-2 border-border/15 bg-card px-4 py-2 text-lg">
 				<span class="font-bold tracking-wide uppercase">Ranked by:</span>
 				{cat.rankBy === 'finish' ? 'first across the finish line (clock time)' : cat.rankBy === 'chip' || mode === 'own' ? "shortest time from each runner's own start read" : 'shortest time from the category or batch start'}
+				{#if cat.provisional && cat.rows.length}<span class="block font-bold">Finish times shown batch by batch. Places are final once every batch is released.</span>{/if}
 			</p>
 			{#if cat.noStart}
 				<p class="border-b-2 border-border/15 bg-card px-4 py-2 text-lg font-bold text-destructive" role="alert">
@@ -414,19 +415,19 @@
 				{#each cat.rows as r (r.bib)}
 					{@const key = `${cat.id}:${r.bib}`}
 					<!-- the first `places` rows (the prizes this category awards) are large; the rest are smaller -->
-					{@const big = r.rank! <= cat.places}
+					{@const big = r.rank !== null && r.rank <= cat.places}
 					<li animate:flip={slide} in:fly|local={enter} class="border-b-2 border-border/15 last:border-b-0 {fresh.has(key) ? 'fresh' : ''}">
 						<button
 							class="grid w-full items-center text-left {big ? 'grid-cols-[2.5rem_4rem_1fr_auto] gap-2 px-3 py-2 md:grid-cols-[8rem_10rem_1fr_auto] md:gap-6' : 'grid-cols-[2rem_3rem_1fr_auto] gap-2 px-3 py-1 md:grid-cols-[5rem_6.5rem_1fr_auto] md:gap-5'}"
 							onclick={() => toggle(key)}
 							aria-expanded={open.has(key)}
 						>
-							<span class="font-display leading-[0.85] font-black {big ? 'text-4xl md:text-8xl' : 'text-2xl md:text-5xl'}">{r.rank}</span>
+							<span class="font-display leading-[0.85] font-black {big ? 'text-4xl md:text-8xl' : 'text-2xl md:text-5xl'}">{r.rank ?? '–'}</span>
 							<span class="font-display leading-[0.85] font-black {big ? 'text-3xl md:text-7xl' : 'text-xl md:text-4xl'}">{r.bib}</span>
 							<span class="flex min-w-0 items-center gap-2 md:gap-4">
 								{#if big}{@render face(r.photo, r.bib, 'size-12 md:size-20')}{/if}
 								<span class="min-w-0 truncate font-bold uppercase {big ? 'text-lg md:text-5xl' : 'text-base md:text-3xl'}">{r.name || 'Bib ' + r.bib}{#if r.members}<span class="block truncate text-sm font-normal normal-case md:text-2xl" data-testid="team-runners">{r.members.map((m) => m.name).join(', ')}</span>{/if}</span>
-								{#if big && r.rank! <= 3}{@render medal(r.rank!, 'size-6 md:size-14')}{/if}
+								{#if big && r.rank !== null && r.rank <= 3}{@render medal(r.rank!, 'size-6 md:size-14')}{/if}
 							</span>
 							<span class="font-display leading-[0.85] font-black {big ? 'text-4xl md:text-8xl' : 'text-2xl md:text-5xl'}">{fmt(r.time!)}</span>
 						</button>
