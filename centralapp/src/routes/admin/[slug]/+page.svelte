@@ -74,6 +74,7 @@
 	let relMsg = $state('');
 	const catLevel = (id: number) => relOpt[`c${id}`] ?? data.categories.find((c) => c.id === id)?.release ?? 'checkpoints';
 	const batchLevel = (b: { id: number; release: string | null }) => (`b${b.id}` in relOpt ? relOpt[`b${b.id}`] : b.release);
+	const runnerLevel = (p: { id: number; release: string | null }) => (`p${p.id}` in relOpt ? relOpt[`p${p.id}`] : p.release);
 	const allLevel = $derived.by(() => {
 		const lv = new Set(data.categories.map((c) => catLevel(c.id)));
 		const overridden = data.batches.some((b) => batchLevel(b) !== null);
@@ -83,21 +84,28 @@
 	// flashed the old one back for a moment. So each clicked level is dropped only once the page data agrees with it.
 	$effect(() => {
 		const keep = Object.entries(relOpt).filter(([k, v]) =>
-			k[0] === 'c' ? data.categories.find((c) => c.id === Number(k.slice(1)))?.release !== v : (data.batches.find((b) => b.id === Number(k.slice(1)))?.release ?? null) !== v
+			k[0] === 'c'
+				? data.categories.find((c) => c.id === Number(k.slice(1)))?.release !== v
+				: ((k[0] === 'p' ? data.participants : data.batches).find((x: { id: number }) => x.id === Number(k.slice(1)))?.release ?? null) !== v
 		);
 		if (keep.length !== Object.keys(relOpt).length) relOpt = Object.fromEntries(keep);
 	});
 	// in-page replacement for the browser's confirm(): `run` happens only when the organizer presses the button
 	let ask = $state<{ title: string; text: string; ok: string; run: () => void } | null>(null);
-	const setRelease = (scope: 'all' | 'category' | 'batch', id: number, level: string) =>
-		level === 'released'
+	// a single runner's Release is one deliberate click on their row, so it does not ask
+	const setRelease = (scope: 'all' | 'category' | 'batch' | 'runner', id: number, level: string) =>
+		level === 'released' && scope !== 'runner'
 			? (ask = { title: 'Release results?', text: 'Show these results on the public live board?', ok: 'Release', run: () => void saveRelease(scope, id, level) })
 			: void saveRelease(scope, id, level);
-	async function saveRelease(scope: 'all' | 'category' | 'batch', id: number, level: string) {
+	async function saveRelease(scope: 'all' | 'category' | 'batch' | 'runner', id: number, level: string) {
 		const before = relOpt;
 		if (scope === 'all') {
-			relOpt = { ...Object.fromEntries(data.categories.map((c) => [`c${c.id}`, level])), ...Object.fromEntries(data.batches.map((b) => [`b${b.id}`, null])) };
-		} else relOpt = { ...relOpt, [`${scope === 'batch' ? 'b' : 'c'}${id}`]: level === 'inherit' ? null : level };
+			relOpt = {
+				...Object.fromEntries(data.categories.map((c) => [`c${c.id}`, level])),
+				...Object.fromEntries(data.batches.map((b) => [`b${b.id}`, null])),
+				...Object.fromEntries(data.participants.filter((p) => p.release !== null).map((p) => [`p${p.id}`, null]))
+			};
+		} else relOpt = { ...relOpt, [`${scope === 'batch' ? 'b' : scope === 'runner' ? 'p' : 'c'}${id}`]: level === 'inherit' ? null : level };
 		relMsg = 'Saving…';
 		try {
 			const fd = new FormData();
@@ -317,6 +325,26 @@
 		{/each}
 		{#if follow}<button type="button" aria-pressed={current === null} onclick={() => setRelease(scope, id, 'inherit')} class="h-10 border-2 border-border px-3 font-bold uppercase {grid ? 'text-sm' : ''} {current === null ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-accent'}">Follow category</button>{/if}
 	</div>
+{/snippet}
+
+<!-- Progress table: release one runner or team as soon as they cross the finish, ahead of their batch -->
+{#snippet runnerRelease(r: { bib: string; state: string; team?: { done: number } })}
+	{@const p = data.participants.find((x) => x.bib === r.bib && x.category_id === progShown?.id)}
+	{#if p}
+		{@const own = runnerLevel(p)}
+		{@const b = data.batches.find((x) => x.id === p.batch_id)}
+		{@const group = (b ? batchLevel(b) : null) ?? catLevel(p.category_id)}
+		{#if own === 'released'}
+			<span class="font-bold text-start uppercase">Released ✓</span>
+			<button type="button" class="ml-2 underline" onclick={() => setRelease('runner', p.id, 'inherit')} title="Back to what their {b ? 'batch' : 'category'} shows">Undo</button>
+		{:else if group === 'released'}
+			<span class="text-muted-foreground uppercase">Released ({b ? 'batch' : 'category'})</span>
+		{:else if r.state === 'finished' || r.team?.done}
+			<button type="button" class="h-9 border-2 border-border bg-card px-3 font-bold uppercase hover:bg-accent" onclick={() => setRelease('runner', p.id, 'released')}>Release</button>
+		{:else}
+			<span class="text-muted-foreground">—</span>
+		{/if}
+	{/if}
 {/snippet}
 
 {#snippet overridePanel()}
@@ -900,7 +928,7 @@
 						<span>{c.name}</span>
 						<span class="text-base font-normal tracking-wide">{progRows.filter((r) => r.state === 'finished').length} finished · {progRows.filter((r) => r.start !== null).length} started · {progRows.length} registered{flagged ? ` · ${flagged} to check` : ''}</span>
 					</h3>
-					{#key `${c.id}-${progBatch}`}<ProgressTable course={c.course} rows={progRows} flags pageSize={20} onOverride={(r) => openOverride({ bib: r.bib, name: r.name, finishAt: null })} overridden={(bib) => !!overrideOf(bib)} />{/key}
+					{#key `${c.id}-${progBatch}`}<ProgressTable course={c.course} rows={progRows} flags pageSize={20} onOverride={(r) => openOverride({ bib: r.bib, name: r.name, finishAt: null })} overridden={(bib) => !!overrideOf(bib)} release={runnerRelease} />{/key}
 				</section>
 				<!-- per checkpoint: who has passed and who has not yet (the start counts a gun start too, like the table) -->
 				<section class="border-2 border-border bg-card">

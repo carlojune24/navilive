@@ -47,7 +47,7 @@ export const load = async ({ params, url }) => {
 		q('select c.id, c.name, c.gun_ms, c.rank_by, c.release, count(p.id)::int as n from categories c left join participants p on p.category_id=c.id where c.event_id=$1 and c.archived_at is null group by c.id order by c.name', [e.id]),
 		q('select id, name from categories where event_id=$1 and archived_at is not null order by name', [e.id]),
 		q('select b.id, b.category_id, b.name, b.gun_ms, b.release, count(p.id)::int as n from batches b join categories c on c.id=b.category_id left join participants p on p.batch_id=b.id where c.event_id=$1 group by b.id order by b.name', [e.id]),
-		q('select p.id, p.bib, p.name, p.tag, p.gender, p.age, p.category_id, p.batch_id, c.name as category, (select (extract(epoch from ph.updated_at)*1000)::bigint from participant_photos ph where ph.participant_id=p.id) as photo, (select coalesce(json_agg(json_build_object(\'name\', m.name, \'gender\', m.gender, \'age\', m.age, \'tag\', m.tag) order by m.leg, m.id), \'[]\') from team_members m where m.participant_id=p.id) as members from participants p left join categories c on c.id=p.category_id where p.event_id=$1 order by p.bib', [e.id]),
+		q('select p.id, p.bib, p.name, p.tag, p.gender, p.age, p.category_id, p.batch_id, p.release, c.name as category, (select (extract(epoch from ph.updated_at)*1000)::bigint from participant_photos ph where ph.participant_id=p.id) as photo, (select coalesce(json_agg(json_build_object(\'name\', m.name, \'gender\', m.gender, \'age\', m.age, \'tag\', m.tag) order by m.leg, m.id), \'[]\') from team_members m where m.participant_id=p.id) as members from participants p left join categories c on c.id=p.category_id where p.event_id=$1 order by p.bib', [e.id]),
 		q('select id, name, kind, ord, services from stations where event_id=$1 order by ord, id', [e.id]),
 		q(
 			`select r.id, r.read_at_ms, r.tag, r.device_id, r.voided, s.name as station,
@@ -603,14 +603,18 @@ export const actions = {
 		const scope = String(f.get('scope'));
 		const level = String(f.get('level'));
 		const id = Number(f.get('id'));
-		if (!(LEVELS as string[]).includes(level) && !(scope === 'batch' && level === 'inherit')) return fail(400, { error: 'Unknown level.' });
+		if (!(LEVELS as string[]).includes(level) && !((scope === 'batch' || scope === 'runner') && level === 'inherit')) return fail(400, { error: 'Unknown level.' });
 		if (scope === 'all') {
 			await q('update categories set release=$2 where event_id=$1', [e.id, level]);
 			await q('update batches set release=null where category_id in (select id from categories where event_id=$1)', [e.id]);
+			await q('update participants set release=null where event_id=$1', [e.id]); // 'all' means all: one-off runner releases go too
 		} else if (scope === 'category') {
 			await q('update categories set release=$3 where id=$1 and event_id=$2', [id, e.id, level]);
 		} else if (scope === 'batch') {
 			await q('update batches set release=$3 where id=$1 and category_id in (select id from categories where event_id=$2)', [id, e.id, level === 'inherit' ? null : level]);
+		} else if (scope === 'runner') {
+			// one runner or team, released as soon as they finish, ahead of the rest of their batch
+			await q('update participants set release=$3 where id=$1 and event_id=$2', [id, e.id, level === 'inherit' ? null : level]);
 		} else return fail(400, { error: 'Unknown scope.' });
 		await q("select pg_notify('reads', $1)", [String(e.id)]); // open boards refetch
 		return { releaseSet: level };

@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { fmt, type CourseStation, type ProgressRow } from '$lib/results';
+	import type { Snippet } from 'svelte';
 
 	// Who has reached which station. `flags` (admin) also shows runners who skipped a station, so a missed read can be fixed.
-	type Props = { course: CourseStation[]; rows: ProgressRow[]; flags?: boolean; big?: boolean; pageSize?: number; onOverride?: (r: ProgressRow) => void; overridden?: (bib: string) => boolean };
-	let { course, rows, flags = false, big = false, pageSize = 0, onOverride, overridden }: Props = $props(); // pageSize 0 = show every row
+	type Props = { course: CourseStation[]; rows: ProgressRow[]; flags?: boolean; big?: boolean; pageSize?: number; onOverride?: (r: ProgressRow) => void; overridden?: (bib: string) => boolean; release?: Snippet<[ProgressRow]> };
+	let { course, rows, flags = false, big = false, pageSize = 0, onOverride, overridden, release }: Props = $props(); // pageSize 0 = show every row
 
 	let page = $state(0);
 	const pages = $derived(pageSize ? Math.max(1, Math.ceil(rows.length / pageSize)) : 1);
@@ -45,6 +46,7 @@
 				{/each}
 				<th class="px-3 py-2 font-bold tracking-wide whitespace-nowrap uppercase {head}">Total time</th>
 				{#if flags}<th class="px-3 py-2 font-bold tracking-wide uppercase {head}">Check</th>{/if}
+				{#if release}<th class="px-3 py-2 font-bold tracking-wide uppercase {head}">Live board</th>{/if}
 				{#if onOverride}<th class="px-3 py-2 {head}"></th>{/if}
 			</tr>
 		</thead>
@@ -72,10 +74,11 @@
 							{#if r.missed.length}<span class="inline-block border-2 border-destructive px-1 font-bold text-destructive uppercase">Missed: {r.missed.join(', ')}</span>{/if}
 						</td>
 					{/if}
+					{#if release}<td class="px-3 py-1 whitespace-nowrap {text}">{@render release(r)}</td>{/if}
 					{#if onOverride}<td class="px-3 py-1 {text}"><button type="button" class="underline" onclick={() => onOverride(r)}>{overridden?.(r.bib) ? 'Override ✓' : 'Override'}</button></td>{/if}
 				</tr>
 			{:else}
-				<tr><td colspan={course.length + 7} class="p-6 text-muted-foreground">No runners in this category yet.</td></tr>
+				<tr><td colspan={course.length + 8} class="p-6 text-muted-foreground">No runners in this category yet.</td></tr>
 			{/each}
 		</tbody>
 	</table>
