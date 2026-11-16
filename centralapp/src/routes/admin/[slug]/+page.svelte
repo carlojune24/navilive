@@ -79,6 +79,14 @@
 		const overridden = data.batches.some((b) => batchLevel(b) !== null);
 		return lv.size === 1 && !overridden ? [...lv][0] : null;
 	});
+	// Another reload (the live push) can finish with the old value before ours lands; dropping the clicked level then
+	// flashed the old one back for a moment. So each clicked level is dropped only once the page data agrees with it.
+	$effect(() => {
+		const keep = Object.entries(relOpt).filter(([k, v]) =>
+			k[0] === 'c' ? data.categories.find((c) => c.id === Number(k.slice(1)))?.release !== v : (data.batches.find((b) => b.id === Number(k.slice(1)))?.release ?? null) !== v
+		);
+		if (keep.length !== Object.keys(relOpt).length) relOpt = Object.fromEntries(keep);
+	});
 	// in-page replacement for the browser's confirm(): `run` happens only when the organizer presses the button
 	let ask = $state<{ title: string; text: string; ok: string; run: () => void } | null>(null);
 	const setRelease = (scope: 'all' | 'category' | 'batch', id: number, level: string) =>
@@ -99,8 +107,7 @@
 			const r = await fetch('?tab=progress&/setRelease', { method: 'POST', body: fd, headers: { 'x-sveltekit-action': 'true' } });
 			const res = deserialize(await r.text());
 			if (res.type !== 'success') throw new Error((res.type === 'failure' && (res.data as { error?: string })?.error) || 'Could not save');
-			await invalidateAll();
-			relOpt = {};
+			await invalidateAll(); // the clicked level stays shown until the reloaded data carries it (see the effect below)
 			relMsg = 'Live board updated ✓';
 		} catch (err) {
 			relOpt = before;
@@ -685,8 +692,13 @@
 					{#if stBatches.length}
 						<div class="flex flex-wrap gap-2 border-b-2 border-border/15 p-3" role="tablist" aria-label="Batch">
 							{#each stBatches as b (b.id)}
-								<button type="button" role="tab" aria-selected={b.id === stBatchShown?.id} onclick={() => (stBatch = b.id)} class="h-11 border-2 border-border px-4 text-lg font-bold uppercase {b.id === stBatchShown?.id ? 'bg-primary text-primary-foreground' : 'bg-card'}">
-									Batch {b.name} ({b.n}){#if b.gun_ms}<span class="ml-1" title="Started">&#9679;</span>{/if}
+								<!-- a card per batch: its bibs show under the name, so a runner's batch is found at a glance -->
+								<button type="button" role="tab" aria-selected={b.id === stBatchShown?.id} onclick={() => (stBatch = b.id)} class="flex w-56 flex-col gap-1 border-2 border-border p-3 text-left {b.id === stBatchShown?.id ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-accent'}">
+									<span class="flex items-baseline justify-between gap-2">
+										<span class="font-display text-2xl leading-none font-black uppercase">Batch {b.name} <span class="text-lg">({b.n})</span></span>
+										<span class="text-xs font-bold uppercase">{b.gun_ms ? '● Started' : 'Queued'}</span>
+									</span>
+									<span class="text-base font-bold break-words">{data.participants.filter((p) => p.batch_id === b.id).map((p) => p.bib).join(', ') || 'No runners'}</span>
 								</button>
 							{/each}
 						</div>
