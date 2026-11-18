@@ -19,7 +19,7 @@ export const load = async ({ params, url, cookies }) => {
 		'select s.id, s.name, s.url, (extract(epoch from s.updated_at)*1000)::float8 as v from event_sponsors s join events e on e.id=s.event_id where e.slug=$1 order by s.ord, s.id',
 		[params.slug]
 	);
-	const view = v === 'awards' ? ('awards' as const) : v === 'progress' ? ('progress' as const) : v === 'map' && has ? ('map' as const) : v === 'start' && starts ? ('start' as const) : ('results' as const);
+	const view = v === 'awards' ? ('awards' as const) : v === 'progress' ? ('progress' as const) : v === 'map' && has ? ('map' as const) : v === 'start' && starts ? ('start' as const) : v === 'finish' ? ('finish' as const) : ('results' as const);
 	return { admin, hasRoute: has, routeCats, slug: params.slug, initial: r, starts, sponsors, kiosk: url.searchParams.has('kiosk'), cycle, view };
 };
 

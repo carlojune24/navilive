@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { recentFinishers } from './recent';
+import { finishLine, recentFinishers } from './recent';
 import type { ProgressRow } from './progress';
 
 const course = [
@@ -20,5 +20,18 @@ describe('recentFinishers', () => {
 	});
 	it('no finish station: nothing', () => {
 		expect(recentFinishers([course[0]], [row('1', 100)], 5)).toEqual([]);
+	});
+});
+
+describe('finishLine', () => {
+	it('mixes every category, newest first, with the category name and the time', () => {
+		const a = { name: '5K', course, progress: [{ ...row('1', 100), time: 90 }, { ...row('2', 400), time: 390 }] };
+		const b = { name: 'DUO', course, progress: [{ ...row('D1', 300), time: 280 }, row('D2', null)] };
+		expect(finishLine([a, b], 5)).toEqual([
+			{ bib: '2', name: 'N2', category: '5K', time: 390 },
+			{ bib: 'D1', name: 'ND1', category: 'DUO', time: 280 },
+			{ bib: '1', name: 'N1', category: '5K', time: 90 }
+		]);
+		expect(finishLine([a, b], 2).map((r) => r.bib)).toEqual(['2', 'D1']);
 	});
 });

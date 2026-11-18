@@ -12,10 +12,11 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import type { StartCat, StartRunner } from '$lib/server/batches';
+	import type { FinishLineRow } from '$lib/recent';
 
 	let { data } = $props();
 
-	type Payload = { event: string; mode: Mode; serverMs: number; lastReadAgoMs: number | null; awardsHidden?: boolean; batches: { id: number; name: string; category_id: number }[]; batchOf: Record<string, number>; categories: Cat[] };
+	type Payload = { event: string; mode: Mode; serverMs: number; lastReadAgoMs: number | null; awardsHidden?: boolean; batches: { id: number; name: string; category_id: number }[]; batchOf: Record<string, number>; categories: Cat[]; finishLine?: FinishLineRow[] };
 
 	let res = $state<Payload>(data.initial);
 	let mode = $state<Mode>(data.initial.mode);
@@ -35,7 +36,7 @@
 	let seen: Set<string> | null = null; // null until the first load, so the initial list does not flash
 	let cycleSec = $state(data.cycle); // seconds each category stays on screen while auto-cycling
 	const CYCLE_CHOICES = [5, 8, 12, 20, 30, 60];
-	let view = $state<'results' | 'awards' | 'progress' | 'map' | 'start'>(data.view); // what the board shows for the selected category
+	let view = $state<'results' | 'awards' | 'progress' | 'map' | 'start' | 'finish'>(data.view); // what the board shows for the selected category ('finish' = every category)
 
 	const cat = $derived(res.categories.find((c) => c.id === active) ?? res.categories[0]);
 	// race clock: the server's start time against the server's clock (this browser's own clock may be off)
@@ -216,6 +217,7 @@
 	}
 
 	function pick(id: number) {
+		if (view === 'finish') view = 'results'; // the Finish view has no category: picking one leaves it
 		active = id;
 		batchSel = 'all';
 		auto = false;
@@ -252,7 +254,7 @@
 
 	let remaining = $state(0); // seconds until the next switch
 	$effect(() => {
-		if (!auto) return;
+		if (!auto || view === 'finish') return; // the Finish view shows every category: nothing to cycle
 		const total = cycleSec; // read here so changing the setting restarts the countdown
 		remaining = total;
 		const id = setInterval(() => {
@@ -283,7 +285,8 @@
 <svelte:head><title>{res.event} · Live results</title></svelte:head>
 <Toaster position="top-center" />
 
-<div class="flex min-h-screen flex-col p-4 md:p-6">
+<!-- with sponsors, a laptop or TV screen is locked to the screen height: only the board scrolls, so the sponsor strip always shows -->
+<div class="flex min-h-screen flex-col p-4 md:p-6 {data.sponsors.length ? 'md:h-screen md:overflow-hidden' : ''}">
 	<header class="flex flex-wrap items-end justify-between gap-4 border-b-2 border-border pb-4">
 		<div>
 			<!-- the big screen is read from across the venue: everything up here is larger there -->
@@ -304,9 +307,9 @@
 			{#each res.categories as c (c.id)}
 				<button
 					role="tab"
-					aria-selected={c.id === cat?.id}
+					aria-selected={view !== 'finish' && c.id === cat?.id}
 					onclick={() => pick(c.id)}
-					class="border-2 border-border font-bold uppercase {data.kiosk ? 'h-16 px-6 text-3xl md:h-20 md:text-4xl' : 'h-12 px-4 text-lg'} {c.id === cat?.id ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-accent'}"
+					class="border-2 border-border font-bold uppercase {data.kiosk ? 'h-16 px-6 text-3xl md:h-20 md:text-4xl' : 'h-12 px-4 text-lg'} {view !== 'finish' && c.id === cat?.id ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-accent'}"
 				>
 					{c.name} <span class="opacity-70">{c.rows.length}</span>
 				</button>
@@ -315,7 +318,7 @@
 		{#if !data.kiosk}
 			<div class="ml-auto flex flex-wrap gap-2">
 				<div class="flex" role="group" aria-label="Show">
-					{#each [['results', 'Results'], ['awards', 'Awards'], ['progress', 'Progress'], ...(data.hasRoute ? [['map', 'Map']] : []), ...(starts ? [['start', 'Start']] : [])] as [v, label]}
+					{#each [['results', 'Results'], ['awards', 'Awards'], ['progress', 'Progress'], ...(data.hasRoute ? [['map', 'Map']] : []), ...(starts ? [['start', 'Start']] : []), ['finish', 'Finish']] as [v, label]}
 						<button
 							aria-pressed={view === v}
 							onclick={() => (view = v as typeof view)}
@@ -340,12 +343,50 @@
 				<a href="?kiosk&mode={mode}&cycle={cycleSec}&view={view}&cat={active}{zoom === 1 ? '' : `&zoom=${zoom}`}{showLatest ? '&latest=1' : ''}" class="flex h-12 items-center border-2 border-border bg-card px-4 font-bold uppercase hover:bg-accent">Big screen</a>
 			</div>
 		{:else}
-			<p class="ml-auto text-2xl font-bold uppercase md:text-3xl">{view === 'awards' ? 'Awards' : view === 'progress' ? 'Progress' : view === 'map' ? 'Map' : view === 'start' ? 'Start' : 'Results'}{auto && nextName ? ` · next: ${nextName} in ${remaining}s` : ''}</p>
+			<p class="ml-auto text-2xl font-bold uppercase md:text-3xl">{view === 'finish' ? 'Finish' : view === 'awards' ? 'Awards' : view === 'progress' ? 'Progress' : view === 'map' ? 'Map' : view === 'start' ? 'Start' : 'Results'}{auto && nextName && view !== 'finish' ? ` · next: ${nextName} in ${remaining}s` : ''}</p>
 		{/if}
 	</div>
 
-	<main class="mt-4 border-2 border-border bg-card">
-		{#if view === 'map' && data.hasRoute}
+	<main class="mt-4 border-2 border-border bg-card {data.sponsors.length ? 'md:min-h-0 md:flex-1 md:overflow-y-auto' : ''}">
+		{#if view === 'finish'}
+			<!-- FINISH: the latest across the finish line in any category, newest on top. Times are unofficial until verified -->
+			<div class="flex flex-wrap items-center justify-between gap-3 bg-primary px-4 py-2 text-primary-foreground">
+				<h2 class="font-display font-black uppercase {data.kiosk ? 'text-5xl md:text-8xl' : 'text-4xl md:text-6xl'}">Finish line</h2>
+				<p class="font-bold tracking-wide uppercase {data.kiosk ? 'text-xl md:text-3xl' : 'text-lg'}">All categories · times are unofficial</p>
+			</div>
+			<div class="overflow-x-auto" style="zoom:{zoom}">
+				<table class="w-full border-collapse text-left">
+					<thead>
+						<tr class="border-b-2 border-border font-bold tracking-wide uppercase {data.kiosk ? 'text-lg md:text-2xl' : 'text-sm'}">
+							<th class="px-4 py-2">Category</th>
+							<th class="px-4 py-2">Bib</th>
+							<th class="px-4 py-2">Name</th>
+							<th class="px-4 py-2">Finish time <span class="font-normal normal-case">(unofficial)</span></th>
+							<th class="px-4 py-2">Penalty</th>
+						</tr>
+					</thead>
+					<tbody aria-live="polite">
+						{#each res.finishLine ?? [] as r, i (r.category + ':' + r.bib)}
+							<tr animate:flip={slide} in:fly|local={enter} class="border-b-2 border-border/15 last:border-b-0 {i === 0 ? 'latest bg-primary text-primary-foreground' : ''}">
+								<td class="px-4 py-3 font-bold uppercase {data.kiosk ? 'text-2xl md:text-5xl' : 'text-xl md:text-3xl'}">{r.category}</td>
+								<td class="px-4 py-3 font-display leading-[0.85] font-black {data.kiosk ? 'text-6xl md:text-9xl' : 'text-5xl md:text-7xl'}">{r.bib}</td>
+								<td class="px-4 py-3">
+									{#if i === 0}<span class="mb-1 inline-block border-2 border-current px-2 text-sm font-bold tracking-widest uppercase {data.kiosk ? 'md:text-xl' : ''}">Just finished</span>{/if}
+									<span class="block font-bold uppercase {data.kiosk ? 'text-3xl md:text-6xl' : 'text-2xl md:text-4xl'}">{r.name || 'Bib ' + r.bib}</span>
+								</td>
+								<td class="px-4 py-3 whitespace-nowrap">
+									<span class="block font-display leading-[0.85] font-black tabular-nums {data.kiosk ? 'text-5xl md:text-8xl' : 'text-3xl md:text-6xl'}">{r.time !== null ? fmt(r.time) : '—'}</span>
+									<span class="text-sm font-bold tracking-widest uppercase opacity-80 {data.kiosk ? 'md:text-xl' : ''}">Unofficial</span>
+								</td>
+								<td class="px-4 py-3"></td>
+							</tr>
+						{:else}
+							<tr><td colspan="5" class="p-10 text-2xl text-muted-foreground">Nobody has crossed the finish line yet.</td></tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{:else if view === 'map' && data.hasRoute}
 			<!-- the full route map, for showing the course and the checkpoints live -->
 			<div class="relative h-[calc(100vh-2rem)] min-h-[600px]"><RouteMap slug={data.slug} category={cat?.id ?? null} /></div>
 		{:else if view === 'start' && sc}
@@ -520,15 +561,15 @@
 
 	{#if data.sponsors.length}
 		<!-- sponsors, in the organizer's order (Admin > Sponsors); sits at the bottom of the screen when the board is short -->
-		<footer class="mt-auto pt-4">
-			<div class="border-2 border-border bg-white px-4 py-3 text-black">
-				<p class="text-center text-sm font-bold tracking-widest uppercase">Thank you to our sponsors</p>
-				<ul class="mt-2 flex flex-wrap items-center justify-center gap-x-10 gap-y-3">
+		<footer class="mt-auto shrink-0 pt-3">
+			<div class="border-2 border-border bg-white px-4 py-2 text-black">
+				<p class="text-center text-xs font-bold tracking-widest uppercase">Thank you to our sponsors</p>
+				<ul class="mt-1 flex flex-wrap items-center justify-center gap-x-10 gap-y-2">
 					{#each data.sponsors as s (s.id)}
 						{@const logo = `/e/${data.slug}/sponsor/${s.id}?v=${s.v}`}
 						<li>
-							{#if s.url}<a href={s.url} target="_blank" rel="noopener noreferrer" title={s.name}><img src={logo} alt={s.name} class="h-12 w-auto max-w-48 object-contain md:h-16" loading="lazy" /></a>
-							{:else}<img src={logo} alt={s.name} title={s.name} class="h-12 w-auto max-w-48 object-contain md:h-16" loading="lazy" />{/if}
+							{#if s.url}<a href={s.url} target="_blank" rel="noopener noreferrer" title={s.name}><img src={logo} alt={s.name} class="h-10 w-auto max-w-48 object-contain {data.kiosk ? 'md:h-20' : 'md:h-12'}" loading="lazy" /></a>
+							{:else}<img src={logo} alt={s.name} title={s.name} class="h-10 w-auto max-w-48 object-contain {data.kiosk ? 'md:h-20' : 'md:h-12'}" loading="lazy" />{/if}
 						</li>
 					{/each}
 				</ul>

@@ -5,7 +5,7 @@ import { MATCH } from './stationdata';
 import { computeResults, type Mode } from '$lib/results';
 import { parseConfig, resolveOptions } from '$lib/awardcfg';
 import { applyRelease, type Level } from '$lib/release';
-import { recentFinishers } from '$lib/recent';
+import { finishLine, recentFinishers } from '$lib/recent';
 
 /**
  * `includeHiddenAwards` is for the organizer (admin pages, exports). The public board gets no awards while the
@@ -40,6 +40,7 @@ export async function loadResults(slug: string, mode: Mode, opts: { includeHidde
 	let categories = computeResults(cats, ps, stations, reads, mode, (id) => resolveOptions(defaults, cfg, id), (id) => courses.get(id), batches);
 	// taken before the release rules hide held finish reads; 30 so a batch filter on the board still has 5 to show
 	categories = categories.map((c) => ({ ...c, recent: recentFinishers(c.course, c.progress, 30) }));
+	const finishers = finishLine(categories, 5); // the Finish view: any category, with the unofficial time
 	// the public only sees what the organizer has released; the admin and exports see everything
 	if (!opts.includeHiddenAwards) {
 		const level = new Map(ps.map((p) => [p.bib as string, (p.release ?? 'checkpoints') as Level]));
@@ -53,6 +54,7 @@ export async function loadResults(slug: string, mode: Mode, opts: { includeHidde
 		awardsHidden: !cfg.reveal && !opts.includeHiddenAwards,
 		// for the board's per-category batch toggle on the Progress view
 		batches: batches.map((b) => ({ id: b.id, name: b.name, category_id: b.category_id })),
+		finishLine: finishers,
 		batchOf: Object.fromEntries(ps.filter((p) => p.batch_id).map((p) => [p.bib, p.batch_id as number])),
 		categories: (hidden ? categories.map((c) => ({ ...c, awards: [] })) : categories).map((c) =>
 			// marshal names are for the organizer only
