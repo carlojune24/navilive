@@ -4,7 +4,9 @@
 	import { invalidateAll } from '$app/navigation';
 	import { fmt } from '$lib/results';
 	import { shrinkImage } from '$lib/image';
-	import type { Layout } from '$lib/wall';
+	import { page } from '$app/state';
+	import { ITEMS, layoutOf, type Item, type Layout } from '$lib/wall';
+	import WallStage from '$lib/components/WallStage.svelte';
 
 	let { data } = $props();
 
@@ -26,57 +28,50 @@
 
 	// the layout being edited; reloads from the saved one only when the category or image changes,
 	// so a live refresh (a new finish) does not throw away an unsaved drag
-	// two texts on the backdrop: the finish time and the name (team name for a team, runner name for a solo)
-	type Item = 'time' | 'name';
-	const DEFAULT: Record<Item, Layout> = { time: { x: 50, y: 30, size: 12, color: '#ffffff' }, name: { x: 50, y: 60, size: 5, color: '#ffffff' } };
-	let draft = $state<Record<Item, Layout>>(structuredClone(DEFAULT));
+	let draft = $state<Record<Item, Layout>>(layoutOf(undefined));
 	const backKey = $derived(`${catId}:${back?.v ?? ''}`);
 	$effect(() => {
 		backKey;
-		const b = untrack(() => back);
-		draft = b
-			? { time: { x: b.x, y: b.y, size: b.size, color: b.color }, name: { x: b.name_x, y: b.name_y, size: b.name_size, color: b.name_color } }
-			: structuredClone(DEFAULT);
+		draft = layoutOf(untrack(() => back));
 	});
-	function nudge(e: KeyboardEvent, item: Item) {
-		const d = { ArrowLeft: [-0.5, 0], ArrowRight: [0.5, 0], ArrowUp: [0, -0.5], ArrowDown: [0, 0.5] }[e.key];
-		if (!editing || !d) return;
-		e.preventDefault();
-		draft[item].x = Math.min(100, Math.max(0, draft[item].x + d[0]));
-		draft[item].y = Math.min(100, Math.max(0, draft[item].y + d[1]));
-	}
 	let editing = $state(false);
 	const shown = $derived(runner && runner.catId === catId ? runner : null);
+	// the name on the picture: the team or runner name, unless the operator typed another one
+	let nameOverride = $state('');
 	const texts = $derived<Record<Item, string>>({
 		time: shown ? fmt(shown.time!) : editing ? '1:23:45' : '',
-		name: shown ? shown.name || 'Bib ' + shown.bib : editing ? 'Team or runner name' : ''
+		name: shown ? nameOverride.trim() || shown.name || 'Bib ' + shown.bib : editing ? 'Team or runner name' : ''
 	});
 	const timeText = $derived(texts.time);
-	const ITEMS = [['time', 'Time'], ['name', 'Name']] as const;
 
+	// picking only previews here; Publish puts it on the display screen
 	function choose(r: (typeof finishers)[number]) {
 		picked = { bib: r.bib, catId: r.catId };
 		catId = r.catId;
 		query = '';
+		nameOverride = '';
+	}
+	const publish = () => shown && act('show', { bib: shown.bib, name: nameOverride.trim() }, 'Published to the display screen.');
+	const onDisplay = $derived(data.display ? finishers.find((r) => r.bib === data.display!.bib && r.catId === data.display!.catId) : undefined);
+	const displayName = $derived(data.display?.name || (onDisplay ? onDisplay.name || 'Bib ' + onDisplay.bib : ''));
+	const displayUrl = $derived(`${page.url.origin}/e/${data.slug}/wall/display`);
+	let copied = $state(false);
+	async function copyUrl() {
+		try {
+			await navigator.clipboard.writeText(displayUrl);
+			copied = true;
+			setTimeout(() => (copied = false), 2000);
+		} catch {
+			/* no clipboard (plain http on some browsers): the address is on screen to type */
+		}
 	}
 
-	let ratio = $state(16 / 9); // from the backdrop's own size, so it is never cropped or stretched
 	let wall: HTMLDivElement;
-	let stage = $state<HTMLDivElement>();
 	const fullscreen = () => wall.requestFullscreen?.();
-
-	// drag a text to place it (organizer, Edit positions on)
-	let dragging: Item | null = null;
-	function move(e: PointerEvent) {
-		if (!dragging || !stage) return;
-		const r = stage.getBoundingClientRect();
-		draft[dragging].x = Math.round(Math.min(100, Math.max(0, ((e.clientX - r.left) / r.width) * 100)) * 10) / 10;
-		draft[dragging].y = Math.round(Math.min(100, Math.max(0, ((e.clientY - r.top) / r.height) * 100)) * 10) / 10;
-	}
 
 	let busy = $state(false);
 	let msg = $state('');
-	async function act(name: string, fields: Record<string, string | Blob>) {
+	async function act(name: string, fields: Record<string, string | Blob>, done = 'Saved.') {
 		busy = true;
 		msg = '';
 		try {
@@ -87,7 +82,7 @@
 			const res = deserialize(await r.text());
 			if (res.type !== 'success') throw new Error((res.type === 'failure' && (res.data as { error?: string })?.error) || 'Something went wrong. Try again.');
 			await invalidateAll();
-			msg = 'Saved.';
+			msg = done;
 		} catch (err) {
 			msg = err instanceof Error && err.message !== 'x' ? err.message : 'That file could not be read as an image.';
 		} finally {
@@ -153,7 +148,26 @@
 			{/if}
 			{#if runner}
 				<p class="text-lg"><b class="uppercase">{runner.name || 'Bib ' + runner.bib}</b> · #{runner.bib} · {runner.catName}</p>
+				<label class="font-bold uppercase">
+					Name to show <span class="font-normal normal-case text-muted-foreground">(optional)</span>
+					<input bind:value={nameOverride} maxlength="80" placeholder={runner.name || 'Bib ' + runner.bib} autocomplete="off" class="mt-1 block h-12 w-full border-2 border-border bg-background px-3 text-xl font-normal normal-case" />
+				</label>
+				{#if data.admin}
+					<button type="button" disabled={busy || !shown} onclick={publish} class="{btn} h-16 bg-primary text-2xl text-primary-foreground">Publish to display</button>
+				{/if}
 			{/if}
+			<div class="flex flex-col gap-2 border-2 border-border bg-card p-3">
+				<h2 class="font-display text-2xl font-black uppercase">Display screen</h2>
+				<p class="text-sm text-muted-foreground">Open this address on the screen runners see. It shows only the picture. Pick a runner here, check the preview, then press Publish to display{data.admin ? '' : ' (log in as the organizer to publish)'}.</p>
+				<a href={displayUrl} target="_blank" rel="noopener" class="font-bold break-all underline">{displayUrl}</a>
+				<button type="button" onclick={copyUrl} class="{btn} bg-card hover:bg-accent">{copied ? 'Copied ✓' : 'Copy address'}</button>
+				{#if data.display}
+					<p class="text-sm"><b class="uppercase">Showing:</b> {onDisplay ? `${displayName} · #${onDisplay.bib}` : `Bib ${data.display.bib} (no released finish time)`}</p>
+					{#if data.admin}<button type="button" disabled={busy} onclick={() => act('show', { bib: '' }, 'Display screen cleared.')} class="{btn} bg-card hover:bg-accent">Clear display</button>{/if}
+				{:else}
+					<p class="text-sm"><b class="uppercase">Showing:</b> nothing yet</p>
+				{/if}
+			</div>
 			<button type="button" onclick={fullscreen} disabled={!timeText} class="{btn} h-16 bg-primary text-2xl text-primary-foreground">Fullscreen</button>
 
 			{#if data.admin}
@@ -190,58 +204,16 @@
 		</section>
 
 		<div bind:this={wall} class="wall">
-			<div bind:this={stage} class="stage relative overflow-hidden border-2 border-border bg-[#14052b]" style="--r:{ratio}">
-				{#if back}
-					<img src="/e/{data.slug}/wall/backdrop/{catId}?v={back.v}" alt="" class="absolute inset-0 size-full" onload={(e) => { const i = e.currentTarget as HTMLImageElement; ratio = i.naturalWidth / i.naturalHeight || 16 / 9; }} />
-				{/if}
-				{#if timeText}
-					{#each ITEMS as [item, label] (item)}
-						{@const l = draft[item]}
-						<!-- svelte-ignore a11y_no_noninteractive_tabindex (it is a slider while editing; the role is set with it) -->
-						<span
-							role={editing ? 'slider' : undefined}
-							aria-label={editing ? `${label} position, arrow keys move it` : undefined}
-							aria-valuemin={editing ? 0 : undefined}
-							aria-valuemax={editing ? 100 : undefined}
-							aria-valuenow={editing ? l.y : undefined}
-							aria-valuetext={editing ? `${l.x}% across, ${l.y}% down` : undefined}
-							tabindex={editing ? 0 : undefined}
-							onkeydown={(e) => nudge(e, item)}
-							class="time absolute font-display leading-none font-black whitespace-nowrap {item === 'time' ? 'tabular-nums' : 'uppercase'} {editing ? 'cursor-move outline-2 outline-dashed' : ''}"
-							style="left:{l.x}%; top:{l.y}%; font-size:{l.size}cqw; color:{l.color}"
-							onpointerdown={(e) => editing && ((dragging = item), e.currentTarget.setPointerCapture(e.pointerId))}
-							onpointermove={move}
-							onpointerup={() => (dragging = null)}>{texts[item]}</span
-						>
-					{/each}
-				{:else}
-					<p class="absolute inset-0 grid place-items-center p-6 text-center text-2xl text-white/70">Search a runner to show their finish time.</p>
-				{/if}
-			</div>
+			<WallStage slug={data.slug} {catId} {back} bind:draft {texts} {editing} empty="Search a runner to show their finish time." />
 		</div>
 	</div>
 </div>
 
 <style>
-	.stage {
-		width: 100%;
-		max-width: calc((100vh - 9rem) * var(--r)); /* the whole picture fits on a laptop screen too */
-		aspect-ratio: var(--r);
-		container-type: inline-size; /* the time's size is a share of the picture's width, on every screen */
-	}
-	.time {
-		transform: translate(-50%, -50%);
-		touch-action: none;
-	}
 	.wall:fullscreen {
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		background: #000;
-	}
-	.wall:fullscreen .stage {
-		width: min(100vw, calc(100vh * var(--r)));
-		max-width: none;
-		border: 0;
 	}
 </style>

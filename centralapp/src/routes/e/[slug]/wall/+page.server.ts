@@ -1,21 +1,14 @@
 import { error, fail } from '@sveltejs/kit';
 import { q } from '$lib/server/db';
-import { loadResults } from '$lib/server/live';
+import { loadWall } from '$lib/server/wall';
 import { SESSION_COOKIE, sessionOk } from '$lib/server/auth';
 import { MAX_PHOTO_BYTES, sniffImage } from '$lib/image';
 import { parseLayout } from '$lib/wall';
 
-export type Backdrop = { category_id: number; x: number; y: number; size: number; color: string; name_x: number; name_y: number; name_size: number; name_color: string; v: number };
-
 export const load = async ({ params, cookies }) => {
-	const r = await loadResults(params.slug, 'gun'); // the public board's data: unreleased finishers are not in it
-	if (!r) error(404, 'Event not found');
-	const backdrops = await q<Backdrop>(
-		`select b.category_id, b.x, b.y, b.size, b.color, b.name_x, b.name_y, b.name_size, b.name_color, (extract(epoch from b.updated_at)*1000)::float8 as v
-		 from category_backdrops b join categories c on c.id=b.category_id join events e on e.id=c.event_id where e.slug=$1`,
-		[params.slug]
-	);
-	return { slug: params.slug, admin: await sessionOk(cookies.get(SESSION_COOKIE)), results: r, backdrops };
+	const w = await loadWall(params.slug);
+	if (!w) error(404, 'Event not found');
+	return { slug: params.slug, admin: await sessionOk(cookies.get(SESSION_COOKIE)), ...w };
 };
 
 /** Organizer only; returns the category id when it belongs to this event. */
@@ -58,6 +51,18 @@ export const actions = {
 		);
 		if (!done.length) return fail(400, { error: 'Upload a backdrop first.' });
 		return { saved: true };
+	},
+	// put a runner on the display screen (bib empty = clear it), with an optional name to show instead of theirs;
+	// open display screens update through the live stream
+	show: async ({ request, params, cookies }) => {
+		const f = await request.formData();
+		const cat = await guard(params.slug, cookies, f);
+		if (cat === null) return fail(403, { error: 'Log in as the organizer to change the display screen.' });
+		const bib = String(f.get('bib') ?? '').trim();
+		const name = String(f.get('name') ?? '').trim().slice(0, 80);
+		const [ev] = await q<{ id: number }>('update events set wall_bib=$2, wall_category=$3, wall_name=$4 where slug=$1 returning id', [params.slug, bib || null, bib ? cat : null, (bib && name) || null]);
+		await q("select pg_notify('reads', $1)", [String(ev.id)]);
+		return { shown: bib };
 	},
 	remove: async ({ request, params, cookies }) => {
 		const f = await request.formData();
