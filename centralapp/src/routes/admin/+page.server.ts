@@ -63,7 +63,7 @@ export const actions = {
 		);
 		redirect(303, `/admin/${s.slug}`);
 	},
-	// Copies the setup of an event (settings, stations, categories, courses, participants, teams) under a new name.
+	// Copies the setup of an event (settings, stations, categories, courses, participants, teams, finish wall backdrops) under a new name.
 	// Reads, start clocks, batches, release levels, photos and the API key are never copied: the new event starts clean.
 	duplicate: async ({ request }) => {
 		const f = await request.formData();
@@ -112,6 +112,13 @@ export const actions = {
 				 select $2, np.id, m.name, m.gender, m.age, m.leg, m.tag, m.extra from team_members m
 				 join participants op on op.id=m.participant_id join participants np on np.event_id=$2 and np.bib=op.bib
 				 where m.event_id=$1`,
+				[src, to]
+			);
+			// finish wall: each category's backdrop with where its time and name sit
+			await c.query(
+				`insert into category_backdrops(category_id, mime, data, x, y, size, color, name_x, name_y, name_size, name_color)
+				 select nc.id, b.mime, b.data, b.x, b.y, b.size, b.color, b.name_x, b.name_y, b.name_size, b.name_color from category_backdrops b
+				 join categories oc on oc.id=b.category_id and oc.event_id=$1 join categories nc on nc.event_id=$2 and nc.name=oc.name`,
 				[src, to]
 			);
 			await c.query('commit');
