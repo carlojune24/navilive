@@ -18,6 +18,7 @@ export type P = {
 	extra?: Record<string, string>;
 	photo?: number | null; // when the winner photo was last changed (ms), null = none
 	finishOverride?: number | null; // admin-corrected finish clock time (epoch ms); replaces the finish reads
+	penaltyMs?: number; // time penalty set by the organizer, added to the total time
 	members?: { id: number; name: string; gender?: string; age?: number | null }[]; // relay/duo: the runners of this team
 };
 export type S = { id: number; name: string; kind: string; ord: number };
@@ -35,6 +36,7 @@ export type Row = {
 	extra: Record<string, string>;
 	photo: number | null;
 	overridden?: boolean;
+	penalty?: number; // ms already included in `time`
 	members?: { name: string }[]; // relay/duo: the team's runners (the team finishes on its first finish read)
 };
 export type Winner = { place: number; bib: string; name: string; time: number; detail?: string; photo?: number | null };
@@ -213,6 +215,7 @@ export function computeResults(
 				// crossed, but only before the start: the start was probably corrected wrongly
 				if (start !== null && !timed && (p.finishOverride ?? anyTime.at) !== null) badStart++;
 				const finishAt = timed ? rawFinish : null;
+				const penalty = Math.max(0, Number(p.penaltyMs) || 0);
 				const first = new Map<number, number>();
 				const by = new Map<number, string>();
 				for (const r of all) {
@@ -238,7 +241,7 @@ export function computeResults(
 					rank: null,
 					bib: p.bib,
 					name: p.name,
-					time: finishAt !== null ? finishAt - start! : null,
+					time: finishAt !== null ? finishAt - start! + penalty : null,
 					finishAt,
 					splits,
 					gender: teamGender(p),
@@ -246,12 +249,13 @@ export function computeResults(
 					extra: p.extra ?? {},
 					photo: p.photo ?? null,
 					overridden: p.finishOverride != null,
+					...(penalty ? { penalty } : {}),
 					...(p.members?.length ? { members: p.members.map((m) => ({ name: m.name })) } : {})
 				};
 			});
 			const rankBy = 'rank_by' in cat ? cat.rank_by : undefined;
 			const byFinish = rankBy === 'finish'; // first across the line, whatever their start
-			const done = rows.filter((r) => r.time !== null).sort((a, b) => (byFinish ? a.finishAt! - b.finishAt! : a.time! - b.time!) || a.bib.localeCompare(b.bib, undefined, { numeric: true }));
+			const done = rows.filter((r) => r.time !== null).sort((a, b) => (byFinish ? a.finishAt! + (a.penalty ?? 0) - b.finishAt! - (b.penalty ?? 0) : a.time! - b.time!) || a.bib.localeCompare(b.bib, undefined, { numeric: true }));
 			done.forEach((r, i) => (r.rank = i + 1));
 			const started = members.filter((p) => startOf(p) !== null).length;
 			const o = optionsFor(cat.id);
@@ -259,16 +263,16 @@ export function computeResults(
 			const timeOf = new Map(done.map((r) => [r.bib, r.time]));
 			const progress = buildProgress(
 				course,
-				members.map((p) => ({ bib: p.bib, name: p.name, start: track.get(p.bib)!.start, first: track.get(p.bib)!.first, by: track.get(p.bib)!.by, finished: rankOf.has(p.bib) || crossed.has(p.bib), rank: rankOf.get(p.bib) ?? null, time: timeOf.get(p.bib) ?? null, division: divisionOf(p) }))
+				members.map((p) => ({ bib: p.bib, name: p.name, start: track.get(p.bib)!.start, first: track.get(p.bib)!.first, by: track.get(p.bib)!.by, finished: rankOf.has(p.bib) || crossed.has(p.bib), rank: rankOf.get(p.bib) ?? null, time: timeOf.get(p.bib) ?? null, division: divisionOf(p), penalty: Math.max(0, Number(p.penaltyMs) || 0) }))
 			);
 			return { id: cat.id, name: cat.name, rows: done, started, total: members.length, awards: buildAwards(done, o), places: o.places, course, progress, noStart, badStart, gunMs: gun.get(`c${cat.id}`) ?? null, gunManual: manual.has(`c${cat.id}`), rankBy: (rankBy === 'chip' || rankBy === 'finish' ? rankBy : 'elapsed') as 'elapsed' | 'chip' | 'finish', underway: members.some((p) => (byP.get(p.id) ?? []).some((r) => kind.get(r.station_id)?.kind !== 'start')) };
 		})
 		.filter((c) => c.total > 0);
 }
 
+/** Race time as H:MM:SS, always with hours: "0:06:36" can't be misread as 6 hours 36 minutes the way "6:36" was. */
 export function fmt(ms: number) {
 	const s = Math.floor(ms / 1000);
 	const h = Math.floor(s / 3600);
-	const mm = String(Math.floor((s % 3600) / 60)).padStart(h ? 2 : 1, '0');
-	return `${h ? h + ':' : ''}${mm}:${String(s % 60).padStart(2, '0')}`;
+	return `${h}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 }

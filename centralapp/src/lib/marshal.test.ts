@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyLocal, batchState, gunsOf, lastThrough, newlyStarted, runnerState, seenBy, stampFor, taggedCount, type Batch, type Person, type Tag } from './marshal';
+import { applyLocal, batchState, gunsOf, lastThrough, newlyStarted, runnerState, seenBy, stampFor, taggedCount, undoLocked, type Batch, type Person, type Tag } from './marshal';
 
 const course = [1, 2, 3]; // Start, CP1, Finish
 const p = (bib: string, batch_id: number | null = 7): Person => ({ bib, name: `R${bib}`, tag: '', category_id: 10, batch_id });
@@ -144,4 +144,22 @@ describe('stampFor', () => {
 	it('uses the server clock for a prompt tap', () => expect(stampFor(100_000, 101_500)).toBe(101_500));
 	it('keeps the phone time for a tap that waited offline', () => expect(stampFor(100_000, 200_000)).toBe(100_000));
 	it('keeps the phone time when it claims to be far in the future', () => expect(stampFor(300_000, 100_000)).toBe(300_000));
+});
+
+describe('undoLocked', () => {
+	// course: start 1, CP 2, CP 3, finish 4
+	const course = [1, 2, 3, 4];
+	const at = (stations: number[]) => seenBy(stations.map((id) => ({ bib: '7', station_id: id, at: id * 100 })));
+	it('free while the runner has no later read', () => {
+		expect(undoLocked('7', at([1, 2]), 2, course, [4])).toBe(false);
+		expect(undoLocked('8', at([1, 2]), 2, course, [4])).toBe(false);
+	});
+	it('locked once they reach a later checkpoint or the finish', () => {
+		expect(undoLocked('7', at([1, 2, 3]), 2, course, [4])).toBe(true);
+		expect(undoLocked('7', at([1, 2, 4]), 2, course, [4])).toBe(true);
+	});
+	it('a finish read anywhere locks a checkpoint off the course; the finish marshal may still undo their own tap', () => {
+		expect(undoLocked('7', at([2, 4]), 9, course, [4])).toBe(true);
+		expect(undoLocked('7', at([1, 4]), 4, course, [4])).toBe(false);
+	});
 });

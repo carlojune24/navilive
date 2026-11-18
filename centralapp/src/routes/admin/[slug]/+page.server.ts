@@ -47,7 +47,7 @@ export const load = async ({ params, url }) => {
 		q('select c.id, c.name, c.gun_ms, c.rank_by, c.release, count(p.id)::int as n from categories c left join participants p on p.category_id=c.id where c.event_id=$1 and c.archived_at is null group by c.id order by c.name', [e.id]),
 		q('select id, name from categories where event_id=$1 and archived_at is not null order by name', [e.id]),
 		q('select b.id, b.category_id, b.name, b.gun_ms, b.release, count(p.id)::int as n from batches b join categories c on c.id=b.category_id left join participants p on p.batch_id=b.id where c.event_id=$1 group by b.id order by b.name', [e.id]),
-		q('select p.id, p.bib, p.name, p.tag, p.gender, p.age, p.category_id, p.batch_id, p.release, c.name as category, (select (extract(epoch from ph.updated_at)*1000)::bigint from participant_photos ph where ph.participant_id=p.id) as photo, (select coalesce(json_agg(json_build_object(\'name\', m.name, \'gender\', m.gender, \'age\', m.age, \'tag\', m.tag) order by m.leg, m.id), \'[]\') from team_members m where m.participant_id=p.id) as members from participants p left join categories c on c.id=p.category_id where p.event_id=$1 order by p.bib', [e.id]),
+		q('select p.id, p.bib, p.name, p.tag, p.gender, p.age, p.category_id, p.batch_id, p.penalty_ms::float8 as penalty_ms, p.penalty_note, p.release, c.name as category, (select (extract(epoch from ph.updated_at)*1000)::bigint from participant_photos ph where ph.participant_id=p.id) as photo, (select coalesce(json_agg(json_build_object(\'name\', m.name, \'gender\', m.gender, \'age\', m.age, \'tag\', m.tag) order by m.leg, m.id), \'[]\') from team_members m where m.participant_id=p.id) as members from participants p left join categories c on c.id=p.category_id where p.event_id=$1 order by p.bib', [e.id]),
 		q('select id, name, kind, ord, services from stations where event_id=$1 order by ord, id', [e.id]),
 		q(
 			`select r.id, r.read_at_ms, r.tag, r.device_id, r.voided, s.name as station,
@@ -668,6 +668,19 @@ export const actions = {
 		);
 		await q("select pg_notify('reads', $1)", [String(e.id)]); // open boards re-rank
 		return { overrideSaved: bib };
+	},
+	// a time penalty in minutes (0 clears it); it is added to the runner's or team's total time
+	setPenalty: async ({ request, params }) => {
+		const e = await ev(params.slug);
+		const f = await request.formData();
+		const bib = String(f.get('bib') ?? '').trim();
+		const min = Number(String(f.get('minutes') ?? '').replace(',', '.'));
+		const note = String(f.get('note') ?? '').trim().slice(0, 300);
+		if (!Number.isFinite(min) || min < 0 || min > 600) return fail(400, { error: 'Penalty must be 0 to 600 minutes.' });
+		const done = await q('update participants set penalty_ms=$3, penalty_note=$4 where event_id=$1 and bib=$2 returning id', [e.id, bib, Math.round(min * 60000), min ? note : '']);
+		if (!done.length) return fail(404, { error: `No participant with bib ${bib}` });
+		await q("select pg_notify('reads', $1)", [String(e.id)]); // open boards re-rank
+		return { penaltySaved: bib };
 	},
 	clearFinishOverride: async ({ request, params }) => {
 		const e = await ev(params.slug);

@@ -36,6 +36,34 @@
 	let ovrErr = $state('');
 	let ovrBusy = $state(false);
 	const overrideOf = (bib: string) => data.overrides.find((o) => o.bib === bib);
+	// Progress page: the time penalty for one runner or team
+	let pen = $state<{ bib: string; name: string; minutes: string; note: string } | null>(null);
+	let penErr = $state('');
+	let penBusy = $state(false);
+	function openPenalty(r: { bib: string; name: string }) {
+		const p = data.participants.find((x) => x.bib === r.bib);
+		const ms = Number(p?.penalty_ms ?? 0);
+		pen = { bib: r.bib, name: r.name, minutes: ms ? String(Math.round((ms / 60000) * 100) / 100) : '', note: p?.penalty_note ?? '' };
+		penErr = '';
+	}
+	async function savePenalty(clear = false) {
+		if (!pen) return;
+		penBusy = true;
+		penErr = '';
+		try {
+			const fd = new FormData();
+			fd.set('bib', pen.bib);
+			fd.set('minutes', clear ? '0' : pen.minutes.trim() || '0');
+			fd.set('note', clear ? '' : pen.note);
+			const r = await fetch('?tab=progress&/setPenalty', { method: 'POST', body: fd, headers: { 'x-sveltekit-action': 'true' } });
+			const res = deserialize(await r.text());
+			if (res.type !== 'success') return (penErr = (res.type === 'failure' && (res.data as { error?: string })?.error) || 'Could not save the penalty.');
+			pen = null;
+			await invalidateAll();
+		} finally {
+			penBusy = false;
+		}
+	}
 	// the runner's start (gun or own), so a finish after midnight lands on the right day
 	const startOfBib = (bib: string) => data.progressData.flatMap((c) => c.progress).find((r) => r.bib === bib)?.start ?? null;
 	function openOverride(r: { bib: string; name: string; finishAt: number | null }) {
@@ -381,6 +409,27 @@
 {/snippet}
 
 {#snippet overridePanel()}
+<Dialog.Root open={pen !== null} onOpenChange={(o) => !o && (pen = null)}>
+	{#if pen}
+		<Dialog.Content class="border-2 border-border sm:max-w-lg">
+			<div class="space-y-3">
+				<Dialog.Header>
+					<Dialog.Title class="font-display text-4xl leading-[0.85] font-black uppercase">Penalty — {pen.bib} {pen.name}</Dialog.Title>
+					<Dialog.Description>Minutes added to this runner's or team's total time. It changes their place and awards, and shows as a penalty under the time.</Dialog.Description>
+				</Dialog.Header>
+				{#if penErr}<p class="font-bold text-destructive" role="alert">{penErr}</p>{/if}
+				<label class="block font-bold uppercase">Penalty (minutes)<input type="number" min="0" max="600" step="0.5" inputmode="decimal" bind:value={pen.minutes} placeholder="e.g. 2" class="mt-1 block h-12 w-full border-2 border-border bg-background px-3 font-normal" /></label>
+				<label class="block font-bold uppercase">Reason <span class="font-normal normal-case text-muted-foreground">(optional)</span><input bind:value={pen.note} maxlength="300" placeholder="e.g. Missed a station" class="mt-1 block h-12 w-full border-2 border-border bg-background px-3 font-normal normal-case" /></label>
+				<div class="flex flex-wrap gap-2">
+					<Button class="h-11 font-bold uppercase" disabled={penBusy} onclick={() => savePenalty()}>{penBusy ? 'Saving…' : 'Save penalty'}</Button>
+					{#if Number(data.participants.find((x) => x.bib === pen?.bib)?.penalty_ms ?? 0) > 0}<Button variant="outline" class="h-11 border-2 font-bold uppercase" disabled={penBusy} onclick={() => savePenalty(true)}>Remove penalty</Button>{/if}
+					<Button variant="outline" class="h-11 border-2 font-bold uppercase" onclick={() => (pen = null)}>Cancel</Button>
+				</div>
+			</div>
+		</Dialog.Content>
+	{/if}
+</Dialog.Root>
+
 <Dialog.Root open={ovr !== null} onOpenChange={(o) => !o && (ovr = null)}>
 {#if ovr}
 	<Dialog.Content class="max-h-[90vh] overflow-y-auto border-2 border-border sm:max-w-md">
@@ -971,7 +1020,7 @@
 						<span>{c.name}</span>
 						<span class="text-base font-normal tracking-wide">{progRows.filter((r) => r.state === 'finished').length} finished · {progRows.filter((r) => r.start !== null).length} started · {progRows.length} registered{flagged ? ` · ${flagged} to check` : ''}</span>
 					</h3>
-					{#key `${c.id}-${progBatch}`}<ProgressTable course={c.course} rows={progRows} category={c.name} flags pageSize={20} onOverride={(r) => openOverride({ bib: r.bib, name: r.name, finishAt: null })} overridden={(bib) => !!overrideOf(bib)} release={runnerRelease} batchOf={progBatchCol} />{/key}
+					{#key `${c.id}-${progBatch}`}<ProgressTable course={c.course} rows={progRows} category={c.name} flags pageSize={20} onOverride={(r) => openOverride({ bib: r.bib, name: r.name, finishAt: null })} onPenalty={(r) => openPenalty(r)} overridden={(bib) => !!overrideOf(bib)} release={runnerRelease} batchOf={progBatchCol} />{/key}
 				</section>
 				<!-- per checkpoint: who has passed and who has not yet (the start counts a gun start too, like the table) -->
 				<section class="border-2 border-border bg-card">

@@ -98,7 +98,7 @@ test('relay and duo: import the client file, track members by tag, finish only w
 	await page.getByRole('tab', { name: /DUO/ }).click();
 	await expect(page.getByText('Davao Durian Strong')).toBeVisible();
 	await expect(page.getByTestId('team-runners')).toHaveText('Jayvee Tyron Lim Uy, Kevin Ryan Tan');
-	await expect(page.getByText('20:00')).toBeVisible();
+	await expect(page.getByText('0:20:00')).toBeVisible();
 
 	// 6. the relay: its first finish read finishes it
 	expect((await reads([['TAG1', 'Finish', 1_000_000]])).status).toBe(200);

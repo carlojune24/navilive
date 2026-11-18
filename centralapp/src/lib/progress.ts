@@ -14,6 +14,7 @@ export type ProgressRow = {
 	last: string | null; // the furthest station reached
 	missed: string[]; // course stations with no read although the runner has a read at a later one
 	division?: string; // teams only: Men, Women or Mix, from the members' genders
+	penalty?: number; // time penalty (ms), included in `time`
 };
 
 const KIND_RANK: Record<string, number> = { start: 0, checkpoint: 1, finish: 2 };
@@ -42,6 +43,7 @@ export type Person = {
 	first: Map<number, number>; // station id -> first valid read (ms)
 	by?: Map<number, string>; // station id -> device id of that read
 	division?: string;
+	penalty?: number;
 };
 
 export function buildProgress(course: CourseStation[], people: Person[]): ProgressRow[] {
@@ -53,7 +55,7 @@ export function buildProgress(course: CourseStation[], people: Person[]): Progre
 		const upTo = p.finished ? course.length - 1 : furthest;
 		const missed = course.filter((s, i) => i < upTo && at[i] === null && !(s.kind === 'start' && p.start !== null)).map((s) => s.name);
 		const state: ProgressState = p.finished ? 'finished' : furthest >= 0 || p.start !== null ? 'on-course' : 'not-started';
-		return { bib: p.bib, name: p.name, state, rank: p.rank, time: p.time, start: p.start, at, by: course.map((s) => p.by?.get(s.id) ?? null), last: furthest >= 0 ? course[furthest].name : null, missed, ...(p.division ? { division: p.division } : {}) };
+		return { bib: p.bib, name: p.name, state, rank: p.rank, time: p.time, start: p.start, at, by: course.map((s) => p.by?.get(s.id) ?? null), last: furthest >= 0 ? course[furthest].name : null, missed, ...(p.division ? { division: p.division } : {}), ...(p.penalty ? { penalty: p.penalty } : {}) };
 	});
 	const order = (r: ProgressRow) => (r.state === 'finished' ? 0 : r.state === 'on-course' ? 1 : 2);
 	const furthestIndex = (r: ProgressRow) => r.at.reduce<number>((m, t, i) => (t !== null ? i : m), -1);

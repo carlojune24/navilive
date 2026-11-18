@@ -6,7 +6,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { replaceState } from '$app/navigation';
-	import { applyLocal, batchState, gunsOf, lastThrough, newlyStarted, runnerState, seenBy, taggedCount, type Batch, type Person, type Tag } from '$lib/marshal';
+	import { applyLocal, batchState, gunsOf, lastThrough, newlyStarted, runnerState, seenBy, taggedCount, undoLocked, type Batch, type Person, type Tag } from '$lib/marshal';
 	import { hms, phTime } from '$lib/time';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
@@ -78,6 +78,10 @@
 
 	const stateOf = (p: Person) =>
 		stationId === null ? 'waiting' : runnerState(p.bib, seen, stationId, (p.category_id !== null ? courseOf.get(p.category_id) : null) ?? course);
+	// Undo is closed once the runner has a later checkpoint or a finish read (the organizer can still void it)
+	const finishIds = $derived(board?.stations.filter((s) => s.kind === 'finish').map((s) => s.id) ?? []);
+	const locked = (p: Person) =>
+		stationId !== null && undoLocked(p.bib, seen, stationId, (p.category_id !== null ? courseOf.get(p.category_id) : null) ?? course, finishIds);
 	// one entry per runner per station: the same bib may be tagged at several stations from this device
 	const mineKey = (p: Person) => `${station?.name ?? ''}|${p.bib}`;
 	const rows = $derived.by(() => {
@@ -184,6 +188,7 @@
 	function undo(p: Person) {
 		const prev = mine[mineKey(p)];
 		if (!prev || prev.voided) return;
+		if (locked(p)) return void alertLocked(p);
 		if (!confirm(`Undo tag for ${p.bib}${p.name ? ` (${p.name})` : ''}?`)) return;
 		// the same tag+time+device re-sent as voided: the ingest upsert flips the existing row
 		const qd = { ...prev, voided: true };
@@ -191,6 +196,10 @@
 		queue = [...queue, qd];
 		save();
 		void flush();
+	}
+
+	function alertLocked(p: Person) {
+		err = `${p.bib} already has a later read, so this tag can't be undone here. Ask the organizer to fix it on the Reads page.`;
 	}
 
 	function badKey(message: string) {
@@ -484,7 +493,11 @@
 								<div class="mt-1 flex w-full items-center justify-between gap-2">
 									<span class="font-bold">{at ? clock(at) : ''}</span>
 									{#if mine[mineKey(p)] && !mine[mineKey(p)].voided}
-										<Button variant="outline" size="sm" class="h-9 border-2 font-bold uppercase" onclick={() => undo(p)}>Undo</Button>
+										{#if locked(p)}
+											<span class="text-sm font-bold text-muted-foreground uppercase" title="Already read at a later checkpoint or the finish. The organizer can fix it on the Reads page.">Locked</span>
+										{:else}
+											<Button variant="outline" size="sm" class="h-9 border-2 font-bold uppercase" onclick={() => undo(p)}>Undo</Button>
+										{/if}
 									{/if}
 								</div>
 							</div>

@@ -46,6 +46,18 @@ export function runnerState(bib: string, seen: Map<string, Map<number, number>>,
 	return 'waiting';
 }
 
+/**
+ * A tap here can no longer be undone once the runner has moved on: a read at a later station of their course,
+ * or a finish read at another station. The organizer can still void it on the Reads page.
+ */
+export function undoLocked(bib: string, seen: Map<string, Map<number, number>>, stationId: number, course: number[], finishIds: number[]): boolean {
+	const mine = seen.get(bib);
+	if (!mine) return false;
+	if (finishIds.some((id) => id !== stationId && mine.has(id))) return true;
+	const here = course.indexOf(stationId);
+	return here !== -1 && course.slice(here + 1).some((id) => mine.has(id));
+}
+
 export function taggedCount(members: Person[], seen: Map<string, Map<number, number>>, stationId: number) {
 	return members.filter((p) => seen.get(p.bib)?.has(stationId)).length;
 }

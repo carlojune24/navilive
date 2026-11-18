@@ -150,7 +150,8 @@ describe('finisher with no start time', () => {
 
 describe('fmt', () => {
 	it('formats m:ss and h:mm:ss', () => {
-		expect(fmt(65000)).toBe('1:05');
+		expect(fmt(65000)).toBe('0:01:05');
+		expect(fmt(396977)).toBe('0:06:36');
 		expect(fmt(3725000)).toBe('1:02:05');
 	});
 });
@@ -180,5 +181,21 @@ describe('team (relay / duo)', () => {
 	});
 	it('a solo runner is unaffected', () => {
 		expect(run([start, fin(601000)], [{ id: 1, bib: '1', name: 'S', category_id: 10 }]).rows[0].time).toBe(600000);
+	});
+});
+
+describe('penalty', () => {
+	const two: P[] = [
+		{ id: 1, bib: '1', name: 'A', category_id: 10, penaltyMs: 120000 },
+		{ id: 2, bib: '2', name: 'B', category_id: 10 }
+	];
+	const reads: R[] = [
+		{ pid: 1, station_id: 1, read_at_ms: 0 }, { pid: 1, station_id: 3, read_at_ms: 600000 },
+		{ pid: 2, station_id: 1, read_at_ms: 0 }, { pid: 2, station_id: 3, read_at_ms: 660000 }
+	];
+	it('is added to the total time and can change the order', () => {
+		const [c] = computeResults(cats, two, st, reads, 'own');
+		expect(c.rows.map((r) => [r.bib, r.rank, r.time, r.penalty])).toEqual([['2', 1, 660000, undefined], ['1', 2, 720000, 120000]]);
+		expect(c.progress.find((r) => r.bib === '1')).toMatchObject({ time: 720000, penalty: 120000 });
 	});
 });

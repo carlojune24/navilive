@@ -58,7 +58,7 @@ export const GET = async ({ params, url }) => {
 		const { cfg } = parseConfig(ev?.award_config);
 		const splitCols: string[] = [];
 		for (const c of res.categories) for (const r of c.rows) for (const s of r.splits) if (!splitCols.includes(s.station)) splitCols.push(s.station);
-		rows = [['category', 'rank', 'bib', 'name', 'gender', 'age', 'gender_rank', 'age_group', 'age_group_rank', 'time', 'time_ms', 'start_iso', 'start_basis', 'finish_time_iso', ...splitCols.map((s) => `split_${s}`)]];
+		rows = [['category', 'rank', 'bib', 'name', 'gender', 'age', 'gender_rank', 'age_group', 'age_group_rank', 'time', 'time_ms', 'start_iso', 'start_basis', 'finish_time_iso', 'penalty_min', ...splitCols.map((s) => `split_${s}`)]];
 		for (const c of res.categories) {
 			// rank within the runner's own gender and age group (rows are already in finishing order); brackets are this category's own
 			const brackets = resolveOptions(defaults, cfg, c.id).groups;
@@ -71,9 +71,10 @@ export const GET = async ({ params, url }) => {
 					b?.label ?? '',
 					b ? rankIn(r, (o) => o.gender === r.gender && o.age !== null && o.age >= b.min && o.age <= b.max) : '',
 					fmt(r.time!), r.time,
-						new Date(r.finishAt! - r.time!).toISOString(), // the start this runner's time was measured from
+						new Date(r.finishAt! - (r.time! - (r.penalty ?? 0))).toISOString(), // the start this runner's time was measured from (time includes the penalty)
 						mode === 'own' ? 'own start read' : c.gunManual ? 'gun (Start pressed on live board)' : 'gun (first Start read)',
 						new Date(r.finishAt!).toISOString(),
+						r.penalty ? Math.round((r.penalty / 60000) * 100) / 100 : '',
 					...splitCols.map((s) => { const x = r.splits.find((p) => p.station === s); return x ? fmt(x.elapsed) : ''; })
 				]);
 			}

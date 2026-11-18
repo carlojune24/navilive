@@ -4,8 +4,9 @@
 	import { flip } from 'svelte/animate';
 
 	// Who has reached which station. `flags` (admin) also shows runners who skipped a station, so a missed read can be fixed.
-	type Props = { course: CourseStation[]; rows: ProgressRow[]; flags?: boolean; big?: boolean; pageSize?: number; onOverride?: (r: ProgressRow) => void; overridden?: (bib: string) => boolean; release?: Snippet<[ProgressRow]>; batchOf?: (bib: string) => string | null; category?: string };
-	let { course, rows, flags = false, big = false, pageSize = 0, onOverride, overridden, release, batchOf, category = '' }: Props = $props();
+	type Props = { course: CourseStation[]; rows: ProgressRow[]; flags?: boolean; big?: boolean; pageSize?: number; onOverride?: (r: ProgressRow) => void; overridden?: (bib: string) => boolean; release?: Snippet<[ProgressRow]>; batchOf?: (bib: string) => string | null; category?: string; onPenalty?: (r: ProgressRow) => void };
+	let { course, rows, flags = false, big = false, pageSize = 0, onOverride, overridden, release, batchOf, category = '', onPenalty }: Props = $props();
+	const mins = (ms: number) => `${Math.round((ms / 60000) * 100) / 100} min`;
 	const showDivision = $derived(rows.some((r) => r.division)); // pageSize 0 = show every row
 
 	// when a new finish changes the places, rows slide to their new spot; people who ask for less motion get none
@@ -56,6 +57,7 @@
 				<th class="px-3 py-2 font-bold tracking-wide whitespace-nowrap uppercase {head}">Total time</th>
 				{#if flags}<th class="px-3 py-2 font-bold tracking-wide uppercase {head}">Check</th>{/if}
 				{#if release}<th class="px-3 py-2 font-bold tracking-wide uppercase {head}">Live board</th>{/if}
+				{#if onPenalty}<th class="px-3 py-2 font-bold tracking-wide uppercase {head}">Penalty</th>{/if}
 				{#if onOverride}<th class="px-3 py-2 {head}"></th>{/if}
 			</tr>
 		</thead>
@@ -79,17 +81,18 @@
 								{#if v !== null && r.at[i] !== null && course[i].kind !== 'finish' && (!isStart(i) ? r.start !== null : r.at[i] !== r.start)}<span class="block font-sans {big ? 'text-base' : 'text-xs'} font-normal text-muted-foreground">{isStart(i) ? 'read ' : ''}{clock(r.at[i]!)}</span>{/if}
 							</td>
 					{/each}
-					<td class="px-3 py-1 font-display whitespace-nowrap {big ? 'text-3xl' : 'text-xl'} font-black">{r.time !== null ? fmt(r.time) : '—'}</td>
+					<td class="px-3 py-1 font-display whitespace-nowrap {big ? 'text-3xl' : 'text-xl'} font-black">{r.time !== null ? fmt(r.time) : '—'}{#if r.penalty && r.time !== null}<span class="block font-sans text-xs font-bold text-destructive normal-case" title="Included in the total time">+{mins(r.penalty)} penalty</span>{/if}</td>
 					{#if flags}
 						<td class="px-3 py-1">
 							{#if r.missed.length}<span class="inline-block border-2 border-destructive px-1 font-bold text-destructive uppercase">Missed: {r.missed.join(', ')}</span>{/if}
 						</td>
 					{/if}
 					{#if release}<td class="px-3 py-1 whitespace-nowrap {text}">{@render release(r)}</td>{/if}
+					{#if onPenalty}<td class="px-3 py-1 whitespace-nowrap {text}"><button type="button" class="underline" onclick={() => onPenalty(r)}>{r.penalty ? `+${mins(r.penalty)}` : 'Add'}</button></td>{/if}
 					{#if onOverride}<td class="px-3 py-1 {text}"><button type="button" class="underline" onclick={() => onOverride(r)}>{overridden?.(r.bib) ? 'Override ✓' : 'Override'}</button></td>{/if}
 				</tr>
 			{:else}
-				<tr><td colspan={course.length + 10} class="p-6 text-muted-foreground">No runners in this category yet.</td></tr>
+				<tr><td colspan={course.length + 11} class="p-6 text-muted-foreground">No runners in this category yet.</td></tr>
 			{/each}
 		</tbody>
 	</table>
