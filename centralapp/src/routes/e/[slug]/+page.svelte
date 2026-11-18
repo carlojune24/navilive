@@ -70,15 +70,9 @@
 	}
 
 	let latest = 0; // two refreshes close together can answer out of order: only the newest one may land
-	const POLL_MS = 10_000; // fetch anyway every 10 s, in case a live update was missed
-	let poll: ReturnType<typeof setTimeout> | undefined;
-	let loading = $state(false);
-	let pollRun = $state(0); // restarts the countdown bar
 	async function refresh() {
 		void refreshStarts();
 		const mine = ++latest;
-		clearTimeout(poll);
-		loading = true;
 		try {
 			const r = await fetch(`/e/${data.slug}/results?mode=${mode}`);
 			if (!r.ok || mine !== latest) return;
@@ -89,12 +83,6 @@
 			fetchedAt = Date.now();
 		} catch {
 			/* connection state shows the problem */
-		} finally {
-			if (mine === latest) {
-				loading = false;
-				pollRun++;
-				poll = setTimeout(refresh, POLL_MS);
-			}
 		}
 	}
 
@@ -234,8 +222,7 @@
 		};
 		es.onerror = () => (connected = false);
 		es.onmessage = () => (clearTimeout(t), (t = setTimeout(refresh, 250)));
-		poll = setTimeout(refresh, POLL_MS);
-		return () => (clearInterval(tick), clearTimeout(t), clearTimeout(poll), es.close());
+		return () => (clearInterval(tick), clearTimeout(t), es.close());
 	});
 
 	// Categories the cycle visits: those with finishers (or all, when none have any yet).
@@ -290,11 +277,7 @@
 				<span class="inline-block size-4 border-2 border-border" style="background:{connected ? 'var(--start)' : 'var(--finish)'}"></span>
 				{connected ? 'Live' : 'Reconnecting…'}
 			</p>
-			<p class="text-lg text-muted-foreground">{loading ? 'Updating…' : agoText}</p>
-			<!-- fills up until the next update (every 10 s) -->
-			<div class="mt-1 ml-auto h-1.5 w-40 border border-border" role="progressbar" aria-label="Next update" aria-busy={loading}>
-				{#key pollRun}<div class="poll h-full bg-primary" class:loading style="animation-duration:{POLL_MS}ms"></div>{/key}
-			</div>
+			<p class="text-lg text-muted-foreground">{agoText}</p>
 		</div>
 	</header>
 
@@ -569,23 +552,6 @@
 	.countdown {
 		transition: width 1s linear;
 	}
-	.poll {
-		width: 100%;
-		transform-origin: left;
-		animation: poll linear forwards;
-	}
-	.poll.loading {
-		animation: none;
-		opacity: 0.4;
-	}
-	@keyframes poll {
-		from {
-			transform: scaleX(0);
-		}
-		to {
-			transform: scaleX(1);
-		}
-	}
 	.fresh {
 		animation: flash 2.4s cubic-bezier(0.16, 1, 0.3, 1);
 	}
@@ -603,9 +569,6 @@
 		}
 		.countdown {
 			transition: none;
-		}
-		.poll {
-			animation: none;
 		}
 		.fresh {
 			animation: none;
