@@ -42,6 +42,7 @@
 			overall: c.overall ?? true,
 			men: c.men ?? true,
 			women: c.women ?? true,
+			mixed: c.mixed ?? true,
 			ageGroups: c.ageGroups ?? true,
 			own, // this category has its own brackets instead of the event's
 			brackets: own ? (c.brackets as BracketCfg[]).map(rowFrom) : ([] as Row[]),
@@ -76,6 +77,7 @@
 							overall: e.overall,
 							men: e.men,
 							women: e.women,
+							mixed: e.mixed,
 							ageGroups: e.ageGroups,
 							brackets: e.ageGroups && e.own ? e.brackets.map((b) => ({ min: b.min, max: b.max.trim() === '' ? null : b.max, men: b.men, women: b.women, all: b.all })) : null,
 							youngest: e.youngest,
@@ -152,6 +154,7 @@
 							<label class="flex items-center gap-2"><input type="checkbox" bind:checked={e.overall} class={check} />Overall</label>
 							<label class="flex items-center gap-2"><input type="checkbox" bind:checked={e.men} class={check} />Men</label>
 							<label class="flex items-center gap-2"><input type="checkbox" bind:checked={e.women} class={check} />Women</label>
+							<label class="flex items-center gap-2" title="Teams (duo, relay) with both men and women"><input type="checkbox" bind:checked={e.mixed} class={check} />Mixed</label>
 							<label class="flex items-center gap-2"><input type="checkbox" bind:checked={e.youngest} class={check} />Youngest finisher</label>
 							<label class="flex items-center gap-2"><input type="checkbox" bind:checked={e.oldest} class={check} />Oldest finisher</label>
 						</div>

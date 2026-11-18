@@ -27,6 +27,7 @@ export type CatAwardCfg = {
 	overall?: boolean;
 	men?: boolean;
 	women?: boolean;
+	mixed?: boolean; // teams with both men and women
 	ageGroups?: boolean;
 	brackets?: BracketCfg[] | null; // null/undefined = the event's default brackets, men and women
 	youngest?: boolean;
@@ -63,6 +64,7 @@ export type CategoryOptions = {
 	overall: boolean;
 	men: boolean;
 	women: boolean;
+	mixed: boolean;
 	groups: Group[];
 	youngest: boolean;
 	oldest: boolean;
@@ -83,6 +85,7 @@ export function resolveOptions(def: EventAwardDefaults, cfg: AwardConfig, catId:
 		overall: c.overall ?? true,
 		men: c.men ?? true,
 		women: c.women ?? true,
+		mixed: c.mixed ?? true,
 		groups: brackets.map((b) => ({ label: labelOf(b.min, b.max), min: b.min, max: b.max ?? 200, men: b.men, women: b.women, all: b.all })),
 		youngest: c.youngest ?? false,
 		oldest: c.oldest ?? false,
@@ -118,7 +121,7 @@ export function parseConfig(raw: unknown): { cfg: AwardConfig; errors: string[] 
 			if (p === null) errors.push('Places must be a whole number from 1 to 10');
 			else out.places = p;
 		}
-		for (const k of ['overall', 'men', 'women', 'ageGroups', 'youngest', 'oldest'] as const) if (typeof c[k] === 'boolean') out[k] = c[k];
+		for (const k of ['overall', 'men', 'women', 'mixed', 'ageGroups', 'youngest', 'oldest'] as const) if (typeof c[k] === 'boolean') out[k] = c[k];
 		if (Array.isArray(c.brackets)) {
 			const list: BracketCfg[] = [];
 			for (const b of c.brackets.slice(0, MAX_BRACKETS)) {

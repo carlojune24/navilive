@@ -523,11 +523,11 @@
 				{:else if data.routeCats.includes(cat.id)}
 					<!-- the route map sits beside the table; its pins count who has passed each checkpoint, live -->
 					<div class="grid xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-						<div class="min-w-0" style="zoom:{zoom}">{#key batchSel}<ProgressTable course={cat.course} rows={progRows} big={data.kiosk} batchOf={batchCol} />{/key}</div>
+						<div class="min-w-0" style="zoom:{zoom}">{#key batchSel}<ProgressTable course={cat.course} rows={progRows} big={data.kiosk} batchOf={batchCol} category={cat.name} />{/key}</div>
 						<div class="relative h-[70vh] min-h-[520px] border-t-2 border-border xl:sticky xl:top-0 xl:order-first xl:h-[max(460px,calc(100vh-19.5rem))] xl:border-t-0 xl:border-r-2"><RouteMap slug={data.slug} category={cat.id} compact /></div>
 					</div>
 				{:else}
-					<div class="min-w-0" style="zoom:{zoom}">{#key batchSel}<ProgressTable course={cat.course} rows={progRows} big={data.kiosk} batchOf={batchCol} />{/key}</div>
+					<div class="min-w-0" style="zoom:{zoom}">{#key batchSel}<ProgressTable course={cat.course} rows={progRows} big={data.kiosk} batchOf={batchCol} category={cat.name} />{/key}</div>
 				{/if}
 			{:else}
 			{#key cat.id}

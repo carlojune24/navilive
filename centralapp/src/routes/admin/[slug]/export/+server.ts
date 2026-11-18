@@ -2,7 +2,7 @@ import { error } from '@sveltejs/kit';
 import { q } from '$lib/server/db';
 import { loadResults } from '$lib/server/live';
 import { MATCH } from '$lib/server/stationdata';
-import { fmt, type Row } from '$lib/results';
+import { fmt, genderLabel, type Row } from '$lib/results';
 import { parseConfig, resolveOptions } from '$lib/awardcfg';
 import { toCsv } from '$lib/csv';
 
@@ -66,7 +66,7 @@ export const GET = async ({ params, url }) => {
 			for (const r of c.rows) {
 				const b = r.age === null ? undefined : brackets.find((x) => r.age! >= x.min && r.age! <= x.max);
 				rows.push([
-					c.name, r.rank, r.bib, r.name, r.gender, r.age,
+					c.name, r.rank, r.bib, r.name, genderLabel(r.gender), r.age,
 					r.gender ? rankIn(r, (o) => o.gender === r.gender) : '',
 					b?.label ?? '',
 					b ? rankIn(r, (o) => o.gender === r.gender && o.age !== null && o.age >= b.min && o.age <= b.max) : '',

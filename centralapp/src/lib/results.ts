@@ -18,7 +18,7 @@ export type P = {
 	extra?: Record<string, string>;
 	photo?: number | null; // when the winner photo was last changed (ms), null = none
 	finishOverride?: number | null; // admin-corrected finish clock time (epoch ms); replaces the finish reads
-	members?: { id: number; name: string }[]; // relay/duo: the runners of this team; the team finishes when every one has crossed
+	members?: { id: number; name: string; gender?: string }[]; // relay/duo: the runners of this team
 };
 export type S = { id: number; name: string; kind: string; ord: number };
 export type R = { pid: number; station_id: number; read_at_ms: number; device_id?: string };
@@ -62,6 +62,22 @@ export type Cat = {
 
 const DEFAULT_OPTIONS = (catId: number) => resolveOptions({ places: 3, brackets: DEFAULT_BRACKETS, exclusive: false }, DEFAULT_CONFIG, catId);
 
+/** A runner's gender for the awards. A team (duo, relay) with both men and women is mixed ('X'); a team of one gender
+ *  takes it; otherwise the gender on the participant row. */
+export function teamGender(p: Pick<P, 'gender' | 'members'>): string {
+	const g = new Set((p.members ?? []).map((m) => m.gender).filter((x) => x === 'M' || x === 'F'));
+	if (g.size === 2) return 'X';
+	return p.gender || (g.size === 1 ? [...g][0]! : '');
+}
+export const genderLabel = (g: string) => (g === 'X' ? 'Mixed' : g);
+/** A team's division for the boards ('Men', 'Women', 'Mix'); a solo runner or a team with no member genders has none. */
+export function divisionOf(p: Pick<P, 'gender' | 'members'>): string | undefined {
+	if (!p.members?.length) return undefined;
+	return ({ M: 'Men', F: 'Women', X: 'Mix' } as Record<string, string>)[teamGender(p)];
+}
+/** "DUO - MIX" for a team with a division, else the category name. */
+export const categoryLabel = (category: string, division?: string) => (division ? `${category} - ${division}` : category);
+
 /** `rows` are the category's finishers, already ranked. Which awards exist is decided by `o` (the organizer's ticks). */
 export function buildAwards(rows: Row[], o: CategoryOptions): Award[] {
 	const win = (r: Row, place: number, detail?: string): Winner => ({ place, bib: r.bib, name: r.name, time: r.time!, photo: r.photo, ...(detail ? { detail } : {}) });
@@ -70,7 +86,7 @@ export function buildAwards(rows: Row[], o: CategoryOptions): Award[] {
 	const out: Award[] = [];
 
 	if (o.overall && rows.length) out.push({ key: 'overall', name: 'Overall', winners: top(rows) });
-	for (const [g, label, on] of [['M', 'Men', o.men], ['F', 'Women', o.women]] as const) {
+	for (const [g, label, on] of [['M', 'Men', o.men], ['F', 'Women', o.women], ['X', 'Mixed', o.mixed]] as const) {
 		if (!on) continue;
 		const list = rows.filter((r) => r.gender === g);
 		// a single-gender category would just repeat Overall, unless the organizer wants it shown anyway
@@ -214,7 +230,7 @@ export function computeResults(
 					time: finishAt !== null ? finishAt - start! : null,
 					finishAt,
 					splits,
-					gender: p.gender ?? '',
+					gender: teamGender(p),
 					age: p.age ?? null,
 					extra: p.extra ?? {},
 					photo: p.photo ?? null,
@@ -232,7 +248,7 @@ export function computeResults(
 			const timeOf = new Map(done.map((r) => [r.bib, r.time]));
 			const progress = buildProgress(
 				course,
-				members.map((p) => ({ bib: p.bib, name: p.name, start: track.get(p.bib)!.start, first: track.get(p.bib)!.first, by: track.get(p.bib)!.by, finished: rankOf.has(p.bib) || crossed.has(p.bib), rank: rankOf.get(p.bib) ?? null, time: timeOf.get(p.bib) ?? null }))
+				members.map((p) => ({ bib: p.bib, name: p.name, start: track.get(p.bib)!.start, first: track.get(p.bib)!.first, by: track.get(p.bib)!.by, finished: rankOf.has(p.bib) || crossed.has(p.bib), rank: rankOf.get(p.bib) ?? null, time: timeOf.get(p.bib) ?? null, division: divisionOf(p) }))
 			);
 			return { id: cat.id, name: cat.name, rows: done, started, total: members.length, awards: buildAwards(done, o), places: o.places, course, progress, noStart, badStart, gunMs: gun.get(`c${cat.id}`) ?? null, gunManual: manual.has(`c${cat.id}`), rankBy: (rankBy === 'chip' || rankBy === 'finish' ? rankBy : 'elapsed') as 'elapsed' | 'chip' | 'finish', underway: members.some((p) => (byP.get(p.id) ?? []).some((r) => kind.get(r.station_id)?.kind !== 'start')) };
 		})

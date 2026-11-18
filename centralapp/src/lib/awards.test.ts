@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildAwards, type Row } from './results';
+import { buildAwards, categoryLabel, divisionOf, teamGender, type Row } from './results';
 import { DEFAULT_BRACKETS, DEFAULT_CONFIG, parseBrackets, parseConfig, resolveOptions, type AwardConfig, type CategoryOptions } from './awardcfg';
 
 const mk = (bib: string, time: number, gender: string, age: number | null, extra: Record<string, string> = {}): Row => ({
@@ -132,5 +132,39 @@ describe('resolveOptions', () => {
 		const o = resolveOptions({ places: 4, brackets: DEFAULT_BRACKETS, exclusive: true }, DEFAULT_CONFIG, 1);
 		expect(o).toMatchObject({ places: 4, overall: true, men: true, women: true, exclusive: true, youngest: false });
 		expect(o.groups.map((g) => g.label)).toEqual(['18-29', '30-39', '40-49', '50-59', '60+']);
+	});
+});
+
+describe('mixed teams', () => {
+	it('a team with both men and women is mixed; one gender or none keeps the usual rule', () => {
+		const m = (g: string) => ({ id: 1, name: 'x', gender: g });
+		expect(teamGender({ gender: '', members: [m('M'), m('F')] })).toBe('X');
+		expect(teamGender({ gender: 'M', members: [m('M'), m('F')] })).toBe('X');
+		expect(teamGender({ gender: '', members: [m('F'), m('F')] })).toBe('F');
+		expect(teamGender({ gender: 'M', members: [m(''), m('')] })).toBe('M');
+		expect(teamGender({ gender: 'F' })).toBe('F');
+	});
+	it('a Mixed award ranks the mixed teams, next to Men and Women; it can be turned off', () => {
+		const teams = [mk('D1', 100, 'X', null), mk('D2', 110, 'M', null), mk('D3', 120, 'X', null), mk('D4', 130, 'F', null)];
+		const a = buildAwards(teams, opts());
+		expect(bibs(a, 'X')).toEqual(['D1', 'D3']);
+		expect(a.find((x) => x.key === 'X')?.name).toBe('Mixed');
+		expect(bibs(a, 'M')).toEqual(['D2']);
+		expect(bibs(buildAwards(teams, opts(withCat({ mixed: false }))), 'X')).toBeUndefined();
+	});
+});
+
+describe('team division', () => {
+	const m = (g: string) => ({ id: 1, name: 'x', gender: g });
+	it('Men, Women or Mix for a team; nothing for a solo runner', () => {
+		expect(divisionOf({ gender: '', members: [m('M'), m('F')] })).toBe('Mix');
+		expect(divisionOf({ gender: '', members: [m('M'), m('M')] })).toBe('Men');
+		expect(divisionOf({ gender: '', members: [m('F'), m('F')] })).toBe('Women');
+		expect(divisionOf({ gender: '', members: [m(''), m('')] })).toBeUndefined();
+		expect(divisionOf({ gender: 'M' })).toBeUndefined();
+	});
+	it('labels the category', () => {
+		expect(categoryLabel('DUO', 'Mix')).toBe('DUO - Mix');
+		expect(categoryLabel('SOLO', undefined)).toBe('SOLO');
 	});
 });

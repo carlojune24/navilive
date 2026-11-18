@@ -1,11 +1,12 @@
 <script lang="ts">
-	import { fmt, type CourseStation, type ProgressRow } from '$lib/results';
+	import { categoryLabel, fmt, type CourseStation, type ProgressRow } from '$lib/results';
 	import { onMount, type Snippet } from 'svelte';
 	import { flip } from 'svelte/animate';
 
 	// Who has reached which station. `flags` (admin) also shows runners who skipped a station, so a missed read can be fixed.
-	type Props = { course: CourseStation[]; rows: ProgressRow[]; flags?: boolean; big?: boolean; pageSize?: number; onOverride?: (r: ProgressRow) => void; overridden?: (bib: string) => boolean; release?: Snippet<[ProgressRow]>; batchOf?: (bib: string) => string | null };
-	let { course, rows, flags = false, big = false, pageSize = 0, onOverride, overridden, release, batchOf }: Props = $props(); // pageSize 0 = show every row
+	type Props = { course: CourseStation[]; rows: ProgressRow[]; flags?: boolean; big?: boolean; pageSize?: number; onOverride?: (r: ProgressRow) => void; overridden?: (bib: string) => boolean; release?: Snippet<[ProgressRow]>; batchOf?: (bib: string) => string | null; category?: string };
+	let { course, rows, flags = false, big = false, pageSize = 0, onOverride, overridden, release, batchOf, category = '' }: Props = $props();
+	const showDivision = $derived(rows.some((r) => r.division)); // pageSize 0 = show every row
 
 	// when a new finish changes the places, rows slide to their new spot; people who ask for less motion get none
 	let reduceMotion = $state(false);
@@ -44,6 +45,7 @@
 				<th class="px-3 py-2 font-bold tracking-wide uppercase {head}">Bib</th>
 				{#if batchOf}<th class="px-3 py-2 font-bold tracking-wide uppercase {head}">Batch</th>{/if}
 				<th class="px-3 py-2 font-bold tracking-wide uppercase {head}">Name</th>
+				{#if showDivision}<th class="px-3 py-2 font-bold tracking-wide uppercase {head}">Category</th>{/if}
 				<th class="px-3 py-2 font-bold tracking-wide uppercase {head}">Status</th>
 				{#each course as s, i (s.id)}
 					<th class="px-3 py-2 font-bold tracking-wide whitespace-nowrap uppercase {head}">
@@ -64,6 +66,7 @@
 					<td class="font-display px-3 py-1 text-3xl leading-[0.9] font-black {big ? 'md:text-5xl' : ''}">{r.bib}</td>
 					{#if batchOf}<td class="font-display px-3 py-1 text-2xl leading-[0.9] font-black whitespace-nowrap {big ? 'md:text-4xl' : ''}">{batchOf(r.bib) ?? '—'}</td>{/if}
 					<td class="px-3 py-1 font-bold uppercase {text}">{r.name || '—'}</td>
+					{#if showDivision}<td class="px-3 py-1 font-bold whitespace-nowrap uppercase {text}">{r.division ? categoryLabel(category, r.division) : '—'}</td>{/if}
 					<td class="px-3 py-1 whitespace-nowrap {text}">
 						{#if held(r)}<b>Verifying</b>{:else if r.state === 'finished'}<b>Finished</b>{:else if r.state === 'on-course'}{r.last ? `At ${r.last}` : 'Started'}{:else}{status[r.state]}{/if}
 					</td>
@@ -86,7 +89,7 @@
 					{#if onOverride}<td class="px-3 py-1 {text}"><button type="button" class="underline" onclick={() => onOverride(r)}>{overridden?.(r.bib) ? 'Override ✓' : 'Override'}</button></td>{/if}
 				</tr>
 			{:else}
-				<tr><td colspan={course.length + 9} class="p-6 text-muted-foreground">No runners in this category yet.</td></tr>
+				<tr><td colspan={course.length + 10} class="p-6 text-muted-foreground">No runners in this category yet.</td></tr>
 			{/each}
 		</tbody>
 	</table>

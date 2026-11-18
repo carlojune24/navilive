@@ -17,7 +17,7 @@
 	import { Toaster } from '$lib/components/ui/sonner/index.js';
 	import { invalidateAll } from '$app/navigation';
 	import { ago } from '$lib/time';
-	import { fmt } from '$lib/results';
+	import { fmt, genderLabel } from '$lib/results';
 	import { shrinkImage } from '$lib/image';
 	import { deserialize } from '$app/forms';
 	import { monitor } from '$lib/monitor.svelte';
@@ -955,7 +955,7 @@
 						<span>{c.name}</span>
 						<span class="text-base font-normal tracking-wide">{progRows.filter((r) => r.state === 'finished').length} finished · {progRows.filter((r) => r.start !== null).length} started · {progRows.length} registered{flagged ? ` · ${flagged} to check` : ''}</span>
 					</h3>
-					{#key `${c.id}-${progBatch}`}<ProgressTable course={c.course} rows={progRows} flags pageSize={20} onOverride={(r) => openOverride({ bib: r.bib, name: r.name, finishAt: null })} overridden={(bib) => !!overrideOf(bib)} release={runnerRelease} batchOf={progBatchCol} />{/key}
+					{#key `${c.id}-${progBatch}`}<ProgressTable course={c.course} rows={progRows} category={c.name} flags pageSize={20} onOverride={(r) => openOverride({ bib: r.bib, name: r.name, finishAt: null })} overridden={(bib) => !!overrideOf(bib)} release={runnerRelease} batchOf={progBatchCol} />{/key}
 				</section>
 				<!-- per checkpoint: who has passed and who has not yet (the start counts a gun start too, like the table) -->
 				<section class="border-2 border-border bg-card">
@@ -1024,7 +1024,7 @@
 										<Table.Cell class="font-display text-2xl font-black">{r.rank}</Table.Cell>
 										<Table.Cell class="font-bold">{r.bib}</Table.Cell>
 										<Table.Cell>{r.name || '—'}</Table.Cell>
-										<Table.Cell>{r.gender || '—'}</Table.Cell>
+										<Table.Cell>{genderLabel(r.gender) || '—'}</Table.Cell>
 										<Table.Cell>{r.age ?? '—'}</Table.Cell>
 										<Table.Cell class="font-bold tabular-nums">{fmt(r.time!)}</Table.Cell>
 										<Table.Cell class="print:hidden">

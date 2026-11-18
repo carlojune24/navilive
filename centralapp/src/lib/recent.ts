@@ -1,4 +1,5 @@
 import type { CourseStation, ProgressRow } from './progress';
+import { categoryLabel } from './results';
 
 export type Recent = { bib: string; name: string };
 export type FinishLineRow = { bib: string; name: string; category: string; time: number | null };
@@ -22,7 +23,7 @@ export function finishLine(cats: { name: string; course: CourseStation[]; progre
 		.flatMap((c) => {
 			const fin = c.course.findIndex((s) => s.kind === 'finish');
 			if (fin < 0) return [];
-			return c.progress.filter((r) => r.state === 'finished' && r.at[fin] !== null).map((r) => ({ bib: r.bib, name: r.name, category: c.name, time: r.time, at: r.at[fin]! }));
+			return c.progress.filter((r) => r.state === 'finished' && r.at[fin] !== null).map((r) => ({ bib: r.bib, name: r.name, category: categoryLabel(c.name, r.division), time: r.time, at: r.at[fin]! }));
 		})
 		.sort((a, b) => b.at - a.at || a.bib.localeCompare(b.bib, undefined, { numeric: true }))
 		.slice(0, n)
