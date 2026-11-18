@@ -487,7 +487,14 @@
 							</ol>
 						</section>
 					{:else}
-						<p class="p-6 text-2xl text-muted-foreground md:col-span-2 xl:col-span-3">No finishers yet in {cat.name}, so no awards to show.</p>
+						<p class="p-6 text-2xl text-muted-foreground md:col-span-2 xl:col-span-3">
+							{#if cat.provisional && (cat.held || cat.rows.length)}
+								<!-- finishers exist, but awards wait until every runner in the category is released -->
+								Awards for {cat.name} appear once all its results are released.{cat.held ? ` ${cat.held} finisher${cat.held === 1 ? ' is' : 's are'} being verified.` : ''}
+							{:else}
+								No finishers yet in {cat.name}, so no awards to show.
+							{/if}
+						</p>
 					{/each}
 				</div>
 			{:else if view === 'progress'}
