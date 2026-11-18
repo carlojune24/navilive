@@ -18,7 +18,7 @@ export type P = {
 	extra?: Record<string, string>;
 	photo?: number | null; // when the winner photo was last changed (ms), null = none
 	finishOverride?: number | null; // admin-corrected finish clock time (epoch ms); replaces the finish reads
-	members?: { id: number; name: string; gender?: string }[]; // relay/duo: the runners of this team
+	members?: { id: number; name: string; gender?: string; age?: number | null }[]; // relay/duo: the runners of this team
 };
 export type S = { id: number; name: string; kind: string; ord: number };
 export type R = { pid: number; station_id: number; read_at_ms: number; device_id?: string };
@@ -70,6 +70,14 @@ export function teamGender(p: Pick<P, 'gender' | 'members'>): string {
 	return p.gender || (g.size === 1 ? [...g][0]! : '');
 }
 export const genderLabel = (g: string) => (g === 'X' ? 'Mixed' : g);
+/** A runner's age for the age groups. A team (duo, relay) uses the average of its members' ages, in whole years
+ *  (rounded down, like a birthday not reached yet), so it lands in exactly one bracket. If any member's age is
+ *  missing, the age on the team row is used instead. */
+export function teamAge(p: Pick<P, 'age' | 'members'>): number | null {
+	const ages = (p.members ?? []).map((m) => m.age);
+	if (ages.length && ages.every((a): a is number => typeof a === 'number' && Number.isFinite(a))) return Math.floor(ages.reduce((s, a) => s + a, 0) / ages.length);
+	return p.age ?? null;
+}
 /** A team's division for the boards ('Men', 'Women', 'Mix'); a solo runner or a team with no member genders has none. */
 export function divisionOf(p: Pick<P, 'gender' | 'members'>): string | undefined {
 	if (!p.members?.length) return undefined;
@@ -82,7 +90,10 @@ export const categoryLabel = (category: string, division?: string) => (division 
 export function buildAwards(rows: Row[], o: CategoryOptions): Award[] {
 	const win = (r: Row, place: number, detail?: string): Winner => ({ place, bib: r.bib, name: r.name, time: r.time!, photo: r.photo, ...(detail ? { detail } : {}) });
 	const top = (list: Row[], n = o.places): Winner[] => list.slice(0, n).map((r, i) => win(r, i + 1));
-	const podium = new Set(rows.slice(0, o.places).map((r) => r.bib));
+	// "exclusive": an overall winner keeps that prize only; every other award goes to the next runner or team.
+	// Only when the category has an Overall award (no Overall prize = nobody to skip).
+	const podium = new Set(o.overall ? rows.slice(0, o.places).map((r) => r.bib) : []);
+	const free = (list: Row[]) => (o.exclusive ? list.filter((r) => !podium.has(r.bib)) : list);
 	const out: Award[] = [];
 
 	if (o.overall && rows.length) out.push({ key: 'overall', name: 'Overall', winners: top(rows) });
@@ -90,14 +101,14 @@ export function buildAwards(rows: Row[], o: CategoryOptions): Award[] {
 		if (!on) continue;
 		const list = rows.filter((r) => r.gender === g);
 		// a single-gender category would just repeat Overall, unless the organizer wants it shown anyway
-		if (list.length && (o.showSingleGender || list.length < rows.length)) out.push({ key: g, name: label, winners: top(list) });
+		if (list.length && (o.showSingleGender || list.length < rows.length) && free(list).length) out.push({ key: g, name: label, winners: top(free(list)) });
 	}
 
 	const anyGender = rows.some((r) => r.gender);
 	for (const gr of o.groups) {
 		const inAge = (r: Row) => r.age !== null && r.age >= gr.min && r.age <= gr.max;
 		const add = (key: string, name: string, list: Row[]) => {
-			if (o.exclusive) list = list.filter((r) => !podium.has(r.bib)); // overall podium keeps its prize; the age group goes to the next runner
+			list = free(list);
 			if (list.length) out.push({ key, name, winners: top(list) });
 		};
 		if (gr.men) add(`M:${gr.label}`, `Men ${gr.label}`, rows.filter((r) => r.gender === 'M' && inAge(r)));
@@ -106,7 +117,7 @@ export function buildAwards(rows: Row[], o: CategoryOptions): Award[] {
 		if (gr.all === true || (gr.all === undefined && !anyGender)) add(`A:${gr.label}`, gr.label, rows.filter(inAge));
 	}
 
-	const aged = rows.filter((r) => r.age !== null);
+	const aged = free(rows).filter((r) => r.age !== null);
 	if (o.youngest && aged.length) {
 		const r = [...aged].sort((a, b) => a.age! - b.age! || a.time! - b.time!)[0];
 		out.push({ key: 'youngest', name: 'Youngest finisher', winners: [win(r, 1, `age ${r.age}`)] });
@@ -118,7 +129,7 @@ export function buildAwards(rows: Row[], o: CategoryOptions): Award[] {
 
 	for (const c of o.customs) {
 		const want = c.value.toLowerCase();
-		const list = rows.filter(
+		const list = free(rows).filter(
 			(r) =>
 				(!c.gender || r.gender === c.gender) &&
 				(c.ageMin === null || (r.age !== null && r.age >= c.ageMin)) &&
@@ -231,7 +242,7 @@ export function computeResults(
 					finishAt,
 					splits,
 					gender: teamGender(p),
-					age: p.age ?? null,
+					age: teamAge(p),
 					extra: p.extra ?? {},
 					photo: p.photo ?? null,
 					overridden: p.finishOverride != null,

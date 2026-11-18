@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ago, hms, phTime } from './time';
+import { ago, finishAt, hms, phTime } from './time';
 
 describe('hms', () => {
 	it('pads every field', () => expect(hms(0)).toBe('00:00:00'));
@@ -18,4 +18,19 @@ describe('phTime', () => {
 
 describe('ago', () => {
 	it('null is never', () => expect(ago(null, 0)).toBe('never'));
+});
+
+describe('finishAt', () => {
+	const start = new Date('2026-11-18T22:56:13').getTime(); // 10:56 PM local
+	it('a time after midnight is the next day', () => {
+		expect(finishAt('2026-11-18', '00:00:01', start)).toBe(new Date('2026-11-19T00:00:01').getTime());
+		expect(finishAt('2026-11-18', '13:30:12', start)).toBe(new Date('2026-11-19T13:30:12').getTime());
+	});
+	it('a time later the same evening stays on that day', () => {
+		expect(finishAt('2026-11-18', '23:40', start)).toBe(new Date('2026-11-18T23:40:00').getTime());
+	});
+	it('no start known: the day as typed; nonsense: NaN', () => {
+		expect(finishAt('2026-11-18', '00:00:01', null)).toBe(new Date('2026-11-18T00:00:01').getTime());
+		expect(finishAt('2026-11-18', '', start)).toBeNaN();
+	});
 });

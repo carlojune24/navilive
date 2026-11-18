@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildAwards, categoryLabel, divisionOf, teamGender, type Row } from './results';
+import { buildAwards, categoryLabel, divisionOf, teamAge, teamGender, type Row } from './results';
 import { DEFAULT_BRACKETS, DEFAULT_CONFIG, parseBrackets, parseConfig, resolveOptions, type AwardConfig, type CategoryOptions } from './awardcfg';
 
 const mk = (bib: string, time: number, gender: string, age: number | null, extra: Record<string, string> = {}): Row => ({
@@ -52,6 +52,19 @@ describe('standard awards (nothing configured = today)', () => {
 		expect(bibs(a, 'M:18-29')).toBeUndefined();
 		expect(bibs(a, 'F:30-39')).toEqual(['4']);
 		expect(bibs(a, 'F:18-29')).toEqual(['6']);
+	});
+	it('exclusive: overall winners are skipped in Men, Women, youngest and custom awards too', () => {
+		const ex = { ...def, exclusive: true };
+		const a = buildAwards(field, opts({ customs: [{ id: 'c', name: 'Club', gender: '', ageMin: null, ageMax: null, field: '', value: '', places: 2, categoryIds: [] }] }, ex));
+		expect(bibs(a, 'overall')).toEqual(['1', '2', '3']);
+		expect(bibs(a, 'M')).toEqual(['5']);
+		expect(bibs(a, 'F')).toEqual(['4', '6']);
+		expect(bibs(a, 'custom:c')).toEqual(['4', '5']);
+		expect(bibs(buildAwards(field, opts(withCat({ youngest: true }), ex)), 'youngest')).toEqual(['6']); // 1 and 2 are 25 but won overall
+	});
+	it('exclusive does nothing when the category has no Overall award', () => {
+		const a = buildAwards(field, opts(withCat({ overall: false }), { ...def, exclusive: true }));
+		expect(bibs(a, 'M')).toEqual(['1', '3', '5']);
 	});
 	it('fewer finishers than places gives fewer winners; none gives no awards', () => {
 		expect(bibs(buildAwards([mk('1', 100, 'M', 25)], opts()), 'overall')).toEqual(['1']);
@@ -166,5 +179,18 @@ describe('team division', () => {
 	it('labels the category', () => {
 		expect(categoryLabel('DUO', 'Mix')).toBe('DUO - Mix');
 		expect(categoryLabel('SOLO', undefined)).toBe('SOLO');
+	});
+});
+
+describe('team age', () => {
+	const m = (age: number | null) => ({ id: 1, name: 'x', age });
+	it('is the average of the members, rounded down to whole years', () => {
+		expect(teamAge({ age: null, members: [m(25), m(34)] })).toBe(29); // 29.5 -> 29, so the 20-29 bracket
+		expect(teamAge({ age: null, members: [m(30), m(31), m(40), m(45)] })).toBe(36);
+	});
+	it('a missing member age falls back to the age on the team row; a solo runner keeps theirs', () => {
+		expect(teamAge({ age: 33, members: [m(25), m(null)] })).toBe(33);
+		expect(teamAge({ age: null, members: [m(25), m(null)] })).toBeNull();
+		expect(teamAge({ age: 41 })).toBe(41);
 	});
 });

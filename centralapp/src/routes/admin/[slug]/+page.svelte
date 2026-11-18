@@ -18,6 +18,7 @@
 	import { invalidateAll } from '$app/navigation';
 	import { ago } from '$lib/time';
 	import { fmt, genderLabel } from '$lib/results';
+	import { finishAt, localDay } from '$lib/time';
 	import { shrinkImage } from '$lib/image';
 	import { deserialize } from '$app/forms';
 	import { monitor } from '$lib/monitor.svelte';
@@ -28,25 +29,31 @@
 	const sections = ['participants', 'categories', 'starts', 'stations', 'route', 'progress', 'results', 'awards', 'reads', 'tally', 'bibs', 'release', 'data', 'connect'];
 	const titles: Record<string, string> = { participants: 'Participants', categories: 'Categories', starts: 'Starts', stations: 'Stations', route: 'Route & map', progress: 'Progress', results: 'Results', awards: 'Awards', reads: 'Reads', tally: 'Tally sheets', bibs: 'Bib list', release: 'Batch release tally', data: 'Station data', connect: 'Connect stations' };
 	// Results page: the finish-time override panel for one runner
-	let ovr = $state<{ bib: string; name: string; at: string; day: string } | null>(null);
+	let ovr = $state<{ bib: string; name: string; at: string; day: string; start: number | null } | null>(null);
 	let ovrBy = $state(typeof localStorage === 'undefined' ? '' : (localStorage.getItem('nv.admin.name') ?? ''));
 	let ovrReason = $state('');
 	let ovrFile = $state<File | null>(null);
 	let ovrErr = $state('');
 	let ovrBusy = $state(false);
 	const overrideOf = (bib: string) => data.overrides.find((o) => o.bib === bib);
+	// the runner's start (gun or own), so a finish after midnight lands on the right day
+	const startOfBib = (bib: string) => data.progressData.flatMap((c) => c.progress).find((r) => r.bib === bib)?.start ?? null;
 	function openOverride(r: { bib: string; name: string; finishAt: number | null }) {
-		// time of day only; the date is the runner's own finish day, or today (shortcut: a race past midnight needs the finish day, not today)
-		const local = new Date((r.finishAt ?? Date.now()) - new Date(r.finishAt ?? Date.now()).getTimezoneOffset() * 60000).toISOString();
-		ovr = { bib: r.bib, name: r.name, day: local.slice(0, 10), at: r.finishAt ? local.slice(11, 23) : '' };
+		const start = startOfBib(r.bib);
+		// the day: the runner's own finish, else their start day, else today; the date field shows it and can be changed
+		const ref = r.finishAt ?? start ?? Date.now();
+		const local = new Date(ref - new Date(ref).getTimezoneOffset() * 60000).toISOString();
+		ovr = { bib: r.bib, name: r.name, day: local.slice(0, 10), at: r.finishAt ? local.slice(11, 23) : '', start };
 		ovrReason = '';
 		ovrFile = null;
 		ovrErr = '';
 	}
+	// what will be saved: a time at or before the start moves to the next day
+	const ovrMs = $derived(ovr && ovr.at && ovr.day ? finishAt(ovr.day, ovr.at, ovr.start) : NaN);
 	async function saveOverride() {
 		if (!ovr) return;
-		const ms = ovr.at ? new Date(`${ovr.day}T${ovr.at.length === 5 ? ovr.at + ':00' : ovr.at}`).getTime() : NaN;
-		if (!Number.isFinite(ms)) return (ovrErr = 'Enter the finish time.');
+		const ms = ovrMs;
+		if (!Number.isFinite(ms)) return (ovrErr = 'Enter the finish date and time.');
 		ovrBusy = true;
 		ovrErr = '';
 		try {
@@ -383,7 +390,16 @@
 						<Dialog.Description>Replaces this runner's finish time in the ranking. The original reads are kept. Needs a reason; a proof photo is optional.</Dialog.Description>
 					</Dialog.Header>
 					{#if ovrErr}<p class="font-bold text-destructive" role="alert">{ovrErr}</p>{/if}
-					<label class="block font-bold uppercase">Finish time (time of day)<input type="time" step="0.001" bind:value={ovr.at} class="mt-1 block h-12 w-full border-2 border-border bg-background px-3" /></label>
+					<div class="grid gap-3 sm:grid-cols-2">
+						<label class="block font-bold uppercase">Finish date<input type="date" bind:value={ovr.day} class="mt-1 block h-12 w-full border-2 border-border bg-background px-3" /></label>
+						<label class="block font-bold uppercase">Finish time (time of day)<input type="time" step="0.001" bind:value={ovr.at} class="mt-1 block h-12 w-full border-2 border-border bg-background px-3" /></label>
+					</div>
+					{#if Number.isFinite(ovrMs)}
+						{@const moved = localDay(ovrMs) !== ovr.day}
+						<p class="text-sm" role="status">
+							Saves as <b>{new Date(ovrMs).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</b>{#if ovr.start !== null}, total time <b>{fmt(ovrMs - ovr.start)}</b>{/if}{#if moved} — the next day, because that time is before the start ({new Date(ovr.start!).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}){/if}.
+						</p>
+					{/if}
 					<label class="block font-bold uppercase">Reason<input bind:value={ovrReason} maxlength="300" placeholder="e.g. Read delayed; photo shows runner first" class="mt-1 block h-12 w-full border-2 border-border bg-background px-3 font-normal normal-case" /></label>
 					<label class="block font-bold uppercase">Your name<input bind:value={ovrBy} maxlength="80" class="mt-1 block h-12 w-full border-2 border-border bg-background px-3 font-normal normal-case" /></label>
 					<label class="block font-bold uppercase">Proof photo <span class="font-normal normal-case text-muted-foreground">(optional)</span><input type="file" accept="image/*" onchange={(e) => (ovrFile = e.currentTarget.files?.[0] ?? null)} class="mt-1 block" /></label>

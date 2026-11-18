@@ -112,7 +112,7 @@
 		</Button>
 	</form>
 
-	<form method="POST" action="?tab=awards&/saveAwards" use:enhance class="space-y-5">
+	<form method="POST" action="?tab=awards&/saveAwards" use:enhance={() => ({ update }) => update({ reset: false })} class="space-y-5">
 		<input type="hidden" name="config" value={config} />
 
 		<!-- event defaults -->
@@ -131,7 +131,7 @@
 			</div>
 			<label class="flex items-start gap-3 text-lg">
 				<input type="checkbox" name="exclusive" bind:checked={exclusive} class="{check} mt-1" />
-				<span><b>Overall winners can't also win an age-group prize.</b> The age-group prize goes to the next runner. Off means every award is ranked on its own.</span>
+				<span><b>Overall winners can't win any other prize.</b> Men, Women, Mixed, age-group, youngest/oldest and custom prizes go to the next runner or team. Off means every award is ranked on its own.</span>
 			</label>
 			<label class="flex items-start gap-3 text-lg">
 				<input type="checkbox" bind:checked={showSingle} class="{check} mt-1" />
