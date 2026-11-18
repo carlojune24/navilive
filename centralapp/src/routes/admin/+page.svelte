@@ -103,7 +103,7 @@
 		<Dialog.Content class="border-2 border-border sm:max-w-md">
 			<Dialog.Header>
 				<Dialog.Title class="font-display text-4xl leading-[0.85] font-black uppercase">Duplicate event</Dialog.Title>
-				<Dialog.Description>Copies the participants, teams, categories, stations, courses and award settings. Reads, start times, batches and photos are not copied.</Dialog.Description>
+				<Dialog.Description>Copies the participants, teams, categories, stations, courses and award settings. Reads, start times, batches, photos and finish wall backdrops are not copied.</Dialog.Description>
 			</Dialog.Header>
 			<form
 				method="POST"

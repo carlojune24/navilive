@@ -120,6 +120,7 @@ Nothing configured means all standard awards are on, the same as before. The liv
 - **Places:** each category's prize places (its *Places* setting on the Awards page, for example 3 or 5) are shown large; everyone after that is shown in smaller type. The first three get a gold, silver and bronze trophy.
 - **Movement:** when a finish changes the order, rows slide to their new places and a new finisher slides in. Systems set to "reduce motion" get no animation.
 - **Winner photos:** on the Awards page, the *Winner photos* section lists everyone who wins something; press *Upload photo* (any phone photo works, it is shrunk to 640 px in the browser first) or use the *Edit* form on the Participants page. Photos appear next to the prize places on the board and in the award cards. They are stored in the database (so backups include them), only JPG, PNG and WebP are accepted, and the file type is checked from the file's contents.
+- **Finish wall:** the *Finish wall* button on the live board opens `/e/<event>/wall`, a photo backdrop for runners. Logged in as the organizer, pick a category, upload its backdrop picture (shrunk to 1920 px in the browser), tick *Edit time position*, drag the time where it belongs, set its size and color, and press *Save position*. The position is stored as a share of the picture, so it lands in the same spot on any screen. Anyone can then search a finisher by bib or name and press *Fullscreen* (Esc leaves it).
 
 ## Backups
 

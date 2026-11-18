@@ -298,6 +298,7 @@
 						{#each CYCLE_CHOICES as s}<option value={s}>{s}s</option>{/each}
 					</select>
 				</label>
+				<a href="/e/{data.slug}/wall" class="flex h-12 items-center border-2 border-border bg-card px-4 font-bold uppercase hover:bg-accent">Finish wall</a>
 				<a href="?kiosk&mode={mode}&cycle={cycleSec}&view={view}" class="flex h-12 items-center border-2 border-border bg-card px-4 font-bold uppercase hover:bg-accent">Big screen</a>
 			</div>
 		{:else}
