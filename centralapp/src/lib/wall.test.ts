@@ -11,4 +11,8 @@ describe('parseLayout', () => {
 		expect(parseLayout(form({ x: '1', y: '1', size: '10', color: 'red;background:url(x)' }))).toBeNull();
 		expect(parseLayout(form({ x: '1', y: '1', size: '10' }))).toBeNull();
 	});
+	it('reads a prefixed set of fields', () => {
+		expect(parseLayout(form({ name_x: '10', name_y: '20', name_size: '5', name_color: '#000000' }), 'name_')).toEqual({ x: 10, y: 20, size: 5, color: '#000000' });
+		expect(parseLayout(form({ x: '10', y: '20', size: '5', color: '#000000' }), 'name_')).toBeNull();
+	});
 });

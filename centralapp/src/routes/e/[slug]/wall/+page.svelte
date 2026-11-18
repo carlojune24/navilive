@@ -26,23 +26,33 @@
 
 	// the layout being edited; reloads from the saved one only when the category or image changes,
 	// so a live refresh (a new finish) does not throw away an unsaved drag
-	const DEFAULT: Layout = { x: 50, y: 30, size: 12, color: '#ffffff' };
-	let draft = $state<Layout>({ ...DEFAULT });
+	// two texts on the backdrop: the finish time and the name (team name for a team, runner name for a solo)
+	type Item = 'time' | 'name';
+	const DEFAULT: Record<Item, Layout> = { time: { x: 50, y: 30, size: 12, color: '#ffffff' }, name: { x: 50, y: 60, size: 5, color: '#ffffff' } };
+	let draft = $state<Record<Item, Layout>>(structuredClone(DEFAULT));
 	const backKey = $derived(`${catId}:${back?.v ?? ''}`);
 	$effect(() => {
 		backKey;
 		const b = untrack(() => back);
-		draft = b ? { x: b.x, y: b.y, size: b.size, color: b.color } : { ...DEFAULT };
+		draft = b
+			? { time: { x: b.x, y: b.y, size: b.size, color: b.color }, name: { x: b.name_x, y: b.name_y, size: b.name_size, color: b.name_color } }
+			: structuredClone(DEFAULT);
 	});
-	function nudge(e: KeyboardEvent) {
+	function nudge(e: KeyboardEvent, item: Item) {
 		const d = { ArrowLeft: [-0.5, 0], ArrowRight: [0.5, 0], ArrowUp: [0, -0.5], ArrowDown: [0, 0.5] }[e.key];
 		if (!editing || !d) return;
 		e.preventDefault();
-		draft.x = Math.min(100, Math.max(0, draft.x + d[0]));
-		draft.y = Math.min(100, Math.max(0, draft.y + d[1]));
+		draft[item].x = Math.min(100, Math.max(0, draft[item].x + d[0]));
+		draft[item].y = Math.min(100, Math.max(0, draft[item].y + d[1]));
 	}
 	let editing = $state(false);
-	const timeText = $derived(runner && runner.catId === catId ? fmt(runner.time!) : editing ? '1:23:45' : '');
+	const shown = $derived(runner && runner.catId === catId ? runner : null);
+	const texts = $derived<Record<Item, string>>({
+		time: shown ? fmt(shown.time!) : editing ? '1:23:45' : '',
+		name: shown ? shown.name || 'Bib ' + shown.bib : editing ? 'Team or runner name' : ''
+	});
+	const timeText = $derived(texts.time);
+	const ITEMS = [['time', 'Time'], ['name', 'Name']] as const;
 
 	function choose(r: (typeof finishers)[number]) {
 		picked = { bib: r.bib, catId: r.catId };
@@ -55,13 +65,13 @@
 	let stage = $state<HTMLDivElement>();
 	const fullscreen = () => wall.requestFullscreen?.();
 
-	// drag the time to place it (organizer, Edit layout on)
-	let dragging = false;
+	// drag a text to place it (organizer, Edit positions on)
+	let dragging: Item | null = null;
 	function move(e: PointerEvent) {
 		if (!dragging || !stage) return;
 		const r = stage.getBoundingClientRect();
-		draft.x = Math.round(Math.min(100, Math.max(0, ((e.clientX - r.left) / r.width) * 100)) * 10) / 10;
-		draft.y = Math.round(Math.min(100, Math.max(0, ((e.clientY - r.top) / r.height) * 100)) * 10) / 10;
+		draft[dragging].x = Math.round(Math.min(100, Math.max(0, ((e.clientX - r.left) / r.width) * 100)) * 10) / 10;
+		draft[dragging].y = Math.round(Math.min(100, Math.max(0, ((e.clientY - r.top) / r.height) * 100)) * 10) / 10;
 	}
 
 	let busy = $state(false);
@@ -95,7 +105,8 @@
 			msg = 'That file could not be read as an image.';
 		}
 	}
-	const save = () => act('layout', { x: String(draft.x), y: String(draft.y), size: String(draft.size), color: draft.color });
+	const fields = (l: Layout, p: string) => ({ [p + 'x']: String(l.x), [p + 'y']: String(l.y), [p + 'size']: String(l.size), [p + 'color']: l.color });
+	const save = () => act('layout', { ...fields(draft.time, ''), ...fields(draft.name, 'name_') });
 
 	// new finishes show up in the search without a reload
 	onMount(() => {
@@ -160,11 +171,16 @@
 						{#if back}<button type="button" disabled={busy} onclick={() => confirm('Remove this backdrop?') && act('remove', {})} class="{btn} bg-card hover:bg-accent">Remove</button>{/if}
 					</div>
 					{#if back}
-						<label class="flex items-center gap-2 font-bold uppercase"><input type="checkbox" bind:checked={editing} class="size-5" /> Edit time position</label>
+						<label class="flex items-center gap-2 font-bold uppercase"><input type="checkbox" bind:checked={editing} class="size-5" /> Edit positions</label>
 						{#if editing}
-							<p class="text-sm text-muted-foreground">Drag the time on the picture to place it.</p>
-							<label class="font-bold uppercase">Size <input type="range" min="2" max="40" step="0.5" bind:value={draft.size} class="block w-full" /></label>
-							<label class="flex items-center gap-2 font-bold uppercase">Color <input type="color" bind:value={draft.color} class="h-10 w-16 border-2 border-border" /></label>
+							<p class="text-sm text-muted-foreground">Drag the time and the name on the picture to place them.</p>
+							{#each ITEMS as [item, label] (item)}
+								<fieldset class="flex flex-col gap-2 border-t-2 border-border/15 pt-2">
+									<legend class="font-display text-xl font-black uppercase">{label}</legend>
+									<label class="font-bold uppercase">Size <input type="range" min="2" max="40" step="0.5" bind:value={draft[item].size} class="block w-full" /></label>
+									<label class="flex items-center gap-2 font-bold uppercase">Color <input type="color" bind:value={draft[item].color} class="h-10 w-16 border-2 border-border" /></label>
+								</fieldset>
+							{/each}
 							<button type="button" disabled={busy} onclick={save} class="{btn} bg-primary text-primary-foreground">Save position</button>
 						{/if}
 					{/if}
@@ -179,22 +195,25 @@
 					<img src="/e/{data.slug}/wall/backdrop/{catId}?v={back.v}" alt="" class="absolute inset-0 size-full" onload={(e) => { const i = e.currentTarget as HTMLImageElement; ratio = i.naturalWidth / i.naturalHeight || 16 / 9; }} />
 				{/if}
 				{#if timeText}
-					<!-- svelte-ignore a11y_no_noninteractive_tabindex (it is a slider while editing; the role is set with it) -->
-					<span
-						role={editing ? 'slider' : undefined}
-						aria-label={editing ? 'Time position, arrow keys move it' : undefined}
-						aria-valuemin={editing ? 0 : undefined}
-						aria-valuemax={editing ? 100 : undefined}
-						aria-valuenow={editing ? draft.y : undefined}
-						aria-valuetext={editing ? `${draft.x}% across, ${draft.y}% down` : undefined}
-						tabindex={editing ? 0 : undefined}
-						onkeydown={nudge}
-						class="time absolute font-display leading-none font-black whitespace-nowrap tabular-nums {editing ? 'cursor-move outline-2 outline-dashed' : ''}"
-						style="left:{draft.x}%; top:{draft.y}%; font-size:{draft.size}cqw; color:{draft.color}"
-						onpointerdown={(e) => editing && ((dragging = true), e.currentTarget.setPointerCapture(e.pointerId))}
-						onpointermove={move}
-						onpointerup={() => (dragging = false)}>{timeText}</span
-					>
+					{#each ITEMS as [item, label] (item)}
+						{@const l = draft[item]}
+						<!-- svelte-ignore a11y_no_noninteractive_tabindex (it is a slider while editing; the role is set with it) -->
+						<span
+							role={editing ? 'slider' : undefined}
+							aria-label={editing ? `${label} position, arrow keys move it` : undefined}
+							aria-valuemin={editing ? 0 : undefined}
+							aria-valuemax={editing ? 100 : undefined}
+							aria-valuenow={editing ? l.y : undefined}
+							aria-valuetext={editing ? `${l.x}% across, ${l.y}% down` : undefined}
+							tabindex={editing ? 0 : undefined}
+							onkeydown={(e) => nudge(e, item)}
+							class="time absolute font-display leading-none font-black whitespace-nowrap {item === 'time' ? 'tabular-nums' : 'uppercase'} {editing ? 'cursor-move outline-2 outline-dashed' : ''}"
+							style="left:{l.x}%; top:{l.y}%; font-size:{l.size}cqw; color:{l.color}"
+							onpointerdown={(e) => editing && ((dragging = item), e.currentTarget.setPointerCapture(e.pointerId))}
+							onpointermove={move}
+							onpointerup={() => (dragging = null)}>{texts[item]}</span
+						>
+					{/each}
 				{:else}
 					<p class="absolute inset-0 grid place-items-center p-6 text-center text-2xl text-white/70">Search a runner to show their finish time.</p>
 				{/if}
