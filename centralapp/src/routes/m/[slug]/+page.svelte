@@ -36,7 +36,7 @@
 	let mine = $state<Record<string, Queued>>({}); // what this device tagged, for instant feedback and undo
 	let online = $state(true);
 	let catSel = $state<number | null>(null);
-	let batchSel = $state<'none' | number | null>(null);
+	let batchSel = $state<'all' | 'none' | number>('all');
 	let qText = $state('');
 	let sound = $state(true);
 	let announced = $state<number[]>([]); // batches whose gun fired while this page was open
@@ -61,7 +61,9 @@
 	const cats = $derived(board?.categories ?? []);
 	const catShown = $derived(cats.find((c) => c.id === catSel) ?? cats[0] ?? null);
 	const batches = $derived(board?.batches.filter((b) => b.category_id === catShown?.id) ?? []);
-	const batchShown = $derived<Batch | 'none'>(batchSel === 'none' ? 'none' : (batches.find((b) => b.id === batchSel) ?? batches[0] ?? 'none'));
+	// the full category list is the default; a batch that vanished falls back to it too
+	const batchShown = $derived<Batch | 'all' | 'none'>(batchSel === 'all' || batchSel === 'none' ? batchSel : (batches.find((b) => b.id === batchSel) ?? 'all'));
+	const batchById = $derived(new Map((board?.batches ?? []).map((b) => [b.id, b])));
 
 	// the board's reads plus this device's own taps, so the UI never waits for the next poll
 	const seen = $derived.by(() => {
@@ -83,9 +85,11 @@
 		// a search spans the whole event: at a checkpoint you look up the bib in front of you, not a tab
 		const base = needle
 			? (board?.participants ?? []).filter((p) => p.bib.toLowerCase().includes(needle) || p.name.toLowerCase().includes(needle))
-			: batchShown === 'none'
-				? loose
-				: membersOf(batchShown);
+			: batchShown === 'all'
+				? inCat
+				: batchShown === 'none'
+					? loose
+					: membersOf(batchShown);
 		// always by bib: a tap must never move the other cards, or the next tap lands on the wrong runner
 		return [...base].sort((a, b) => a.bib.localeCompare(b.bib, undefined, { numeric: true }));
 	});
@@ -154,6 +158,12 @@
 		localStorage.setItem(K_MINE, JSON.stringify(mine));
 	};
 	const clock = phTime;
+	// who has started: shown where batches are mixed (the All list, a search); inside one batch tab it would repeat
+	const showStart = $derived(!!board?.batches.length && (!!qText.trim() || batchShown === 'all'));
+	const startOf = (p: Person) => {
+		const b = p.batch_id ? batchById.get(p.batch_id) : null;
+		return !b ? 'No batch' : b.gun_ms ? `Batch ${b.name} · started ${clock(b.gun_ms)}` : `Batch ${b.name} · not started`;
+	};
 
 	function pickStation(id: number) {
 		stationId = id;
@@ -434,7 +444,7 @@
 			{#if cats.length > 1}
 				<div class="flex flex-wrap gap-2" role="tablist" aria-label="Category">
 					{#each cats as c (c.id)}
-						<button type="button" role="tab" aria-selected={c.id === catShown?.id} onclick={() => ((catSel = c.id), (batchSel = null), (qText = ''))} class="{tabCls} font-display text-2xl font-black {c.id === catShown?.id ? 'bg-primary text-primary-foreground' : 'bg-card'}">
+						<button type="button" role="tab" aria-selected={c.id === catShown?.id} onclick={() => ((catSel = c.id), (batchSel = 'all'), (qText = ''))} class="{tabCls} font-display text-2xl font-black {c.id === catShown?.id ? 'bg-primary text-primary-foreground' : 'bg-card'}">
 							{c.name}{#if c.gun_ms}<span class="ml-1 text-start" title="Started">&#9679;</span>{/if}
 						</button>
 					{/each}
@@ -443,12 +453,14 @@
 
 			{#if batches.length}
 				<div class="flex flex-wrap gap-2" role="tablist" aria-label="Batch">
+					<button type="button" role="tab" aria-selected={!qText && batchShown === 'all'} onclick={() => ((batchSel = 'all'), (qText = ''))} class="{tabCls} {!qText && batchShown === 'all' ? 'bg-primary text-primary-foreground' : 'bg-card'}">All ({inCat.length})</button>
 					{#each batches as b (b.id)}
-						{@const bst = batchState(b, membersOf(b), seen, station.id)}
-						{@const on = !qText && batchShown !== 'none' && b.id === batchShown.id}
-						<button type="button" role="tab" aria-selected={on} onclick={() => ((batchSel = b.id), (qText = ''))} class="{tabCls} {on ? 'bg-primary text-primary-foreground' : bst === 'live' ? 'bg-start text-background' : 'bg-card'}">
-							Batch {b.name}
-							{#if bst === 'live'}<span class="ml-1">&#9679; Go</span>{:else if bst === 'done'}<span class="ml-1 text-muted-foreground">&#10003;</span>{/if}
+						{@const mem = membersOf(b)}
+						{@const bst = batchState(b, mem, seen, station.id)}
+						{@const on = !qText && typeof batchShown === 'object' && b.id === batchShown.id}
+						<button type="button" role="tab" aria-selected={on} onclick={() => ((batchSel = b.id), (qText = ''))} class="{tabCls} {on ? 'bg-primary text-primary-foreground' : bst === 'live' ? 'bg-start text-background' : bst === 'not-started' ? 'bg-card text-muted-foreground' : 'bg-card'}">
+							Batch {b.name} <span class="text-sm">{taggedCount(mem, seen, station.id)}/{mem.length}</span>
+							{#if bst === 'live'}<span class="ml-1">&#9679; Go</span>{:else if bst === 'done'}<span class="ml-1">&#10003;</span>{/if}
 						</button>
 					{/each}
 					<button type="button" role="tab" aria-selected={!qText && batchShown === 'none'} onclick={() => ((batchSel = 'none'), (qText = ''))} class="{tabCls} {!qText && batchShown === 'none' ? 'bg-primary text-primary-foreground' : 'bg-card'}">No batch ({loose.length})</button>
@@ -468,6 +480,7 @@
 							<div class="{cardCls} bg-muted">
 								<span class="font-display text-3xl font-black">{p.bib}</span>
 								<span class="w-full truncate text-muted-foreground">{p.name}</span>
+								{#if showStart}<span class="w-full truncate text-sm text-muted-foreground">{startOf(p)}</span>{/if}
 								<div class="mt-1 flex w-full items-center justify-between gap-2">
 									<span class="font-bold">{at ? clock(at) : ''}</span>
 									{#if mine[mineKey(p)] && !mine[mineKey(p)].voided}
@@ -479,6 +492,7 @@
 							<button type="button" onclick={() => tap(p)} class="{cardCls} {st === 'incoming' ? 'bg-checkpoint text-background' : st === 'missed' ? 'border-destructive bg-card' : 'bg-card'}">
 								<span class="font-display text-3xl font-black">{p.bib}</span>
 								<span class="w-full truncate {st === 'incoming' ? '' : 'text-muted-foreground'}">{p.name}</span>
+								{#if showStart}<span class="w-full truncate text-sm {st === 'incoming' ? '' : 'text-muted-foreground'}">{startOf(p)}</span>{/if}
 								<span class="mt-1 text-sm font-bold uppercase {st === 'missed' ? 'text-destructive' : st === 'incoming' ? '' : 'text-muted-foreground'}">
 									{st === 'incoming' ? '▶ Coming here' : st === 'missed' ? 'Missed here' : 'Tap to tag'}
 								</span>
