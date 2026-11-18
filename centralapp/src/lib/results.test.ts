@@ -173,6 +173,11 @@ describe('team (relay / duo)', () => {
 	it('an override finishes the team', () => {
 		expect(run([start], [{ ...team[0], finishOverride: 801000 }]).rows[0].time).toBe(800000);
 	});
+	it('an override fills the finish column of the progress view, so a released override is not shown as Verifying', () => {
+		const pr = run([start], [{ ...team[0], finishOverride: 801000 }]).progress[0];
+		expect(pr.at.at(-1)).toBe(801000);
+		expect(pr.by.at(-1)).toBe('Override');
+	});
 	it('a solo runner is unaffected', () => {
 		expect(run([start, fin(601000)], [{ id: 1, bib: '1', name: 'S', category_id: 10 }]).rows[0].time).toBe(600000);
 	});

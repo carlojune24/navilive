@@ -191,6 +191,13 @@ export function computeResults(
 					if (r.read_at_ms < (first.get(r.station_id) ?? Infinity) && r.device_id) by.set(r.station_id, r.device_id);
 					first.set(r.station_id, Math.min(first.get(r.station_id) ?? Infinity, r.read_at_ms));
 				}
+				// an override is the finish: the progress view shows it in the finish column, not a missing read ("Verifying")
+				if (p.finishOverride != null)
+					for (const [id, s] of kind)
+						if (s.kind === 'finish') {
+							first.set(id, p.finishOverride);
+							by.set(id, 'Override');
+						}
 				track.set(p.bib, { start, first, by });
 				const seen = new Map<number, number>();
 				for (const r of all)
