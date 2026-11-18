@@ -118,17 +118,11 @@ describe('computeResults', () => {
 		expect(c.rows.map((r) => [r.bib, r.time])).toEqual([['101', 600000]]);
 		expect(c.badStart).toBe(0);
 	});
-	it('a team member who crossed the finish before the start still counts at their real finish', () => {
+	it('a team read over the finish mat before the start does not hide its real finish', () => {
 		const team: P[] = [{ id: 1, bib: '101', name: 'Duo', category_id: 10, members: [{ id: 11, name: 'X' }, { id: 12, name: 'Y' }] }];
-		const reads: R[] = [
-			{ pid: 1, station_id: 3, read_at_ms: 500, mid: 11 },
-			{ pid: 1, station_id: 1, read_at_ms: 1000, mid: 11 },
-			{ pid: 1, station_id: 3, read_at_ms: 500000, mid: 12 },
-			{ pid: 1, station_id: 3, read_at_ms: 601000, mid: 11 }
-		];
+		const reads: R[] = [{ pid: 1, station_id: 3, read_at_ms: 500 }, { pid: 1, station_id: 1, read_at_ms: 1000 }, { pid: 1, station_id: 3, read_at_ms: 601000 }];
 		const [c] = computeResults(cats, team, st, reads, 'gun');
 		expect(c.rows[0].time).toBe(600000);
-		expect(c.rows[0].members?.map((m) => m.finishAt)).toEqual([601000, 500000]);
 	});
 	it('ignores a finish read from before the start', () => {
 		const [c] = computeResults(cats, ps, st, [{ pid: 1, station_id: 1, read_at_ms: 5000 }, { pid: 1, station_id: 3, read_at_ms: 1000 }], 'gun');
@@ -163,27 +157,23 @@ describe('fmt', () => {
 
 describe('team (relay / duo)', () => {
 	const team: P[] = [{ id: 1, bib: '201', name: 'DUO', category_id: 10, members: [{ id: 7, name: 'Ann' }, { id: 8, name: 'Bob' }] }];
+	const relay: P[] = [{ id: 1, bib: '301', name: 'RELAY', category_id: 10, members: [1, 2, 3, 4].map((id) => ({ id, name: 'R' + id })) }];
 	const start = { pid: 1, station_id: 1, read_at_ms: 1000 };
-	const fin = (mid: number | null, at: number): R => ({ pid: 1, station_id: 3, read_at_ms: at, mid });
+	const fin = (at: number): R => ({ pid: 1, station_id: 3, read_at_ms: at });
 	const run = (reads: R[], p = team) => computeResults(cats, p, st, reads, 'own')[0];
-	it('is not finished until every member has crossed', () => {
-		const c = run([start, fin(7, 601000)]);
-		expect(c.rows).toEqual([]);
-		expect(c.progress[0].state).toBe('on-course');
-		expect(c.progress[0].team).toEqual({ done: 1, of: 2 });
+	it('finishes on its first finish read, whatever the team size', () => {
+		expect(run([start, fin(601000), fin(701000)]).rows[0].time).toBe(600000);
+		const c = run([start, fin(501000)], relay);
+		expect(c.rows[0].time).toBe(500000);
+		expect(c.progress[0].state).toBe('finished');
 	});
-	it('finishes at the last member and lists each member time', () => {
-		const c = run([start, fin(8, 701000), fin(7, 601000), fin(7, 650000)]);
-		expect(c.rows[0].time).toBe(700000);
-		expect(c.rows[0].members).toEqual([{ name: 'Ann', finishAt: 601000 }, { name: 'Bob', finishAt: 701000 }]);
-	});
-	it('a read made by bib stands in for a member without a read', () => {
-		expect(run([start, fin(7, 601000), fin(null, 701000)]).rows[0].time).toBe(700000);
+	it('lists the team runners', () => {
+		expect(run([start, fin(601000)]).rows[0].members).toEqual([{ name: 'Ann' }, { name: 'Bob' }]);
 	});
 	it('an override finishes the team', () => {
-		expect(run([start, fin(7, 601000)], [{ ...team[0], finishOverride: 801000 }]).rows[0].time).toBe(800000);
+		expect(run([start], [{ ...team[0], finishOverride: 801000 }]).rows[0].time).toBe(800000);
 	});
 	it('a solo runner is unaffected', () => {
-		expect(run([start, fin(null, 601000)], [{ id: 1, bib: '1', name: 'S', category_id: 10 }]).rows[0].time).toBe(600000);
+		expect(run([start, fin(601000)], [{ id: 1, bib: '1', name: 'S', category_id: 10 }]).rows[0].time).toBe(600000);
 	});
 });

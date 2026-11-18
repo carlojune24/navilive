@@ -349,7 +349,7 @@
 {/snippet}
 
 <!-- Progress table: release one runner or team as soon as they cross the finish, ahead of their batch -->
-{#snippet runnerRelease(r: { bib: string; state: string; team?: { done: number } })}
+{#snippet runnerRelease(r: { bib: string; state: string })}
 	{@const p = data.participants.find((x) => x.bib === r.bib && x.category_id === progShown?.id)}
 	{#if p}
 		{@const own = runnerLevel(p)}
@@ -360,7 +360,7 @@
 			<button type="button" class="ml-2 underline" onclick={() => setRelease('runner', p.id, 'inherit')} title="Back to what their {b ? 'batch' : 'category'} shows">Undo</button>
 		{:else if group === 'released'}
 			<span class="text-muted-foreground uppercase">Released ({b ? 'batch' : 'category'})</span>
-		{:else if r.state === 'finished' || r.team?.done}
+		{:else if r.state === 'finished'}
 			<button type="button" class="h-9 border-2 border-border bg-card px-3 font-bold uppercase hover:bg-accent" onclick={() => setRelease('runner', p.id, 'released')}>Release</button>
 		{:else}
 			<span class="text-muted-foreground">—</span>

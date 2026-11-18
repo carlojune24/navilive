@@ -441,7 +441,6 @@
 						</button>
 						{#if open.has(key)}
 							<p class="px-4 pb-3 text-xl md:pl-[10.5rem]">
-								{#if r.members}{#each r.members as m}<span class="mr-6 font-bold uppercase">{m.name} <span class="font-normal">{m.finishAt !== null ? `finished ${fmt(m.finishAt - (r.finishAt! - r.time!))}` : 'no finish read'}</span></span>{/each}<br />{/if}
 								{#each r.splits as sp}<span class="mr-6 font-bold uppercase">{sp.station} <span class="font-normal">{fmt(sp.elapsed)}</span></span>{:else}<span class="text-muted-foreground">No checkpoint splits.</span>{/each}
 							</p>
 						{/if}

@@ -1,5 +1,5 @@
 // Relay / duo: the client's per-runner listing is imported through the admin UI, then runners are read by their own tags.
-// A team is FINISHED only when every member has crossed; the public board shows the team name while racing and the runners once released.
+// A team (any size) is FINISHED on its first finish read, whichever member it was; the public board shows the team name while racing and the runners once released.
 import { test, expect } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -79,44 +79,30 @@ test('relay and duo: import the client file, track members by tag, finish only w
 	await expect(page.getByText(/already (used|assigned)/)).toBeVisible();
 	await page.keyboard.press('Escape');
 
-	// 3. everyone starts; the duo's first runner crosses the finish
+	// 3. everyone starts; the duo's first runner crosses: the team is FINISHED, but results are held (no time on the public board)
 	expect((await reads([['TAG1', 'Start', 0], ['TAG2', 'Start', 100], ['TAG3', 'Start', 200], ['TAG4', 'Start', 0], ['TAG5', 'Start', 500]])).status).toBe(200);
 	expect((await reads([['TAG4', 'CP1', 600_000], ['TAG4', 'Finish', 1_200_000]])).status).toBe(200);
 	await page.goto(`/e/${slug}?mode=own&view=progress`);
 	await page.getByRole('tab', { name: /DUO/ }).click();
 	const duoRow = page.getByRole('row', { name: /Davao Durian Strong/ });
-	await expect(duoRow).toBeVisible();
-	await expect(duoRow).not.toContainText(/finished/i); // one of two: still racing
-	await expect(duoRow).not.toContainText('Jayvee'); // runners' names are not on the live board
+	await expect(duoRow).toContainText(/finished/i);
+	await expect(duoRow).not.toContainText('Jayvee'); // runners' names are not on the live board until released
 	await expect(duoRow).not.toContainText('Kevin');
 
-	// the admin sees why: 1/2 at the finish
-	await page.goto(`/admin/${slug}?tab=progress`);
-	await page.getByRole('tab', { name: /DUO/ }).click();
-	await expect(page.getByTestId('team-done')).toHaveText('1/2 at finish');
-
-	// 4. the second runner crosses: the team is FINISHED, but results are held (no time on the public board)
+	// 4. the second runner's read changes nothing: the team already has its time
 	expect((await reads([['TAG5', 'Finish', 1_300_000]])).status).toBe(200);
-	await page.goto(`/e/${slug}?mode=own&view=progress`);
-	await page.getByRole('tab', { name: /DUO/ }).click();
-	await expect(page.getByRole('row', { name: /Davao Durian Strong/ })).toContainText(/finished/i);
-	await expect(page.getByRole('row', { name: /Davao Durian Strong/ })).not.toContainText('Jayvee');
 
-	// 5. reconciled and released: results show the team, both runners, and the team time = the last runner's (1_300_000 ms: the team clock starts at the first member's start read)
+	// 5. reconciled and released: results show the team, both runners, and the team time = the first crossing (1_200_000 ms: the team clock starts at the first member's start read)
 	await db.query("update categories set release='released' where event_id=(select id from events where slug=$1)", [slug]);
 	await page.goto(`/e/${slug}?mode=own&view=results`);
 	await page.getByRole('tab', { name: /DUO/ }).click();
 	await expect(page.getByText('Davao Durian Strong')).toBeVisible();
 	await expect(page.getByTestId('team-runners')).toHaveText('Jayvee Tyron Lim Uy, Kevin Ryan Tan');
-	await expect(page.getByText('21:40')).toBeVisible();
+	await expect(page.getByText('20:00')).toBeVisible();
 
-	// 6. the relay: only 2 of 3 cross, so it is not ranked; the third crossing finishes it
-	expect((await reads([['TAG1', 'Finish', 1_000_000], ['TAG2', 'Finish', 1_100_000]])).status).toBe(200);
+	// 6. the relay: its first finish read finishes it
+	expect((await reads([['TAG1', 'Finish', 1_000_000]])).status).toBe(200);
 	await page.goto(`/e/${slug}?mode=own&view=results`);
-	await page.getByRole('tab', { name: /RELAY/ }).click();
-	await expect(page.getByText('CROSSFIT CRANIUM')).toHaveCount(0);
-	expect((await reads([['TAG3', 'Finish', 1_400_000]])).status).toBe(200);
-	await page.reload();
 	await page.getByRole('tab', { name: /RELAY/ }).click();
 	await expect(page.getByText('CROSSFIT CRANIUM')).toBeVisible();
 	await expect(page.getByTestId('team-runners')).toHaveText('Eric Zamora, Cris Jay A. Gonzales, Karrel Jones R. Catalino');

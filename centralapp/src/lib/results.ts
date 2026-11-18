@@ -21,7 +21,7 @@ export type P = {
 	members?: { id: number; name: string }[]; // relay/duo: the runners of this team; the team finishes when every one has crossed
 };
 export type S = { id: number; name: string; kind: string; ord: number };
-export type R = { pid: number; station_id: number; read_at_ms: number; device_id?: string; mid?: number | null }; // mid: which team member's tag it was
+export type R = { pid: number; station_id: number; read_at_ms: number; device_id?: string };
 export type Split = { station: string; elapsed: number };
 export type Row = {
 	rank: number | null;
@@ -35,7 +35,7 @@ export type Row = {
 	extra: Record<string, string>;
 	photo: number | null;
 	overridden?: boolean;
-	members?: { name: string; finishAt: number | null }[]; // relay/duo runners and when each crossed the finish
+	members?: { name: string }[]; // relay/duo: the team's runners (the team finishes on its first finish read)
 };
 export type Winner = { place: number; bib: string; name: string; time: number; detail?: string; photo?: number | null };
 export type Award = { key: string; name: string; winners: Winner[] };
@@ -165,7 +165,6 @@ export function computeResults(
 			let noStart = 0;
 			let badStart = 0;
 			const crossed = new Set<string>(); // has a finish read (or override), whatever the start says
-			const teamDone = new Map<string, { done: number; of: number }>(); // relay/duo: members at the finish
 			const rows: Row[] = members.map((p) => {
 				const start = mode === 'own' || cat.rank_by === 'chip' ? startOf(p) : gun.get(groupOf(p)) ?? null;
 				// a finisher with no usable start is dropped from the ranking silently, so count them for the warning
@@ -174,22 +173,11 @@ export function computeResults(
 				// the finish is the first finish read after the start: a pass over the finish mat before the start (warm-up, a shared
 				// start/finish arch) must not hide the real finish. Every finish read still marks the runner as having crossed.
 				const finReads = all.filter((r) => kind.get(r.station_id)?.kind === 'finish');
-				// a team is finished when every member has crossed; its time is the last member's. A read made by bib (no member)
-				// stands in for one member who has no read yet. shortcut: two bib-typed finish reads count as two members, upgrade if marshals double-enter
-				const finishOf = (rs: R[]) => {
-					if (!p.members?.length) return { at: rs.length ? Math.min(...rs.map((r) => r.read_at_ms)) : null };
-					const memberFin = p.members.map((m) => {
-						const t = rs.filter((r) => r.mid === m.id).map((r) => r.read_at_ms);
-						return { name: m.name, finishAt: t.length ? Math.min(...t) : null };
-					});
-					const loose = rs.filter((r) => r.mid == null).map((r) => r.read_at_ms);
-					const times = [...memberFin.map((m) => m.finishAt).filter((t): t is number => t !== null), ...loose].sort((a, b) => a - b);
-					return { at: times.length >= p.members.length ? times[p.members.length - 1] : null, memberFin, done: Math.min(times.length, p.members.length) };
-				};
+				// a team (duo, relay, any size) is one bib: its first finish read finishes the whole team, whichever member it was.
+				// Stations read a shared team tag only once, so waiting for every member would leave the team without a time.
+				const finishOf = (rs: R[]) => ({ at: rs.length ? Math.min(...rs.map((r) => r.read_at_ms)) : null });
 				const afterStart = finishOf(start === null ? finReads : finReads.filter((r) => r.read_at_ms > start));
 				const anyTime = finishOf(finReads); // whatever the start says
-				const memberFin = afterStart.memberFin;
-				if (p.members?.length) teamDone.set(p.bib, { done: anyTime.done!, of: p.members.length });
 				const rawFinish = p.finishOverride ?? afterStart.at;
 				if (p.finishOverride != null || anyTime.at !== null) crossed.add(p.bib);
 				// an override needs a usable start, same as a real finish read
@@ -223,7 +211,7 @@ export function computeResults(
 					extra: p.extra ?? {},
 					photo: p.photo ?? null,
 					overridden: p.finishOverride != null,
-					...(memberFin ? { members: memberFin } : {})
+					...(p.members?.length ? { members: p.members.map((m) => ({ name: m.name })) } : {})
 				};
 			});
 			const rankBy = 'rank_by' in cat ? cat.rank_by : undefined;
@@ -238,10 +226,6 @@ export function computeResults(
 				course,
 				members.map((p) => ({ bib: p.bib, name: p.name, start: track.get(p.bib)!.start, first: track.get(p.bib)!.first, by: track.get(p.bib)!.by, finished: rankOf.has(p.bib) || crossed.has(p.bib), rank: rankOf.get(p.bib) ?? null, time: timeOf.get(p.bib) ?? null }))
 			);
-			for (const r of progress) {
-				const t = teamDone.get(r.bib);
-				if (t) r.team = t;
-			}
 			return { id: cat.id, name: cat.name, rows: done, started, total: members.length, awards: buildAwards(done, o), places: o.places, course, progress, noStart, badStart, gunMs: gun.get(`c${cat.id}`) ?? null, gunManual: manual.has(`c${cat.id}`), rankBy: (rankBy === 'chip' || rankBy === 'finish' ? rankBy : 'elapsed') as 'elapsed' | 'chip' | 'finish', underway: members.some((p) => (byP.get(p.id) ?? []).some((r) => kind.get(r.station_id)?.kind !== 'start')) };
 		})
 		.filter((c) => c.total > 0);
