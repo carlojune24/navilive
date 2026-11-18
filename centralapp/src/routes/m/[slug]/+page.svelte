@@ -174,6 +174,7 @@
 	function undo(p: Person) {
 		const prev = mine[mineKey(p)];
 		if (!prev || prev.voided) return;
+		if (!confirm(`Undo tag for ${p.bib}${p.name ? ` (${p.name})` : ''}?`)) return;
 		// the same tag+time+device re-sent as voided: the ingest upsert flips the existing row
 		const qd = { ...prev, voided: true };
 		mine = { ...mine, [mineKey(p)]: qd };
