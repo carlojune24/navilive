@@ -278,6 +278,15 @@
 	/>
 {/snippet}
 
+<!-- table zoom, used on Progress and Finish -->
+{#snippet zoomControls()}
+	<div class="flex items-center text-foreground" role="group" aria-label="Table zoom">
+		<button type="button" onclick={() => zoomBy(-0.1)} disabled={zoom <= 0.5} aria-label="Zoom table out" class="h-11 w-12 border-2 border-border bg-card text-2xl font-bold hover:bg-accent disabled:opacity-40">−</button>
+		<button type="button" onclick={() => (zoom = 1)} title="Back to 100%" class="h-11 min-w-20 border-y-2 border-border bg-card px-2 font-bold tabular-nums hover:bg-accent" aria-live="polite">{Math.round(zoom * 100)}%</button>
+		<button type="button" onclick={() => zoomBy(0.1)} disabled={zoom >= 2} aria-label="Zoom table in" class="h-11 w-12 border-2 border-border bg-card text-2xl font-bold hover:bg-accent disabled:opacity-40">+</button>
+	</div>
+{/snippet}
+
 {#snippet face(stamp: number | null | undefined, bib: string, size: string)}
 	{#if stamp}<img src="/e/{data.slug}/photo/{bib}?v={stamp}" alt="" class="shrink-0 border-2 border-border object-cover {size}" loading="lazy" />{/if}
 {/snippet}
@@ -303,7 +312,8 @@
 	</header>
 
 	<div class="mt-4 flex flex-wrap items-center gap-2">
-		<div class="flex flex-wrap gap-2" role="tablist" aria-label="Categories">
+		<!-- the Finish view covers every category, so the category buttons are hidden there -->
+		<div class="flex flex-wrap gap-2 {view === 'finish' ? 'hidden' : ''}" role="tablist" aria-label="Categories">
 			{#each res.categories as c (c.id)}
 				<button
 					role="tab"
@@ -352,36 +362,37 @@
 			<!-- FINISH: the latest across the finish line in any category, newest on top. Times are unofficial until verified -->
 			<div class="flex flex-wrap items-center justify-between gap-3 bg-primary px-4 py-2 text-primary-foreground">
 				<h2 class="font-display font-black uppercase {data.kiosk ? 'text-5xl md:text-8xl' : 'text-4xl md:text-6xl'}">Finish line</h2>
-				<p class="font-bold tracking-wide uppercase {data.kiosk ? 'text-xl md:text-3xl' : 'text-lg'}">All categories · times are unofficial</p>
+				<div class="flex flex-wrap items-center gap-3">
+					<p class="font-bold tracking-wide uppercase {data.kiosk ? 'text-xl md:text-3xl' : 'text-lg'}">All categories · times are unofficial</p>
+					{#if !data.kiosk}{@render zoomControls()}{/if}
+				</div>
 			</div>
 			<div class="overflow-x-auto" style="zoom:{zoom}">
 				<table class="w-full border-collapse text-left">
 					<thead>
 						<tr class="border-b-2 border-border font-bold tracking-wide uppercase {data.kiosk ? 'text-lg md:text-2xl' : 'text-sm'}">
-							<th class="px-4 py-2">Category</th>
 							<th class="px-4 py-2">Bib</th>
 							<th class="px-4 py-2">Name</th>
+							<th class="px-4 py-2">Category</th>
 							<th class="px-4 py-2">Finish time <span class="font-normal normal-case">(unofficial)</span></th>
-							<th class="px-4 py-2">Penalty</th>
 						</tr>
 					</thead>
 					<tbody aria-live="polite">
 						{#each res.finishLine ?? [] as r, i (r.category + ':' + r.bib)}
 							<tr animate:flip={slide} in:fly|local={enter} class="border-b-2 border-border/15 last:border-b-0 {i === 0 ? 'latest bg-primary text-primary-foreground' : ''}">
-								<td class="px-4 py-3 font-bold uppercase {data.kiosk ? 'text-2xl md:text-5xl' : 'text-xl md:text-3xl'}">{r.category}</td>
 								<td class="px-4 py-3 font-display leading-[0.85] font-black {data.kiosk ? 'text-6xl md:text-9xl' : 'text-5xl md:text-7xl'}">{r.bib}</td>
 								<td class="px-4 py-3">
 									{#if i === 0}<span class="mb-1 inline-block border-2 border-current px-2 text-sm font-bold tracking-widest uppercase {data.kiosk ? 'md:text-xl' : ''}">Just finished</span>{/if}
 									<span class="block font-bold uppercase {data.kiosk ? 'text-3xl md:text-6xl' : 'text-2xl md:text-4xl'}">{r.name || 'Bib ' + r.bib}</span>
 								</td>
+								<td class="px-4 py-3 font-bold uppercase {data.kiosk ? 'text-2xl md:text-5xl' : 'text-xl md:text-3xl'}">{r.category}</td>
 								<td class="px-4 py-3 whitespace-nowrap">
 									<span class="block font-display leading-[0.85] font-black tabular-nums {data.kiosk ? 'text-5xl md:text-8xl' : 'text-3xl md:text-6xl'}">{r.time !== null ? fmt(r.time) : '—'}</span>
 									<span class="text-sm font-bold tracking-widest uppercase opacity-80 {data.kiosk ? 'md:text-xl' : ''}">Unofficial</span>
 								</td>
-								<td class="px-4 py-3"></td>
 							</tr>
 						{:else}
-							<tr><td colspan="5" class="p-10 text-2xl text-muted-foreground">Nobody has crossed the finish line yet.</td></tr>
+							<tr><td colspan="4" class="p-10 text-2xl text-muted-foreground">Nobody has crossed the finish line yet.</td></tr>
 						{/each}
 					</tbody>
 				</table>
@@ -490,11 +501,7 @@
 							</div>
 						{/if}
 						<button type="button" aria-pressed={showLatest} onclick={() => (showLatest = !showLatest)} class="ml-auto h-11 border-2 border-border px-4 text-lg font-bold uppercase {showLatest ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-accent'}">Latest finishers {showLatest ? 'on' : 'off'}</button>
-						<div class="flex items-center" role="group" aria-label="Table zoom">
-							<button type="button" onclick={() => zoomBy(-0.1)} disabled={zoom <= 0.5} aria-label="Zoom table out" class="h-11 w-12 border-2 border-border bg-card text-2xl font-bold hover:bg-accent disabled:opacity-40">−</button>
-							<button type="button" onclick={() => (zoom = 1)} title="Back to 100%" class="h-11 min-w-20 border-y-2 border-border bg-card px-2 font-bold tabular-nums hover:bg-accent" aria-live="polite">{Math.round(zoom * 100)}%</button>
-							<button type="button" onclick={() => zoomBy(0.1)} disabled={zoom >= 2} aria-label="Zoom table in" class="h-11 w-12 border-2 border-border bg-card text-2xl font-bold hover:bg-accent disabled:opacity-40">+</button>
-						</div>
+						{@render zoomControls()}
 					</div>
 				{/if}
 				{#if showLatest}
@@ -561,10 +568,9 @@
 
 	{#if data.sponsors.length}
 		<!-- sponsors, in the organizer's order (Admin > Sponsors); sits at the bottom of the screen when the board is short -->
-		<footer class="mt-auto shrink-0 pt-3">
+		<footer class="mt-auto shrink-0 pt-3" aria-label="Sponsors">
 			<div class="border-2 border-border bg-white px-4 py-2 text-black">
-				<p class="text-center text-xs font-bold tracking-widest uppercase">Thank you to our sponsors</p>
-				<ul class="mt-1 flex flex-wrap items-center justify-center gap-x-10 gap-y-2">
+				<ul class="flex flex-wrap items-center justify-center gap-x-10 gap-y-2">
 					{#each data.sponsors as s (s.id)}
 						{@const logo = `/e/${data.slug}/sponsor/${s.id}?v=${s.v}`}
 						<li>
