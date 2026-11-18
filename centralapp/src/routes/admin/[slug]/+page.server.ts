@@ -101,7 +101,8 @@ export const actions = {
 		const e = await ev(params.slug);
 		const name = String((await request.formData()).get('name') ?? '').trim();
 		if (!name) return fail(400, { error: 'Category name required' });
-		await q('insert into categories(event_id, name) values($1,$2) on conflict do nothing', [e.id, name]);
+		const added = await q('insert into categories(event_id, name) values($1,$2) on conflict do nothing returning id', [e.id, name]);
+		if (!added.length) return { warning: `A category named "${name}" already exists. Nothing added.` };
 	},
 	// categories are archived, never deleted: results, reads and batches stay intact and Restore brings it back
 	archiveCategory: async ({ request, params }) => {
@@ -126,7 +127,9 @@ export const actions = {
 		const cat = await categoryOf(e.id, f);
 		const name = String(f.get('name') ?? '').trim();
 		if (!cat || !name) return fail(400, { error: 'Batch name required' });
-		await q('insert into batches(category_id, name) values($1,$2) on conflict do nothing', [cat, name]);
+		// a batch made after its category started runs on the category's clock, or its runners would lose their times
+		const added = await q('insert into batches(category_id, name, gun_ms) values($1,$2,(select gun_ms from categories where id=$1)) on conflict do nothing returning id', [cat, name]);
+		if (!added.length) return { warning: `Batch "${name}" already exists in this category. Nothing added.` };
 	},
 	// Starts tab: the ticked runners of one category become the next numbered batch ("1", "2", ... shown as "Batch 1").
 	createBatch: async ({ request, params }) => {
@@ -302,14 +305,26 @@ export const actions = {
 			if (bi < 0 || ti < 0) return fail(400, { error: 'Header row needs "bib" and "tag" columns' });
 			// one row per bib (a team shows once, under its team name); the tag goes to every member of that bib. Shared bibs are not renamed here.
 			const notes: string[] = [];
-			for (const line of lines.slice(1)) {
-				const c = splitLine(line, d);
-				const bib = c[bi] ?? '', tag = cleanTag(c[ti] ?? '').toUpperCase();
-				if (!bib || !tag) continue;
-				const [p] = await q<{ id: number; team: boolean }>('select id, exists (select 1 from team_members m where m.participant_id=p.id) as team from participants p where event_id=$1 and bib=$2', [e.id, bib]);
-				if (!p) { notes.push(`Bib ${bib}: not a participant`); continue; }
-				// a team's own tag stays blank: a read must resolve to a member, not to the team row
-				await q(p.team ? 'update team_members set tag=$2 where participant_id=$1' : 'update participants set tag=$2 where id=$1', [p.id, tag]);
+			// all or nothing: a failure part way leaves no file half-applied
+			const tx = await pool.connect();
+			try {
+				await tx.query('begin');
+				for (const line of lines.slice(1)) {
+					const c = splitLine(line, d);
+					const bib = c[bi] ?? '', tag = cleanTag(c[ti] ?? '').toUpperCase();
+					if (!bib || !tag) continue;
+					const [p] = (await tx.query<{ id: number; team: boolean }>('select id, exists (select 1 from team_members m where m.participant_id=p.id) as team from participants p where event_id=$1 and bib=$2', [e.id, bib])).rows;
+					if (!p) { notes.push(`Bib ${bib}: not a participant`); continue; }
+					// a team's own tag stays blank: a read must resolve to a member, not to the team row
+					await tx.query(p.team ? 'update team_members set tag=$2 where participant_id=$1' : 'update participants set tag=$2 where id=$1', [p.id, tag]);
+				}
+				await tx.query('commit');
+			} catch (err) {
+				await tx.query('rollback');
+				console.error('importTags', err);
+				return fail(400, { error: 'Nothing imported: the tag file could not be applied. Check it and try again.' });
+			} finally {
+				tx.release();
 			}
 			// participants = one per bib (a team counts once); tags = distinct tags in use
 			const [r] = await q<{ participants: number; tags: number }>(
@@ -347,6 +362,7 @@ export const actions = {
 		const bib = String(f.get('bib') ?? '').trim();
 		const cat = Number(f.get('category')) || null;
 		if (!bib) return fail(400, { error: 'Bib number is required' });
+		if (cat && !(await q('select 1 from categories where id=$1 and event_id=$2', [cat, e.id])).length) return fail(400, { error: 'Unknown category' });
 		const c = await pool.connect();
 		try {
 			await c.query('begin');
@@ -502,7 +518,8 @@ export const actions = {
 		const name = String(f.get('name') ?? '').trim();
 		const kind = String(f.get('kind'));
 		if (!name || !['start', 'checkpoint', 'finish'].includes(kind)) return fail(400, { error: 'Station needs a name and a kind' });
-		await q('insert into stations(event_id, name, kind, ord) values($1,$2,$3,(select coalesce(max(ord)+1,0) from stations where event_id=$1)) on conflict do nothing', [e.id, name, kind]);
+		const added = await q('insert into stations(event_id, name, kind, ord) values($1,$2,$3,(select coalesce(max(ord)+1,0) from stations where event_id=$1)) on conflict do nothing returning id', [e.id, name, kind]);
+		if (!added.length) return { warning: `A station named "${name}" already exists. Nothing added.` };
 		// reads that arrived earlier under this name (station was missing or misspelled) now count
 		await q('update reads r set station_id=s.id from stations s where s.event_id=$1 and s.name=$2 and r.event_id=$1 and r.station_id is null and lower(r.station_name_sent)=lower(s.name)', [e.id, name]);
 	},
@@ -580,10 +597,11 @@ export const actions = {
 		const f = await request.formData();
 		const bib = String(f.get('bib') ?? '').trim();
 		const station = Number(f.get('station'));
-		const when = String(f.get('time') ?? '').trim();
-		const at = when ? new Date(when).getTime() : Date.now();
+		// the browser sends the typed time as epoch ms (see manualTime), so the server's timezone never enters into it
+		const ms = String(f.get('ms') ?? '');
+		const at = ms ? Number(ms) : String(f.get('time') ?? '').trim() ? NaN : Date.now();
 		if (!bib || !station) return fail(400, { error: 'Bib and station are required' });
-		if (!Number.isFinite(at)) return fail(400, { error: 'Time is not valid' });
+		if (!Number.isFinite(at) || at <= 0) return fail(400, { error: 'Time is not valid' });
 		const [p] = await q<{ bib: string; tag: string }>('select bib, tag from participants where event_id=$1 and bib=$2', [e.id, bib]);
 		if (!p) return fail(400, { error: `No participant with bib ${bib}` });
 		const ok = await q('select 1 from stations where id=$1 and event_id=$2', [station, e.id]);
@@ -654,7 +672,8 @@ export const actions = {
 		await q("select pg_notify('reads', $1)", [String(e.id)]);
 		return { overrideCleared: bib };
 	},
-	// For wiping test data before the event. Station apps keep their own copies and would upload them again.
+	// For wiping test data before the event. Station apps keep their own copies but do not re-send reads already confirmed
+	// (only a read voided or restored there afterwards is sent again).
 	clearReads: async ({ request, params }) => {
 		const e = await ev(params.slug);
 		if (String((await request.formData()).get('confirm') ?? '').trim() !== 'CLEAR') return fail(400, { error: 'Type CLEAR to confirm' });

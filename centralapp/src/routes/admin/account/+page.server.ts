@@ -1,12 +1,12 @@
 import { fail } from '@sveltejs/kit';
 import { PUBLIC_URL } from '$app/env/private';
-import { SESSION_COOKIE, passwordOk, sessionValue, setPassword } from '$lib/server/auth';
-import { blockedMinutes, clearFails, recordFail } from '$lib/server/ratelimit';
+import { SESSION_COOKIE, SESSION_MAX_AGE, passwordOk, sessionValue, setPassword } from '$lib/server/auth';
+import { blockedMinutes, clearFails, clientKey, recordFail } from '$lib/server/ratelimit';
 import { checkNewPassword } from '$lib/password';
 
 export const actions = {
 	change: async ({ request, cookies, getClientAddress }) => {
-		const key = 'pw:' + getClientAddress(); // separate from the login counter, same limits
+		const key = 'pw:' + clientKey(getClientAddress(), request.headers); // separate from the login counter, same limits
 		const wait = blockedMinutes(key);
 		if (wait) return fail(429, { error: `Too many wrong passwords. Try again in ${wait} min.` });
 
@@ -27,7 +27,7 @@ export const actions = {
 
 		await setPassword(next);
 		// every other session is now signed out (the cookie depends on the password); keep this one signed in
-		cookies.set(SESSION_COOKIE, await sessionValue(), { path: '/', httpOnly: true, sameSite: 'lax', secure: !!PUBLIC_URL?.startsWith('https://'), maxAge: 60 * 60 * 24 * 7 });
+		cookies.set(SESSION_COOKIE, await sessionValue(), { path: '/', httpOnly: true, sameSite: 'lax', secure: !!PUBLIC_URL?.startsWith('https://'), maxAge: SESSION_MAX_AGE });
 		return { changed: true };
 	}
 };

@@ -1,4 +1,5 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { timingSafeEqual } from 'node:crypto';
+import { SESSION_MS, checkSession, makeSession } from '$lib/session';
 import { ADMIN_PASSWORD } from '$app/env/private';
 import { q } from './db';
 import { hashPassword, verifyPassword } from '$lib/password';
@@ -8,6 +9,7 @@ import { hashPassword, verifyPassword } from '$lib/password';
 // Recovery if it is forgotten:  delete from app_settings where key='admin_password_hash';  (the .env password works again)
 
 export const SESSION_COOKIE = 'admin';
+export const SESSION_MAX_AGE = SESSION_MS / 1000; // the cookie lasts as long as the signed expiry inside it
 
 let cache: { hash: string | null; at: number } | null = null;
 const TTL_MS = 30_000; // picks up a recovery edit made directly in the database
@@ -31,18 +33,12 @@ export async function passwordOk(input: string) {
 	return hash ? verifyPassword(input, hash) : same(input, ADMIN_PASSWORD);
 }
 
-// the session cookie is derived from whatever the current password material is, so changing the password signs everyone out
-async function sign() {
-	const material = (await storedHash()) ?? ADMIN_PASSWORD;
-	return createHmac('sha256', material).update('admin-session').digest('hex');
-}
+// the session is signed with whatever the current password material is, so changing the password signs everyone out
+const secret = async () => (await storedHash()) ?? ADMIN_PASSWORD;
 
-export const sessionValue = sign;
+export const sessionValue = async () => makeSession(await secret());
 
-export async function sessionOk(cookie: string | undefined) {
-	if (!cookie) return false;
-	return same(cookie, await sign());
-}
+export const sessionOk = async (cookie: string | undefined) => !!cookie && checkSession(cookie, await secret());
 
 export async function setPassword(newPassword: string) {
 	const hash = await hashPassword(newPassword);

@@ -18,3 +18,14 @@ export function recordFail(ip: string, now = Date.now()) {
 }
 
 export const clearFails = (ip: string) => fails.delete(ip);
+
+/**
+ * Who is guessing. Behind nginx every request arrives from 127.0.0.1, so one counter would lock out everyone, the organizer
+ * included. A request from loopback (the proxy) is keyed by the last X-Forwarded-For entry, the one nginx added itself;
+ * anyone else's header is ignored, so a phone on the LAN cannot pick its own address.
+ */
+export function clientKey(peer: string, headers: Headers) {
+	const local = peer === '127.0.0.1' || peer === '::1' || peer === '::ffff:127.0.0.1';
+	const fwd = local ? (headers.get('x-forwarded-for') ?? '').split(',').pop()?.trim() || headers.get('x-real-ip')?.trim() : '';
+	return fwd || peer;
+}

@@ -6,7 +6,8 @@ import { pool, q } from './db';
 export async function newBatch(c: pg.PoolClient, cat: number, ids: number[]) {
 	const next = await c.query("select coalesce(max(name::int), 0) + 1 as n from batches where category_id=$1 and name ~ '^[0-9]{1,9}$'", [cat]);
 	const name = String(next.rows[0].n);
-	const b = await c.query('insert into batches(category_id, name) values($1,$2) returning id', [cat, name]);
+	// a batch made after its category started runs on the category's clock, or its runners would lose their times
+	const b = await c.query('insert into batches(category_id, name, gun_ms) values($1,$2,(select gun_ms from categories where id=$1)) returning id', [cat, name]);
 	await c.query('update participants set batch_id=$1 where id = any($2)', [b.rows[0].id, ids]);
 	return { id: b.rows[0].id as number, name };
 }

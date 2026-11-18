@@ -112,6 +112,24 @@ describe('computeResults', () => {
 		const [c] = computeResults(cats, ps, st, [{ pid: 1, station_id: 3, read_at_ms: 5000 }], 'own');
 		expect(c.rows).toHaveLength(0);
 	});
+	it('a pass over the finish mat before the start does not hide the real finish', () => {
+		const warm: R[] = [{ pid: 1, station_id: 3, read_at_ms: 500 }, { pid: 1, station_id: 1, read_at_ms: 1000 }, { pid: 1, station_id: 3, read_at_ms: 601000 }];
+		const [c] = computeResults(cats, ps, st, warm, 'gun');
+		expect(c.rows.map((r) => [r.bib, r.time])).toEqual([['101', 600000]]);
+		expect(c.badStart).toBe(0);
+	});
+	it('a team member who crossed the finish before the start still counts at their real finish', () => {
+		const team: P[] = [{ id: 1, bib: '101', name: 'Duo', category_id: 10, members: [{ id: 11, name: 'X' }, { id: 12, name: 'Y' }] }];
+		const reads: R[] = [
+			{ pid: 1, station_id: 3, read_at_ms: 500, mid: 11 },
+			{ pid: 1, station_id: 1, read_at_ms: 1000, mid: 11 },
+			{ pid: 1, station_id: 3, read_at_ms: 500000, mid: 12 },
+			{ pid: 1, station_id: 3, read_at_ms: 601000, mid: 11 }
+		];
+		const [c] = computeResults(cats, team, st, reads, 'gun');
+		expect(c.rows[0].time).toBe(600000);
+		expect(c.rows[0].members?.map((m) => m.finishAt)).toEqual([601000, 500000]);
+	});
 	it('ignores a finish read from before the start', () => {
 		const [c] = computeResults(cats, ps, st, [{ pid: 1, station_id: 1, read_at_ms: 5000 }, { pid: 1, station_id: 3, read_at_ms: 1000 }], 'gun');
 		expect(c.rows).toHaveLength(0);

@@ -171,28 +171,31 @@ export function computeResults(
 				// a finisher with no usable start is dropped from the ranking silently, so count them for the warning
 				if (start === null && (byP.get(p.id) ?? []).some((r) => kind.get(r.station_id)?.kind === 'finish')) noStart++;
 				const all = byP.get(p.id) ?? [];
-				// reads are never dropped for being before the start: a start corrected to a later time must not hide them
-				const fin = all.filter((r) => kind.get(r.station_id)?.kind === 'finish').map((r) => r.read_at_ms);
+				// the finish is the first finish read after the start: a pass over the finish mat before the start (warm-up, a shared
+				// start/finish arch) must not hide the real finish. Every finish read still marks the runner as having crossed.
+				const finReads = all.filter((r) => kind.get(r.station_id)?.kind === 'finish');
 				// a team is finished when every member has crossed; its time is the last member's. A read made by bib (no member)
 				// stands in for one member who has no read yet. shortcut: two bib-typed finish reads count as two members, upgrade if marshals double-enter
-				let memberFin: { name: string; finishAt: number | null }[] | undefined;
-				let teamFinish: number | null = null;
-				if (p.members?.length) {
-					const finReads = all.filter((r) => kind.get(r.station_id)?.kind === 'finish');
-					memberFin = p.members.map((m) => {
-						const t = finReads.filter((r) => r.mid === m.id).map((r) => r.read_at_ms);
+				const finishOf = (rs: R[]) => {
+					if (!p.members?.length) return { at: rs.length ? Math.min(...rs.map((r) => r.read_at_ms)) : null };
+					const memberFin = p.members.map((m) => {
+						const t = rs.filter((r) => r.mid === m.id).map((r) => r.read_at_ms);
 						return { name: m.name, finishAt: t.length ? Math.min(...t) : null };
 					});
-					const loose = finReads.filter((r) => r.mid == null).map((r) => r.read_at_ms);
+					const loose = rs.filter((r) => r.mid == null).map((r) => r.read_at_ms);
 					const times = [...memberFin.map((m) => m.finishAt).filter((t): t is number => t !== null), ...loose].sort((a, b) => a - b);
-					teamFinish = times.length >= p.members.length ? times[p.members.length - 1] : null;
-					teamDone.set(p.bib, { done: Math.min(times.length, p.members.length), of: p.members.length });
-				}
-				const rawFinish = p.finishOverride ?? (p.members?.length ? teamFinish : fin.length ? Math.min(...fin) : null);
-				if (rawFinish !== null) crossed.add(p.bib);
+					return { at: times.length >= p.members.length ? times[p.members.length - 1] : null, memberFin, done: Math.min(times.length, p.members.length) };
+				};
+				const afterStart = finishOf(start === null ? finReads : finReads.filter((r) => r.read_at_ms > start));
+				const anyTime = finishOf(finReads); // whatever the start says
+				const memberFin = afterStart.memberFin;
+				if (p.members?.length) teamDone.set(p.bib, { done: anyTime.done!, of: p.members.length });
+				const rawFinish = p.finishOverride ?? afterStart.at;
+				if (p.finishOverride != null || anyTime.at !== null) crossed.add(p.bib);
 				// an override needs a usable start, same as a real finish read
 				const timed = start !== null && rawFinish !== null && rawFinish > start;
-				if (start !== null && rawFinish !== null && !timed) badStart++;
+				// crossed, but only before the start: the start was probably corrected wrongly
+				if (start !== null && !timed && (p.finishOverride ?? anyTime.at) !== null) badStart++;
 				const finishAt = timed ? rawFinish : null;
 				const first = new Map<number, number>();
 				const by = new Map<number, string>();

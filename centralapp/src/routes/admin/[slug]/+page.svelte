@@ -13,6 +13,8 @@
 	import ProgressTable from '$lib/components/ProgressTable.svelte';
 	import { groupTally } from '$lib/tally';
 	import { onMount } from 'svelte';
+	import { toast } from 'svelte-sonner';
+	import { Toaster } from '$lib/components/ui/sonner/index.js';
 	import { invalidateAll } from '$app/navigation';
 	import { ago } from '$lib/time';
 	import { fmt } from '$lib/results';
@@ -268,6 +270,25 @@
 		const who = n ? `Its ${n} runner${n === 1 ? '' : 's'} go back to no batch.` : 'It has no runners.';
 		ask = { title: 'Delete batch?', text: `Delete ${label}? ${who}${started ? ' It has started: its runners will be timed from the category start instead.' : ''}`, ok: 'Delete', run: () => form?.requestSubmit() };
 	};
+	// any one-click action that is hard to undo asks first, then submits its own form
+	const confirmSubmit = (title: string, text: string, ok: string, e: MouseEvent) => {
+		const form = (e.currentTarget as HTMLElement).closest('form');
+		ask = { title, text, ok, run: () => form?.requestSubmit() };
+	};
+	// the typed read time travels as epoch ms, so the server never guesses a timezone; empty = now
+	const manualTime = ({ formData, cancel }: { formData: FormData; cancel: () => void }) => {
+		const typed = String(formData.get('time') ?? '');
+		if (typed) {
+			const t = new Date(typed).getTime();
+			if (!Number.isFinite(t)) return cancel();
+			formData.set('ms', String(t));
+		}
+		formData.delete('time');
+	};
+	// a duplicate name is not an error, but nothing was added: say so
+	$effect(() => {
+		if (form?.warning) toast.warning(form.warning);
+	});
 	// Batch release tally: 0.45in rows on A4 (0.5in margins). Chrome fits 22 on one page; 21 leaves room for other browsers' margins
 	const RELEASE_ROWS_A4 = 21;
 	let releaseRows = $state(RELEASE_ROWS_A4);
@@ -373,6 +394,7 @@
 
 <svelte:head>{#if tab === 'tally' || tab === 'bibs'}{@html '<style>@page{size:8.5in 13in;margin:0.5in}</style>'}{:else if tab === 'release'}{@html '<style>@page{size:A4;margin:0.5in}</style>'}{/if}</svelte:head>
 
+<Toaster position="top-center" />
 <main class="space-y-5 p-5 print:p-0">
 	<header class={tab === 'tally' || tab === 'bibs' || tab === 'release' ? 'print:hidden' : ''}>
 		<h1 class="font-display text-5xl leading-[0.85] font-black uppercase">{tab === 'tally' || tab === 'bibs' || tab === 'release' ? 'Printables' : titles[tab]}</h1>
@@ -517,7 +539,7 @@
 										<Button variant="outline" size="sm" class={small} onclick={() => (editing = p.id)}>Edit</Button>
 										<form method="POST" action="?tab={tab}&/deleteParticipant" use:enhance class="inline">
 											<input type="hidden" name="id" value={p.id} />
-											<Button type="submit" variant="outline" size="sm" class={small}>Delete</Button>
+											<Button type="button" onclick={(e) => confirmSubmit('Delete runner?', `Delete ${p.bib} ${p.name || ''} for good? Their photo, finish override and team members go too. Their reads are kept.`, 'Delete', e)} variant="outline" size="sm" class={small}>Delete</Button>
 										</form>
 										{/if}
 									</Table.Cell>
@@ -560,7 +582,7 @@
 								{@render gunControls('category', c.id, c.gun_ms, c.name)}
 								<form method="POST" action="?tab={tab}&/archiveCategory" use:enhance>
 									<input type="hidden" name="id" value={c.id} />
-									<Button type="submit" variant="outline" size="sm" class={small} title="Hide this category from the boards. Results and reads are kept; Restore brings it back.">Archive</Button>
+									<Button type="button" onclick={(e) => confirmSubmit('Archive category?', `Hide ${c.name} from the boards? Results and reads are kept; Restore brings it back.`, 'Archive', e)} variant="outline" size="sm" class={small} title="Hide this category from the boards. Results and reads are kept; Restore brings it back.">Archive</Button>
 								</form>
 							</div>
 						</div>
@@ -840,7 +862,7 @@
 							{/if}
 							<form method="POST" action="?tab={tab}&/deleteStation" use:enhance>
 								<input type="hidden" name="id" value={s.id} />
-								<Button type="submit" variant="outline" size="sm" class={small}>Delete</Button>
+								<Button type="button" onclick={(e) => confirmSubmit('Delete station?', `Delete ${s.name}? It is taken out of every category's course.`, 'Delete', e)} variant="outline" size="sm" class={small}>Delete</Button>
 							</form>
 						</div>
 					</li>
@@ -1156,7 +1178,7 @@
 		<!-- READS: manual corrections -->
 		{#if tab === 'reads'}
 		<div class="space-y-4">
-			<form method="POST" action="?tab={tab}&/manualRead" use:enhance class="space-y-3 border-2 border-border bg-card p-4">
+			<form method="POST" action="?tab={tab}&/manualRead" use:enhance={manualTime} class="space-y-3 border-2 border-border bg-card p-4">
 				<h2 class="font-display text-3xl font-black uppercase">Add a read by hand</h2>
 				<p class="text-muted-foreground">For a missed tag, or to test the board before the event. Pick a runner and a station; leave the time empty to use now.</p>
 				<div class="flex flex-wrap items-end gap-2">
@@ -1400,7 +1422,7 @@
 			{/if}
 
 			<form method="POST" action="?tab={tab}&/rotateKey" use:enhance class="flex flex-wrap items-center gap-3 border-2 border-border bg-card p-4">
-				<Button type="submit" class="h-11 border-2 border-border bg-destructive font-bold text-white uppercase hover:bg-destructive/90">Rotate key</Button>
+				<Button type="button" onclick={(e) => confirmSubmit('Rotate key?', 'Every station and marshal phone stops uploading at once, until each one gets the new code. Only do this if the key has leaked.', 'Rotate key', e)} class="h-11 border-2 border-border bg-destructive font-bold text-white uppercase hover:bg-destructive/90">Rotate key</Button>
 				<p class="min-w-64 flex-1 text-muted-foreground">Makes a new key. Stations using the old key stop uploading until you paste the new code.</p>
 			</form>
 			{#if !data.publicUrl}<p class="text-muted-foreground">Admin pages open only on this laptop at <code>http://localhost:{data.port}</code>. Stations and phones use the address above.</p>{/if}

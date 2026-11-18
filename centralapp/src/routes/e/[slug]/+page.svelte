@@ -62,12 +62,15 @@
 		seen = new Set(keys);
 	}
 
+	let latest = 0; // two refreshes close together can answer out of order: only the newest one may land
 	async function refresh() {
 		void refreshStarts();
+		const mine = ++latest;
 		try {
 			const r = await fetch(`/e/${data.slug}/results?mode=${mode}`);
-			if (!r.ok) return;
+			if (!r.ok || mine !== latest) return;
 			const p: Payload = await r.json();
+			if (mine !== latest) return;
 			track(p);
 			res = p;
 			fetchedAt = Date.now();
@@ -80,10 +83,14 @@
 	type Starts = { size: number; serverMs: number; categories: StartCat[] };
 	let starts = $state<Starts | null>(data.starts);
 	let startsAt = $state(Date.now());
+	let latestStarts = 0;
 	async function refreshStarts() {
+		const mine = ++latestStarts;
 		try {
 			const r = await fetch(`/e/${data.slug}/starts`);
-			starts = r.ok ? await r.json() : null; // 404 = the organizer turned the Start menu off
+			const next = r.ok ? await r.json() : null; // 404 = the organizer turned the Start menu off
+			if (mine !== latestStarts) return;
+			starts = next;
 			startsAt = Date.now();
 			if (!starts && view === 'start') view = 'results';
 		} catch {
