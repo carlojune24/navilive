@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { Toaster } from '$lib/components/ui/sonner/index.js';
 	import Trophy from '@lucide/svelte/icons/trophy';
 	import RouteMap from '$lib/components/RouteMap.svelte';
@@ -9,6 +9,8 @@
 	import { fmt, type Cat, type Mode } from '$lib/results';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { deserialize } from '$app/forms';
+	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import type { StartCat, StartRunner } from '$lib/server/batches';
 
 	let { data } = $props();
@@ -17,7 +19,9 @@
 
 	let res = $state<Payload>(data.initial);
 	let mode = $state<Mode>(data.initial.mode);
-	let active = $state(data.initial.categories[0]?.id ?? -1);
+	// ?cat=<id>&batch=<id|none> keep the picked category and batch across a reload
+	const urlCat = Number(page.url.searchParams.get('cat'));
+	let active = $state(data.initial.categories.some((c) => c.id === urlCat) ? urlCat : (data.initial.categories[0]?.id ?? -1));
 	let auto = $state(data.kiosk);
 	let connected = $state(false);
 	let fetchedAt = $state(Date.now());
@@ -42,13 +46,16 @@
 	);
 
 	// Progress view: the shown category's runners, narrowed to one batch when picked
-	let batchSel = $state<'all' | 'none' | number>('all');
+	const urlBatch = page.url.searchParams.get('batch');
+	let batchSel = $state<'all' | 'none' | number>(urlBatch === 'none' ? 'none' : urlBatch && Number.isInteger(Number(urlBatch)) ? Number(urlBatch) : 'all');
 	const catBatches = $derived(res.batches.filter((b) => b.category_id === cat?.id));
 	const progRows = $derived.by(() => {
 		const rows = cat?.progress ?? [];
 		if (batchSel === 'all' || !catBatches.length) return rows;
 		return rows.filter((r) => (res.batchOf[r.bib] ?? null) === (batchSel === 'none' ? null : batchSel));
 	});
+	// with All batches picked, a Batch column says which batch each runner is in
+	const batchCol = $derived(batchSel === 'all' && catBatches.length ? (bib: string) => catBatches.find((b) => b.id === res.batchOf[bib])?.name ?? null : undefined);
 
 	function track(p: Payload) {
 		const keys = p.categories.flatMap((c) => c.rows.map((r) => `${c.id}:${r.bib}`));
@@ -63,9 +70,15 @@
 	}
 
 	let latest = 0; // two refreshes close together can answer out of order: only the newest one may land
+	const POLL_MS = 10_000; // fetch anyway every 10 s, in case a live update was missed
+	let poll: ReturnType<typeof setTimeout> | undefined;
+	let loading = $state(false);
+	let pollRun = $state(0); // restarts the countdown bar
 	async function refresh() {
 		void refreshStarts();
 		const mine = ++latest;
+		clearTimeout(poll);
+		loading = true;
 		try {
 			const r = await fetch(`/e/${data.slug}/results?mode=${mode}`);
 			if (!r.ok || mine !== latest) return;
@@ -76,8 +89,27 @@
 			fetchedAt = Date.now();
 		} catch {
 			/* connection state shows the problem */
+		} finally {
+			if (mine === latest) {
+				loading = false;
+				pollRun++;
+				poll = setTimeout(refresh, POLL_MS);
+			}
 		}
 	}
+
+	// the address follows what is shown, so a reload (or a restarted big screen) comes back to the same place
+	$effect(() => {
+		const [cat, v, b] = [active, view, batchSel]; // the only things this follows; reading the address here would loop
+		untrack(() => {
+			const u = new URL(location.href);
+			u.searchParams.set('cat', String(cat));
+			u.searchParams.set('view', v);
+			if (b === 'all') u.searchParams.delete('batch');
+			else u.searchParams.set('batch', String(b));
+			if (u.search !== location.search) void goto(u, { shallow: true, replace: true });
+		});
+	});
 
 	// ---- Start view: roll random runners of a category into the next batch, then start it (organizer only) ----
 	type Starts = { size: number; serverMs: number; categories: StartCat[] };
@@ -202,7 +234,8 @@
 		};
 		es.onerror = () => (connected = false);
 		es.onmessage = () => (clearTimeout(t), (t = setTimeout(refresh, 250)));
-		return () => (clearInterval(tick), clearTimeout(t), es.close());
+		poll = setTimeout(refresh, POLL_MS);
+		return () => (clearInterval(tick), clearTimeout(t), clearTimeout(poll), es.close());
 	});
 
 	// Categories the cycle visits: those with finishers (or all, when none have any yet).
@@ -257,7 +290,11 @@
 				<span class="inline-block size-4 border-2 border-border" style="background:{connected ? 'var(--start)' : 'var(--finish)'}"></span>
 				{connected ? 'Live' : 'Reconnecting…'}
 			</p>
-			<p class="text-lg text-muted-foreground">{agoText}</p>
+			<p class="text-lg text-muted-foreground">{loading ? 'Updating…' : agoText}</p>
+			<!-- fills up until the next update (every 10 s) -->
+			<div class="mt-1 ml-auto h-1.5 w-40 border border-border" role="progressbar" aria-label="Next update" aria-busy={loading}>
+				{#key pollRun}<div class="poll h-full bg-primary" class:loading style="animation-duration:{POLL_MS}ms"></div>{/key}
+			</div>
 		</div>
 	</header>
 
@@ -411,11 +448,11 @@
 				{#if data.routeCats.includes(cat.id)}
 					<!-- the route map sits beside the table; its pins count who has passed each checkpoint, live -->
 					<div class="grid xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-						{#key batchSel}<ProgressTable course={cat.course} rows={progRows} big={data.kiosk} />{/key}
+						{#key batchSel}<ProgressTable course={cat.course} rows={progRows} big={data.kiosk} batchOf={batchCol} />{/key}
 						<div class="relative h-[70vh] min-h-[520px] border-t-2 border-border xl:sticky xl:top-0 xl:order-first xl:h-[max(460px,calc(100vh-19.5rem))] xl:border-t-0 xl:border-r-2"><RouteMap slug={data.slug} category={cat.id} compact /></div>
 					</div>
 				{:else}
-					{#key batchSel}<ProgressTable course={cat.course} rows={progRows} big={data.kiosk} />{/key}
+					{#key batchSel}<ProgressTable course={cat.course} rows={progRows} big={data.kiosk} batchOf={batchCol} />{/key}
 				{/if}
 			{:else}
 			{#key cat.id}
@@ -532,6 +569,23 @@
 	.countdown {
 		transition: width 1s linear;
 	}
+	.poll {
+		width: 100%;
+		transform-origin: left;
+		animation: poll linear forwards;
+	}
+	.poll.loading {
+		animation: none;
+		opacity: 0.4;
+	}
+	@keyframes poll {
+		from {
+			transform: scaleX(0);
+		}
+		to {
+			transform: scaleX(1);
+		}
+	}
 	.fresh {
 		animation: flash 2.4s cubic-bezier(0.16, 1, 0.3, 1);
 	}
@@ -549,6 +603,9 @@
 		}
 		.countdown {
 			transition: none;
+		}
+		.poll {
+			animation: none;
 		}
 		.fresh {
 			animation: none;

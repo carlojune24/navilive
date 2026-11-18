@@ -47,7 +47,6 @@
 		if (!ovr) return;
 		const ms = ovr.at ? new Date(`${ovr.day}T${ovr.at.length === 5 ? ovr.at + ':00' : ovr.at}`).getTime() : NaN;
 		if (!Number.isFinite(ms)) return (ovrErr = 'Enter the finish time.');
-		if (!ovrFile) return (ovrErr = 'Attach the proof photo.');
 		ovrBusy = true;
 		ovrErr = '';
 		try {
@@ -56,7 +55,7 @@
 			fd.set('finish_ms', String(ms));
 			fd.set('reason', ovrReason);
 			fd.set('by', ovrBy);
-			fd.set('photo', await shrinkImage(ovrFile), 'proof.jpg');
+			if (ovrFile) fd.set('photo', await shrinkImage(ovrFile), 'proof.jpg');
 			const r = await fetch('?tab=results&/setFinishOverride', { method: 'POST', body: fd, headers: { 'x-sveltekit-action': 'true' } });
 			const res = deserialize(await r.text());
 			if (res.type !== 'success') return (ovrErr = (res.type === 'failure' && (res.data as { error?: string })?.error) || 'Could not save the override.');
@@ -69,7 +68,7 @@
 			ovrBusy = false;
 		}
 	}
-	const levelName = { hidden: 'Hidden', checkpoints: 'Results pending', released: 'Released' } as const;
+	const levelName = { checkpoints: 'Results pending', released: 'Released' } as const;
 	// The live-board buttons answer at once: the new level shows immediately and is saved in the background,
 	// then the real value from the server replaces it (or the change is rolled back with a message).
 	let relOpt = $state<Record<string, string | null>>({}); // `c<id>` / `b<id>` -> level, pending
@@ -169,6 +168,12 @@
 		if (progBatch === 'all' || !progBatches.length) return rows;
 		const batchOf = new Map(data.participants.map((p) => [p.bib, p.batch_id]));
 		return rows.filter((r) => (batchOf.get(r.bib) ?? null) === (progBatch === 'none' ? null : progBatch));
+	});
+	// with All batches picked, a Batch column says which batch each runner is in
+	const progBatchCol = $derived.by(() => {
+		if (progBatch !== 'all' || !progBatches.length) return undefined;
+		const name = new Map(data.participants.filter((p) => p.category_id === progShown?.id).map((p) => [p.bib, progBatches.find((b) => b.id === p.batch_id)?.name ?? null]));
+		return (bib: string) => name.get(bib) ?? null;
 	});
 	const progShown = $derived(data.progressData.find((c) => c.id === progCat) ?? data.progressData[0]);
 	const tab = $derived(sections.includes(page.url.searchParams.get('tab') ?? '') ? page.url.searchParams.get('tab')! : 'participants');
@@ -341,7 +346,7 @@
 {#snippet releaseButtons(scope: 'all' | 'category' | 'batch', id: number, current: string | null, follow = false, grid = false)}
 	<!-- grid: the batch cards on Progress, two buttons per row so they fit a narrow card -->
 	<div class={grid ? 'grid grid-cols-2 gap-1.5' : 'flex flex-wrap gap-2'}>
-		{#each ['hidden', 'checkpoints', 'released'] as lv}
+		{#each ['checkpoints', 'released'] as lv}
 			<button type="button" aria-pressed={current === lv} onclick={() => setRelease(scope, id, lv)} class="h-10 border-2 border-border px-3 font-bold uppercase {grid ? 'text-sm' : ''} {current === lv ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-accent'}">{levelName[lv as keyof typeof levelName]}</button>
 		{/each}
 		{#if follow}<button type="button" aria-pressed={current === null} onclick={() => setRelease(scope, id, 'inherit')} class="h-10 border-2 border-border px-3 font-bold uppercase {grid ? 'text-sm' : ''} {current === null ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-accent'}">Follow category</button>{/if}
@@ -375,13 +380,13 @@
 				<div class="space-y-3">
 					<Dialog.Header>
 						<Dialog.Title class="font-display text-4xl leading-[0.85] font-black uppercase">Override finish — {ovr.bib} {ovr.name}</Dialog.Title>
-						<Dialog.Description>Replaces this runner's finish time in the ranking. The original reads are kept. Needs a reason and a photo as proof.</Dialog.Description>
+						<Dialog.Description>Replaces this runner's finish time in the ranking. The original reads are kept. Needs a reason; a proof photo is optional.</Dialog.Description>
 					</Dialog.Header>
 					{#if ovrErr}<p class="font-bold text-destructive" role="alert">{ovrErr}</p>{/if}
 					<label class="block font-bold uppercase">Finish time (time of day)<input type="time" step="0.001" bind:value={ovr.at} class="mt-1 block h-12 w-full border-2 border-border bg-background px-3" /></label>
 					<label class="block font-bold uppercase">Reason<input bind:value={ovrReason} maxlength="300" placeholder="e.g. Read delayed; photo shows runner first" class="mt-1 block h-12 w-full border-2 border-border bg-background px-3 font-normal normal-case" /></label>
 					<label class="block font-bold uppercase">Your name<input bind:value={ovrBy} maxlength="80" class="mt-1 block h-12 w-full border-2 border-border bg-background px-3 font-normal normal-case" /></label>
-					<label class="block font-bold uppercase">Proof photo<input type="file" accept="image/*" onchange={(e) => (ovrFile = e.currentTarget.files?.[0] ?? null)} class="mt-1 block" /></label>
+					<label class="block font-bold uppercase">Proof photo <span class="font-normal normal-case text-muted-foreground">(optional)</span><input type="file" accept="image/*" onchange={(e) => (ovrFile = e.currentTarget.files?.[0] ?? null)} class="mt-1 block" /></label>
 					<div class="flex gap-2">
 						<Button class="h-11 font-bold uppercase" disabled={ovrBusy} onclick={saveOverride}>{ovrBusy ? 'Saving…' : 'Save override'}</Button>
 						<Button variant="outline" class="h-11 border-2 font-bold uppercase" onclick={() => (ovr = null)}>Cancel</Button>
@@ -897,7 +902,7 @@
 		<div class="space-y-5">
 			<div class="space-y-2 border-2 border-border bg-card p-4">
 				<h2 class="flex flex-wrap items-baseline gap-3 font-display text-2xl font-black uppercase">What the public live board shows {#if relMsg}<span class="text-base font-bold tracking-wide {relMsg.startsWith('Not') ? 'text-destructive' : 'text-muted-foreground'}" role="status">{relMsg}</span>{/if}</h2>
-				<p class="text-muted-foreground">Finishes stay off the live board until you release them. <b>Results pending</b> shows live progress and marks finishers as FINISHED with their start time, but holds back finish times, ranks and awards. <b>Hidden</b> removes the group completely.</p>
+				<p class="text-muted-foreground">Finishes stay off the live board until you release them. <b>Results pending</b> shows live progress and marks finishers as FINISHED with their start time, but holds back finish times, ranks and awards.</p>
 				<div class="flex flex-wrap items-center gap-3 border-b-2 border-border/15 pb-3"><span class="w-40 font-bold uppercase">All categories</span>{@render releaseButtons('all', 0, allLevel)}</div>
 				{#if progShown}
 					{#each data.categories.filter((c) => c.id === progShown.id) as cat (cat.id)}
@@ -950,7 +955,7 @@
 						<span>{c.name}</span>
 						<span class="text-base font-normal tracking-wide">{progRows.filter((r) => r.state === 'finished').length} finished · {progRows.filter((r) => r.start !== null).length} started · {progRows.length} registered{flagged ? ` · ${flagged} to check` : ''}</span>
 					</h3>
-					{#key `${c.id}-${progBatch}`}<ProgressTable course={c.course} rows={progRows} flags pageSize={20} onOverride={(r) => openOverride({ bib: r.bib, name: r.name, finishAt: null })} overridden={(bib) => !!overrideOf(bib)} release={runnerRelease} />{/key}
+					{#key `${c.id}-${progBatch}`}<ProgressTable course={c.course} rows={progRows} flags pageSize={20} onOverride={(r) => openOverride({ bib: r.bib, name: r.name, finishAt: null })} overridden={(bib) => !!overrideOf(bib)} release={runnerRelease} batchOf={progBatchCol} />{/key}
 				</section>
 				<!-- per checkpoint: who has passed and who has not yet (the start counts a gun start too, like the table) -->
 				<section class="border-2 border-border bg-card">
@@ -1026,7 +1031,7 @@
 											{#if r.overridden}
 												{@const o = overrideOf(r.bib)}
 												<span class="mr-2 border-2 border-destructive px-1 text-sm font-bold text-destructive uppercase" title={o ? `${o.reason} — ${o.by}` : ''}>Override</span>
-												<a class="mr-2 underline" href="/admin/{data.event.slug}/override-photo/{r.bib}" target="_blank" rel="noopener">Photo</a>
+												{#if o?.has_photo}<a class="mr-2 underline" href="/admin/{data.event.slug}/override-photo/{r.bib}" target="_blank" rel="noopener">Photo</a>{/if}
 												<form method="POST" action="?tab={tab}&/clearFinishOverride" use:enhance class="inline"><input type="hidden" name="bib" value={r.bib} /><button class="underline">Remove</button></form>
 											{:else}
 												<button type="button" class="underline" onclick={() => openOverride(r)}>Override</button>

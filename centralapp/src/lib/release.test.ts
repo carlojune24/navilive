@@ -33,7 +33,6 @@ describe('applyRelease', () => {
 		expect(order({})).toEqual(['A2', 'A10', 'B', 'Z9', 'C']);
 		expect(order({ B: 'released' })).toEqual(['B', 'A2', 'A10', 'Z9', 'C']);
 	});
-	it('hidden: the runner is gone from progress', () => expect(run({ A: 'hidden' }).progress.map((r) => r.bib)).toEqual(['B', 'C']));
 	it('a released batch shows its finish times but no places while others are held; awards stay held back', () => {
 		const c = run({ B: 'released' });
 		expect(c.rows.map((r) => [r.bib, r.rank, r.time])).toEqual([['B', null, undefined]]);

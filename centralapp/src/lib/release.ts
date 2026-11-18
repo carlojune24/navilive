@@ -1,7 +1,7 @@
 import type { Cat } from './results';
 
-export type Level = 'hidden' | 'checkpoints' | 'released';
-export const LEVELS: Level[] = ['hidden', 'checkpoints', 'released'];
+export type Level = 'checkpoints' | 'released';
+export const LEVELS: Level[] = ['checkpoints', 'released'];
 
 /**
  * What the public board may see, per runner. A released batch shows its finish times; places only appear once every
@@ -19,7 +19,6 @@ export function applyRelease(cats: Cat[], levelOf: (bib: string) => Level): Cat[
 			progress: unorderHeld(c.progress, levelOf).flatMap((r) => {
 				const lv = levelOf(r.bib);
 				if (lv === 'released') return [allReleased ? r : { ...r, rank: null }];
-				if (lv === 'hidden') return [];
 				// results pending ('checkpoints'): the finish read goes. A finisher shows their start and "Finished", but no time or rank,
 				// so nobody can pick the winner before the results are settled.
 				const at = r.at.map((t, i) => (c.course[i]?.kind === 'finish' ? null : t));

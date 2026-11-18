@@ -88,8 +88,8 @@ export const load = async ({ params, url }) => {
 	for (const r of await q<{ id: number; gpx: unknown; gpx_name: string | null }>('select id, gpx, gpx_name from categories where event_id=$1', [e.id])) routes[r.id] = { track: isTrack(r.gpx) ? r.gpx : null, name: r.gpx_name ?? '' };
 	const stationKm: Record<number, Record<number, number>> = {};
 	for (const r of await q<{ category_id: number; station_id: number; km: number }>('select k.category_id, k.station_id, k.km::float8 as km from category_station_km k join categories c on c.id=k.category_id where c.event_id=$1', [e.id])) (stationKm[r.category_id] ??= {})[r.station_id] = r.km;
-	const overrides = await q<{ bib: string; finish_ms: number; reason: string; by: string; created_ms: number }>(
-		`select p.bib, o.finish_ms::float8 as finish_ms, o.reason, o.by, (extract(epoch from o.created_at)*1000)::float8 as created_ms
+	const overrides = await q<{ bib: string; finish_ms: number; reason: string; by: string; created_ms: number; has_photo: boolean }>(
+		`select p.bib, o.finish_ms::float8 as finish_ms, o.reason, o.by, (extract(epoch from o.created_at)*1000)::float8 as created_ms, o.data is not null as has_photo
 		 from finish_overrides o join participants p on p.id=o.participant_id where p.event_id=$1`,
 		[e.id]
 	);
@@ -650,17 +650,21 @@ export const actions = {
 		if (!Number.isFinite(at) || at <= 0) return fail(400, { error: 'Finish time is not valid.' });
 		if (!reason) return fail(400, { error: 'Give a reason for the override.' });
 		if (!by) return fail(400, { error: 'Enter your name.' });
-		if (!(file instanceof File) || !file.size) return fail(400, { error: 'Attach the proof photo.' });
-		if (file.size > MAX_PHOTO_BYTES) return fail(400, { error: 'That photo is too large.' });
-		const bytes = new Uint8Array(await file.arrayBuffer());
-		const mime = sniffImage(bytes);
-		if (!mime) return fail(400, { error: 'Use a JPG, PNG or WebP photo.' });
+		// the proof photo is optional; when one is sent it is checked like any upload
+		let photo: { mime: string; bytes: Uint8Array } | null = null;
+		if (file instanceof File && file.size) {
+			if (file.size > MAX_PHOTO_BYTES) return fail(400, { error: 'That photo is too large.' });
+			const bytes = new Uint8Array(await file.arrayBuffer());
+			const mime = sniffImage(bytes);
+			if (!mime) return fail(400, { error: 'Use a JPG, PNG or WebP photo.' });
+			photo = { mime, bytes };
+		}
 		const [p] = await q<{ id: number }>('select id from participants where event_id=$1 and bib=$2', [e.id, bib]);
 		if (!p) return fail(404, { error: `No participant with bib ${bib}` });
 		await q(
 			`insert into finish_overrides(participant_id, finish_ms, reason, by, mime, data) values($1,$2,$3,$4,$5,$6)
 			 on conflict(participant_id) do update set finish_ms=excluded.finish_ms, reason=excluded.reason, by=excluded.by, mime=excluded.mime, data=excluded.data, created_at=now()`,
-			[p.id, Math.round(at), reason, by, mime, Buffer.from(bytes)]
+			[p.id, Math.round(at), reason, by, photo?.mime ?? null, photo ? Buffer.from(photo.bytes) : null]
 		);
 		await q("select pg_notify('reads', $1)", [String(e.id)]); // open boards re-rank
 		return { overrideSaved: bib };

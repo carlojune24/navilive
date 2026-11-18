@@ -3,8 +3,8 @@
 	import type { Snippet } from 'svelte';
 
 	// Who has reached which station. `flags` (admin) also shows runners who skipped a station, so a missed read can be fixed.
-	type Props = { course: CourseStation[]; rows: ProgressRow[]; flags?: boolean; big?: boolean; pageSize?: number; onOverride?: (r: ProgressRow) => void; overridden?: (bib: string) => boolean; release?: Snippet<[ProgressRow]> };
-	let { course, rows, flags = false, big = false, pageSize = 0, onOverride, overridden, release }: Props = $props(); // pageSize 0 = show every row
+	type Props = { course: CourseStation[]; rows: ProgressRow[]; flags?: boolean; big?: boolean; pageSize?: number; onOverride?: (r: ProgressRow) => void; overridden?: (bib: string) => boolean; release?: Snippet<[ProgressRow]>; batchOf?: (bib: string) => string | null };
+	let { course, rows, flags = false, big = false, pageSize = 0, onOverride, overridden, release, batchOf }: Props = $props(); // pageSize 0 = show every row
 
 	let page = $state(0);
 	const pages = $derived(pageSize ? Math.max(1, Math.ceil(rows.length / pageSize)) : 1);
@@ -36,6 +36,7 @@
 			<tr class="bg-primary text-primary-foreground">
 				<th class="px-3 py-2 font-bold tracking-wide uppercase {head}">Rank</th>
 				<th class="px-3 py-2 font-bold tracking-wide uppercase {head}">Bib</th>
+				{#if batchOf}<th class="px-3 py-2 font-bold tracking-wide uppercase {head}">Batch</th>{/if}
 				<th class="px-3 py-2 font-bold tracking-wide uppercase {head}">Name</th>
 				<th class="px-3 py-2 font-bold tracking-wide uppercase {head}">Status</th>
 				{#each course as s, i (s.id)}
@@ -55,6 +56,7 @@
 				<tr class="border-b-2 border-border/15 {r.state === 'not-started' ? 'text-muted-foreground' : ''}">
 					<td class="font-display px-3 py-1 text-3xl leading-[0.9] font-black {big ? 'md:text-5xl' : ''}">{r.state === 'finished' && r.rank ? r.rank : '—'}</td>
 					<td class="font-display px-3 py-1 text-3xl leading-[0.9] font-black {big ? 'md:text-5xl' : ''}">{r.bib}</td>
+					{#if batchOf}<td class="font-display px-3 py-1 text-2xl leading-[0.9] font-black whitespace-nowrap {big ? 'md:text-4xl' : ''}">{batchOf(r.bib) ?? '—'}</td>{/if}
 					<td class="px-3 py-1 font-bold uppercase {text}">{r.name || '—'}</td>
 					<td class="px-3 py-1 whitespace-nowrap {text}">
 						{#if held(r)}<b>Verifying</b>{:else if r.state === 'finished'}<b>Finished</b>{:else if r.state === 'on-course'}{r.last ? `At ${r.last}` : 'Started'}{:else}{status[r.state]}{/if}
@@ -78,7 +80,7 @@
 					{#if onOverride}<td class="px-3 py-1 {text}"><button type="button" class="underline" onclick={() => onOverride(r)}>{overridden?.(r.bib) ? 'Override ✓' : 'Override'}</button></td>{/if}
 				</tr>
 			{:else}
-				<tr><td colspan={course.length + 8} class="p-6 text-muted-foreground">No runners in this category yet.</td></tr>
+				<tr><td colspan={course.length + 9} class="p-6 text-muted-foreground">No runners in this category yet.</td></tr>
 			{/each}
 		</tbody>
 	</table>

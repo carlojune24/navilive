@@ -6,7 +6,7 @@ export const GET = async ({ params }) => {
 	const rows = await q<{ mime: string; data: Buffer }>(
 		`select o.mime, o.data from finish_overrides o
 		 join participants p on p.id = o.participant_id join events e on e.id = p.event_id
-		 where e.slug = $1 and p.bib = $2`,
+		 where e.slug = $1 and p.bib = $2 and o.data is not null`,
 		[params.slug, params.bib]
 	);
 	if (!rows[0]) error(404, 'No photo');
