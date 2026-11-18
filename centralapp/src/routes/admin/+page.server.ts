@@ -63,7 +63,7 @@ export const actions = {
 		);
 		redirect(303, `/admin/${s.slug}`);
 	},
-	// Copies the setup of an event (settings, stations, categories, courses, participants, teams, finish wall backdrops) under a new name.
+	// Copies the setup of an event (settings, stations, categories, courses, participants, teams, finish wall backdrops, sponsors) under a new name.
 	// Reads, start clocks, batches, release levels, photos and the API key are never copied: the new event starts clean.
 	duplicate: async ({ request }) => {
 		const f = await request.formData();
@@ -114,6 +114,7 @@ export const actions = {
 				 where m.event_id=$1`,
 				[src, to]
 			);
+			await c.query('insert into event_sponsors(event_id, name, url, mime, data, ord) select $2, name, url, mime, data, ord from event_sponsors where event_id=$1', [src, to]);
 			// finish wall: each category's backdrop with where its time and name sit
 			await c.query(
 				`insert into category_backdrops(category_id, mime, data, x, y, size, color, name_x, name_y, name_size, name_color)

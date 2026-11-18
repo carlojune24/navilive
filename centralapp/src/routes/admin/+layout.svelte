@@ -21,6 +21,7 @@
 	import MapIcon from '@lucide/svelte/icons/map';
 	import KeyRound from '@lucide/svelte/icons/key-round';
 	import Printer from '@lucide/svelte/icons/printer';
+	import Handshake from '@lucide/svelte/icons/handshake';
 
 	let { children } = $props();
 	let now = $state(Date.now());
@@ -69,7 +70,8 @@
 	// the event pages publish `event` (and the event page also `stationData`) in their load data
 	const ev = $derived(page.data.event as { name: string; slug: string } | undefined);
 	const isStation = $derived(page.url.pathname.includes('/station/'));
-	const activeTab = $derived(isStation ? 'data' : (page.url.searchParams.get('tab') ?? 'participants'));
+	const isSponsors = $derived(page.url.pathname.endsWith('/sponsors'));
+	const activeTab = $derived(isStation ? 'data' : isSponsors ? 'sponsors' : (page.url.searchParams.get('tab') ?? 'participants'));
 
 	const eventItems = [
 		['participants', 'Participants', Users],
@@ -80,6 +82,7 @@
 		['progress', 'Progress', Route],
 		['results', 'Results', ListOrdered],
 		['awards', 'Awards', Trophy],
+		['sponsors', 'Sponsors', Handshake],
 		['reads', 'Reads', ListChecks],
 		['printables', 'Printables', Printer],
 		['data', 'Station data', Activity],
@@ -107,7 +110,7 @@
 {#snippet nav(compact: boolean)}
 	{#if ev}
 		{#each eventItems as [id, label, Icon]}
-			<a href="/admin/{ev.slug}?tab={id === 'printables' ? 'tally' : id}" class="{base} {isOn(id) ? on : off}" aria-current={isOn(id) ? 'page' : undefined}>
+			<a href={id === 'sponsors' ? `/admin/${ev.slug}/sponsors` : `/admin/${ev.slug}?tab=${id === 'printables' ? 'tally' : id}`} class="{base} {isOn(id) ? on : off}" aria-current={isOn(id) ? 'page' : undefined}>
 				<Icon class="size-5 shrink-0" />{label}
 			</a>
 		{/each}

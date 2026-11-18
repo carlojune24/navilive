@@ -15,8 +15,12 @@ export const load = async ({ params, url, cookies }) => {
 	const has = routeCats.length > 0;
 	const admin = await sessionOk(cookies.get(SESSION_COOKIE));
 	const starts = await loadStarts(params.slug, admin);
+	const sponsors = await q<{ id: number; name: string; url: string; v: number }>(
+		'select s.id, s.name, s.url, (extract(epoch from s.updated_at)*1000)::float8 as v from event_sponsors s join events e on e.id=s.event_id where e.slug=$1 order by s.ord, s.id',
+		[params.slug]
+	);
 	const view = v === 'awards' ? ('awards' as const) : v === 'progress' ? ('progress' as const) : v === 'map' && has ? ('map' as const) : v === 'start' && starts ? ('start' as const) : ('results' as const);
-	return { admin, hasRoute: has, routeCats, slug: params.slug, initial: r, starts, kiosk: url.searchParams.has('kiosk'), cycle, view };
+	return { admin, hasRoute: has, routeCats, slug: params.slug, initial: r, starts, sponsors, kiosk: url.searchParams.has('kiosk'), cycle, view };
 };
 
 /** Start view actions: organizer only, and only while the admin has the Start menu on. */

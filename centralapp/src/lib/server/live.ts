@@ -5,6 +5,7 @@ import { MATCH } from './stationdata';
 import { computeResults, type Mode } from '$lib/results';
 import { parseConfig, resolveOptions } from '$lib/awardcfg';
 import { applyRelease, type Level } from '$lib/release';
+import { recentFinishers } from '$lib/recent';
 
 /**
  * `includeHiddenAwards` is for the organizer (admin pages, exports). The public board gets no awards while the
@@ -37,6 +38,8 @@ export async function loadResults(slug: string, mode: Mode, opts: { includeHidde
 	const defaults = { places: ev.award_places, brackets: ev.age_brackets, exclusive: ev.award_exclusive };
 	const hidden = !cfg.reveal && !opts.includeHiddenAwards;
 	let categories = computeResults(cats, ps, stations, reads, mode, (id) => resolveOptions(defaults, cfg, id), (id) => courses.get(id), batches);
+	// taken before the release rules hide held finish reads; 30 so a batch filter on the board still has 5 to show
+	categories = categories.map((c) => ({ ...c, recent: recentFinishers(c.course, c.progress, 30) }));
 	// the public only sees what the organizer has released; the admin and exports see everything
 	if (!opts.includeHiddenAwards) {
 		const level = new Map(ps.map((p) => [p.bib as string, (p.release ?? 'checkpoints') as Level]));

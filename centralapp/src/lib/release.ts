@@ -4,21 +4,24 @@ export type Level = 'checkpoints' | 'released';
 export const LEVELS: Level[] = ['checkpoints', 'released'];
 
 /**
- * What the public board may see, per runner. A released batch shows its finish times; places only appear once every
- * runner in the category is released (a later, faster batch could still push them down), and so do the awards.
+ * What the public board may see, per runner. A released runner shows their finish time and a provisional place among the
+ * released runners (a later, faster batch can still push them down); awards only appear once every runner in the category
+ * is released.
  */
 export function applyRelease(cats: Cat[], levelOf: (bib: string) => Level): Cat[] {
 	return cats.map((c) => {
 		const allReleased = c.progress.every((r) => levelOf(r.bib) === 'released');
+		const released = c.rows.filter((r) => levelOf(r.bib) === 'released'); // already in ranking order
+		const place = new Map(released.map((r, i) => [r.bib, i + 1]));
 		return {
 			...c,
-			rows: c.rows.filter((r) => levelOf(r.bib) === 'released').map((r) => (allReleased ? r : { ...r, rank: null })),
+			rows: allReleased ? released : released.map((r) => ({ ...r, rank: place.get(r.bib)! })),
 			provisional: !allReleased,
 			awards: allReleased ? c.awards : [],
 			held: c.progress.filter((r) => r.state === 'finished' && levelOf(r.bib) === 'checkpoints').length,
 			progress: unorderHeld(c.progress, levelOf).flatMap((r) => {
 				const lv = levelOf(r.bib);
-				if (lv === 'released') return [allReleased ? r : { ...r, rank: null }];
+				if (lv === 'released') return [allReleased ? r : { ...r, rank: place.get(r.bib) ?? null }];
 				// results pending ('checkpoints'): the finish read goes. A finisher shows their start and "Finished", but no time or rank,
 				// so nobody can pick the winner before the results are settled.
 				const at = r.at.map((t, i) => (c.course[i]?.kind === 'finish' ? null : t));

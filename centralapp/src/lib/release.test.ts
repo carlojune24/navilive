@@ -33,12 +33,13 @@ describe('applyRelease', () => {
 		expect(order({})).toEqual(['A2', 'A10', 'B', 'Z9', 'C']);
 		expect(order({ B: 'released' })).toEqual(['B', 'A2', 'A10', 'Z9', 'C']);
 	});
-	it('a released batch shows its finish times but no places while others are held; awards stay held back', () => {
+	it('a released batch shows its finish times and a place among the released runners; awards stay held back', () => {
 		const c = run({ B: 'released' });
-		expect(c.rows.map((r) => [r.bib, r.rank, r.time])).toEqual([['B', null, undefined]]);
+		expect(c.rows.map((r) => [r.bib, r.rank])).toEqual([['B', 1]]); // 2nd overall, 1st of those released
 		expect(c.provisional).toBe(true);
-		expect(c.progress.find((r) => r.bib === 'B')).toMatchObject({ state: 'finished', time: 600, rank: null });
+		expect(c.progress.find((r) => r.bib === 'B')).toMatchObject({ state: 'finished', time: 600, rank: 1 });
 		expect(c.awards).toEqual([]);
+		expect(run({ A: 'released', B: 'released' }).rows.map((r) => r.rank)).toEqual([1, 2]);
 	});
 	it('everyone released: nothing is changed', () => {
 		const c = run({ A: 'released', B: 'released', C: 'released' });

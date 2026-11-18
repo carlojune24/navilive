@@ -3,7 +3,7 @@ export const MAX_PHOTO_BYTES = 450_000; // the browser shrinks photos far below 
 
 /** Browser only. Longest side `max` px (640 for photos: a 4 MB phone photo becomes about 60 KB), JPEG.
  *  Large sizes (backdrops) drop the JPEG quality until the file fits the server limit. */
-export async function shrinkImage(file: File, max = 640): Promise<Blob> {
+export async function shrinkImage(file: File, max = 640, type: 'image/jpeg' | 'image/png' = 'image/jpeg'): Promise<Blob> {
 	const bmp = await createImageBitmap(file); // also applies the camera's rotation
 	const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
 	const c = document.createElement('canvas');
@@ -12,7 +12,7 @@ export async function shrinkImage(file: File, max = 640): Promise<Blob> {
 	c.getContext('2d')!.drawImage(bmp, 0, 0, c.width, c.height);
 	let blob: Blob | null = null;
 	for (const quality of [0.85, 0.7, 0.55, 0.4]) {
-		blob = await new Promise<Blob | null>((ok) => c.toBlob(ok, 'image/jpeg', quality));
+		blob = await new Promise<Blob | null>((ok) => c.toBlob(ok, type, quality));
 		if (!blob) throw new Error('x');
 		if (blob.size <= MAX_PHOTO_BYTES) break;
 	}

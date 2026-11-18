@@ -57,6 +57,7 @@ export type Cat = {
 	badStart: number; // finish read or override is at or before the start time, so no time: the start was probably corrected wrongly
 	noStart: number; // crossed the finish but cannot be timed: no start read and no gun for their group
 	underway: boolean; // someone already has a counted checkpoint or finish read, so the clock can no longer be started
+	recent?: { bib: string; name: string }[]; // the latest across the finish line, newest first (live board's Latest finishers)
 };
 
 const DEFAULT_OPTIONS = (catId: number) => resolveOptions({ places: 3, brackets: DEFAULT_BRACKETS, exclusive: false }, DEFAULT_CONFIG, catId);

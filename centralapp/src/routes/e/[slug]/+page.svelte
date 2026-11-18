@@ -48,6 +48,13 @@
 	// Progress view: the shown category's runners, narrowed to one batch when picked
 	const urlBatch = page.url.searchParams.get('batch');
 	let batchSel = $state<'all' | 'none' | number>(urlBatch === 'none' ? 'none' : urlBatch && Number.isInteger(Number(urlBatch)) ? Number(urlBatch) : 'all');
+	// Progress table zoom (?zoom=0.8): 50% to 200% in 10% steps, so a big screen can fit more rows or make them bigger
+	const urlZoom = Number(page.url.searchParams.get('zoom'));
+	let zoom = $state(Number.isFinite(urlZoom) && urlZoom >= 0.5 && urlZoom <= 2 ? Math.round(urlZoom * 10) / 10 : 1);
+	const zoomBy = (d: number) => (zoom = Math.round(Math.min(2, Math.max(0.5, zoom + d)) * 10) / 10);
+	// Progress view, Latest finishers (?latest=1): the last 5 across the finish line, newest on top and highlighted
+	let showLatest = $state(page.url.searchParams.get('latest') === '1');
+	const LATEST_N = 5;
 	const catBatches = $derived(res.batches.filter((b) => b.category_id === cat?.id));
 	const progRows = $derived.by(() => {
 		const rows = cat?.progress ?? [];
@@ -55,6 +62,12 @@
 		return rows.filter((r) => (res.batchOf[r.bib] ?? null) === (batchSel === 'none' ? null : batchSel));
 	});
 	// with All batches picked, a Batch column says which batch each runner is in
+	const latestRows = $derived(
+		(cat?.recent ?? [])
+			.filter((r) => batchSel === 'all' || !catBatches.length || (res.batchOf[r.bib] ?? null) === (batchSel === 'none' ? null : batchSel))
+			.slice(0, LATEST_N)
+			.map((r) => ({ ...r, time: cat?.rows.find((x) => x.bib === r.bib)?.time ?? null })) // a time only once released
+	);
 	const batchCol = $derived(batchSel === 'all' && catBatches.length ? (bib: string) => catBatches.find((b) => b.id === res.batchOf[bib])?.name ?? null : undefined);
 
 	function track(p: Payload) {
@@ -88,13 +101,17 @@
 
 	// the address follows what is shown, so a reload (or a restarted big screen) comes back to the same place
 	$effect(() => {
-		const [cat, v, b] = [active, view, batchSel]; // the only things this follows; reading the address here would loop
+		const [cat, v, b, z, l] = [active, view, batchSel, zoom, showLatest]; // the only things this follows; reading the address here would loop
 		untrack(() => {
 			const u = new URL(location.href);
 			u.searchParams.set('cat', String(cat));
 			u.searchParams.set('view', v);
 			if (b === 'all') u.searchParams.delete('batch');
 			else u.searchParams.set('batch', String(b));
+			if (l) u.searchParams.set('latest', '1');
+			else u.searchParams.delete('latest');
+			if (z === 1) u.searchParams.delete('zoom');
+			else u.searchParams.set('zoom', String(z));
 			if (u.search !== location.search) void goto(u, { shallow: true, replace: true });
 		});
 	});
@@ -266,18 +283,19 @@
 <svelte:head><title>{res.event} · Live results</title></svelte:head>
 <Toaster position="top-center" />
 
-<div class="min-h-screen p-4 md:p-6">
+<div class="flex min-h-screen flex-col p-4 md:p-6">
 	<header class="flex flex-wrap items-end justify-between gap-4 border-b-2 border-border pb-4">
 		<div>
-			<p class="text-sm font-bold tracking-widest uppercase">Live results</p>
-			<h1 class="font-display text-5xl leading-[0.85] font-black uppercase md:text-8xl">{res.event}</h1>
+			<!-- the big screen is read from across the venue: everything up here is larger there -->
+			<p class="font-bold tracking-widest uppercase {data.kiosk ? 'text-xl md:text-3xl' : 'text-sm'}">Live results</p>
+			<h1 class="font-display leading-[0.85] font-black uppercase {data.kiosk ? 'text-7xl md:text-[10rem]' : 'text-5xl md:text-8xl'}">{res.event}</h1>
 		</div>
 		<div class="text-right">
-			<p class="flex items-center justify-end gap-2 text-xl font-bold uppercase" role="status">
-				<span class="inline-block size-4 border-2 border-border" style="background:{connected ? 'var(--start)' : 'var(--finish)'}"></span>
+			<p class="flex items-center justify-end gap-2 font-bold uppercase {data.kiosk ? 'text-3xl md:text-4xl' : 'text-xl'}" role="status">
+				<span class="inline-block border-2 border-border {data.kiosk ? 'size-7' : 'size-4'}" style="background:{connected ? 'var(--start)' : 'var(--finish)'}"></span>
 				{connected ? 'Live' : 'Reconnecting…'}
 			</p>
-			<p class="text-lg text-muted-foreground">{agoText}</p>
+			<p class="text-muted-foreground {data.kiosk ? 'text-2xl md:text-3xl' : 'text-lg'}">{agoText}</p>
 		</div>
 	</header>
 
@@ -288,7 +306,7 @@
 					role="tab"
 					aria-selected={c.id === cat?.id}
 					onclick={() => pick(c.id)}
-					class="h-12 border-2 border-border px-4 text-lg font-bold uppercase {c.id === cat?.id ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-accent'}"
+					class="border-2 border-border font-bold uppercase {data.kiosk ? 'h-16 px-6 text-3xl md:h-20 md:text-4xl' : 'h-12 px-4 text-lg'} {c.id === cat?.id ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-accent'}"
 				>
 					{c.name} <span class="opacity-70">{c.rows.length}</span>
 				</button>
@@ -319,10 +337,10 @@
 					</select>
 				</label>
 				<a href="/e/{data.slug}/wall" class="flex h-12 items-center border-2 border-border bg-card px-4 font-bold uppercase hover:bg-accent">Finish wall</a>
-				<a href="?kiosk&mode={mode}&cycle={cycleSec}&view={view}" class="flex h-12 items-center border-2 border-border bg-card px-4 font-bold uppercase hover:bg-accent">Big screen</a>
+				<a href="?kiosk&mode={mode}&cycle={cycleSec}&view={view}&cat={active}{zoom === 1 ? '' : `&zoom=${zoom}`}{showLatest ? '&latest=1' : ''}" class="flex h-12 items-center border-2 border-border bg-card px-4 font-bold uppercase hover:bg-accent">Big screen</a>
 			</div>
 		{:else}
-			<p class="ml-auto font-bold uppercase">{view === 'awards' ? 'Awards' : view === 'progress' ? 'Progress' : view === 'map' ? 'Map' : view === 'start' ? 'Start' : 'Results'}{auto && nextName ? ` · next: ${nextName} in ${remaining}s` : ''}</p>
+			<p class="ml-auto text-2xl font-bold uppercase md:text-3xl">{view === 'awards' ? 'Awards' : view === 'progress' ? 'Progress' : view === 'map' ? 'Map' : view === 'start' ? 'Start' : 'Results'}{auto && nextName ? ` · next: ${nextName} in ${remaining}s` : ''}</p>
 		{/if}
 	</div>
 
@@ -385,7 +403,7 @@
 			<p class="border-b-2 border-border/15 bg-card px-4 py-2 text-lg">
 				<span class="font-bold tracking-wide uppercase">Ranked by:</span>
 				{cat.rankBy === 'finish' ? 'first across the finish line (clock time)' : cat.rankBy === 'chip' || mode === 'own' ? "shortest time from each runner's own start read" : 'shortest time from the category or batch start'}
-				{#if cat.provisional && cat.rows.length}<span class="block font-bold">Finish times shown batch by batch. Places are final once every batch is released.</span>{/if}
+				{#if cat.provisional && cat.rows.length}<span class="font-bold"> · Finish times shown batch by batch. Places can still change until every batch is released.</span>{/if}
 			</p>
 			{#if cat.noStart}
 				<p class="border-b-2 border-border/15 bg-card px-4 py-2 text-lg font-bold text-destructive" role="alert">
@@ -421,21 +439,47 @@
 					{/each}
 				</div>
 			{:else if view === 'progress'}
-				{#if catBatches.length && !data.kiosk}
-					<div class="flex flex-wrap gap-2 border-b-2 border-border/15 px-4 py-3" role="tablist" aria-label="Batch">
-						{#each [['all', 'All batches'], ...catBatches.map((b) => [b.id, b.name]), ['none', 'No batch']] as [id, label]}
-							<button type="button" role="tab" aria-selected={id === batchSel} onclick={() => (batchSel = id as typeof batchSel)} class="h-11 border-2 border-border px-4 text-lg font-bold uppercase {id === batchSel ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-accent'}">{label}</button>
-						{/each}
+				{#if !data.kiosk}
+					<div class="flex flex-wrap items-center gap-2 border-b-2 border-border/15 px-4 py-3">
+						{#if catBatches.length}
+							<div class="flex flex-wrap gap-2" role="tablist" aria-label="Batch">
+								{#each [['all', 'All batches'], ...catBatches.map((b) => [b.id, b.name]), ['none', 'No batch']] as [id, label]}
+									<button type="button" role="tab" aria-selected={id === batchSel} onclick={() => (batchSel = id as typeof batchSel)} class="h-11 border-2 border-border px-4 text-lg font-bold uppercase {id === batchSel ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-accent'}">{label}</button>
+								{/each}
+							</div>
+						{/if}
+						<button type="button" aria-pressed={showLatest} onclick={() => (showLatest = !showLatest)} class="ml-auto h-11 border-2 border-border px-4 text-lg font-bold uppercase {showLatest ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-accent'}">Latest finishers {showLatest ? 'on' : 'off'}</button>
+						<div class="flex items-center" role="group" aria-label="Table zoom">
+							<button type="button" onclick={() => zoomBy(-0.1)} disabled={zoom <= 0.5} aria-label="Zoom table out" class="h-11 w-12 border-2 border-border bg-card text-2xl font-bold hover:bg-accent disabled:opacity-40">−</button>
+							<button type="button" onclick={() => (zoom = 1)} title="Back to 100%" class="h-11 min-w-20 border-y-2 border-border bg-card px-2 font-bold tabular-nums hover:bg-accent" aria-live="polite">{Math.round(zoom * 100)}%</button>
+							<button type="button" onclick={() => zoomBy(0.1)} disabled={zoom >= 2} aria-label="Zoom table in" class="h-11 w-12 border-2 border-border bg-card text-2xl font-bold hover:bg-accent disabled:opacity-40">+</button>
+						</div>
 					</div>
 				{/if}
-				{#if data.routeCats.includes(cat.id)}
+				{#if showLatest}
+					<!-- the last 5 across the finish line; a 6th pushes the oldest out. Newest on top, highlighted -->
+					<ol class="min-w-0" style="zoom:{zoom}" aria-live="polite" aria-label="Latest finishers, newest first">
+						{#each latestRows as r, i (r.bib)}
+							<li animate:flip={slide} in:fly|local={enter} class="grid items-center gap-4 border-b-2 border-border/15 px-4 last:border-b-0 {data.kiosk ? 'grid-cols-[10rem_1fr_auto] py-4 md:grid-cols-[14rem_1fr_auto]' : 'grid-cols-[6rem_1fr_auto] py-3 md:grid-cols-[9rem_1fr_auto]'} {i === 0 ? 'latest bg-primary text-primary-foreground' : ''}">
+								<span class="font-display leading-[0.85] font-black {data.kiosk ? 'text-6xl md:text-9xl' : 'text-5xl md:text-7xl'}">{r.bib}</span>
+								<span class="min-w-0">
+									{#if i === 0}<span class="mb-1 inline-block border-2 border-current px-2 text-sm font-bold tracking-widest uppercase {data.kiosk ? 'md:text-xl' : ''}">Just finished</span>{/if}
+									<span class="block truncate font-bold uppercase {data.kiosk ? 'text-3xl md:text-6xl' : 'text-2xl md:text-4xl'}">{r.name || 'Bib ' + r.bib}</span>
+								</span>
+								<span class="font-display leading-[0.85] font-black tabular-nums {data.kiosk ? 'text-5xl md:text-8xl' : 'text-3xl md:text-6xl'}">{r.time !== null ? fmt(r.time) : 'Finished'}</span>
+							</li>
+						{:else}
+							<li class="p-10 text-2xl text-muted-foreground">Nobody has crossed the finish line yet in {cat.name}.</li>
+						{/each}
+					</ol>
+				{:else if data.routeCats.includes(cat.id)}
 					<!-- the route map sits beside the table; its pins count who has passed each checkpoint, live -->
 					<div class="grid xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-						{#key batchSel}<ProgressTable course={cat.course} rows={progRows} big={data.kiosk} batchOf={batchCol} />{/key}
+						<div class="min-w-0" style="zoom:{zoom}">{#key batchSel}<ProgressTable course={cat.course} rows={progRows} big={data.kiosk} batchOf={batchCol} />{/key}</div>
 						<div class="relative h-[70vh] min-h-[520px] border-t-2 border-border xl:sticky xl:top-0 xl:order-first xl:h-[max(460px,calc(100vh-19.5rem))] xl:border-t-0 xl:border-r-2"><RouteMap slug={data.slug} category={cat.id} compact /></div>
 					</div>
 				{:else}
-					{#key batchSel}<ProgressTable course={cat.course} rows={progRows} big={data.kiosk} batchOf={batchCol} />{/key}
+					<div class="min-w-0" style="zoom:{zoom}">{#key batchSel}<ProgressTable course={cat.course} rows={progRows} big={data.kiosk} batchOf={batchCol} />{/key}</div>
 				{/if}
 			{:else}
 			{#key cat.id}
@@ -473,6 +517,24 @@
 			{/if}
 		{/if}
 	</main>
+
+	{#if data.sponsors.length}
+		<!-- sponsors, in the organizer's order (Admin > Sponsors); sits at the bottom of the screen when the board is short -->
+		<footer class="mt-auto pt-4">
+			<div class="border-2 border-border bg-white px-4 py-3 text-black">
+				<p class="text-center text-sm font-bold tracking-widest uppercase">Thank you to our sponsors</p>
+				<ul class="mt-2 flex flex-wrap items-center justify-center gap-x-10 gap-y-3">
+					{#each data.sponsors as s (s.id)}
+						{@const logo = `/e/${data.slug}/sponsor/${s.id}?v=${s.v}`}
+						<li>
+							{#if s.url}<a href={s.url} target="_blank" rel="noopener noreferrer" title={s.name}><img src={logo} alt={s.name} class="h-12 w-auto max-w-48 object-contain md:h-16" loading="lazy" /></a>
+							{:else}<img src={logo} alt={s.name} title={s.name} class="h-12 w-auto max-w-48 object-contain md:h-16" loading="lazy" />{/if}
+						</li>
+					{/each}
+				</ul>
+			</div>
+		</footer>
+	{/if}
 </div>
 
 <Dialog.Root open={roll !== null} onOpenChange={(o) => !o && closeRoll()}>
@@ -552,6 +614,17 @@
 	.countdown {
 		transition: width 1s linear;
 	}
+	.latest {
+		animation: arrive 1.2s cubic-bezier(0.16, 1, 0.3, 1);
+	}
+	@keyframes arrive {
+		from {
+			box-shadow: inset 0 0 0 6px var(--fresh);
+		}
+		to {
+			box-shadow: inset 0 0 0 0 transparent;
+		}
+	}
 	.fresh {
 		animation: flash 2.4s cubic-bezier(0.16, 1, 0.3, 1);
 	}
@@ -569,6 +642,9 @@
 		}
 		.countdown {
 			transition: none;
+		}
+		.latest {
+			animation: none;
 		}
 		.fresh {
 			animation: none;

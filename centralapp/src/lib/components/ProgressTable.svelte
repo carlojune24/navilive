@@ -1,10 +1,16 @@
 <script lang="ts">
 	import { fmt, type CourseStation, type ProgressRow } from '$lib/results';
-	import type { Snippet } from 'svelte';
+	import { onMount, type Snippet } from 'svelte';
+	import { flip } from 'svelte/animate';
 
 	// Who has reached which station. `flags` (admin) also shows runners who skipped a station, so a missed read can be fixed.
 	type Props = { course: CourseStation[]; rows: ProgressRow[]; flags?: boolean; big?: boolean; pageSize?: number; onOverride?: (r: ProgressRow) => void; overridden?: (bib: string) => boolean; release?: Snippet<[ProgressRow]>; batchOf?: (bib: string) => string | null };
 	let { course, rows, flags = false, big = false, pageSize = 0, onOverride, overridden, release, batchOf }: Props = $props(); // pageSize 0 = show every row
+
+	// when a new finish changes the places, rows slide to their new spot; people who ask for less motion get none
+	let reduceMotion = $state(false);
+	onMount(() => (reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches));
+	const slide = $derived({ duration: reduceMotion ? 0 : 600 });
 
 	let page = $state(0);
 	const pages = $derived(pageSize ? Math.max(1, Math.ceil(rows.length / pageSize)) : 1);
@@ -53,7 +59,7 @@
 		</thead>
 		<tbody>
 			{#each shown as r (r.bib)}
-				<tr class="border-b-2 border-border/15 {r.state === 'not-started' ? 'text-muted-foreground' : ''}">
+				<tr animate:flip={slide} class="border-b-2 border-border/15 {r.state === 'not-started' ? 'text-muted-foreground' : ''}">
 					<td class="font-display px-3 py-1 text-3xl leading-[0.9] font-black {big ? 'md:text-5xl' : ''}">{r.state === 'finished' && r.rank ? r.rank : '—'}</td>
 					<td class="font-display px-3 py-1 text-3xl leading-[0.9] font-black {big ? 'md:text-5xl' : ''}">{r.bib}</td>
 					{#if batchOf}<td class="font-display px-3 py-1 text-2xl leading-[0.9] font-black whitespace-nowrap {big ? 'md:text-4xl' : ''}">{batchOf(r.bib) ?? '—'}</td>{/if}
