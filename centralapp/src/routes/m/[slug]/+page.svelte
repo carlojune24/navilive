@@ -227,6 +227,15 @@
 				return;
 			}
 			const out = await res.json();
+			// Undos the server refused (the runner already has a later read): show the tag again and say why
+			for (const i of out.locked ?? []) {
+				const r = batch[i];
+				const p = board?.participants.find((x) => x.bib === r.bib);
+				const k = Object.keys(mine).find((k) => mine[k].bib === r.bib && mine[k].read_at_ms === r.read_at_ms && mine[k].tag === r.tag);
+				if (k) (mine = { ...mine, [k]: { ...mine[k], voided: false } }), save();
+				if (p) alertLocked(p);
+			}
+			if (out.locked?.length) void refresh();
 			// drop only what the server counted, exactly as the station app does
 			if (out.received === batch.length) {
 				queue = queue.slice(batch.length);
@@ -303,11 +312,16 @@
 						void refresh(); // whatever changed while we were disconnected
 						const rd = res.body.getReader();
 						const dec = new TextDecoder();
+						// the server sends a heartbeat every 15 s; 40 s of silence means a dead connection (sleep, lost signal) that never errors by itself
+						let dog: ReturnType<typeof setTimeout> | undefined;
+						const pet = () => (clearTimeout(dog), (dog = setTimeout(() => void rd.cancel().catch(() => {}), 40000)));
+						pet();
 						for (;;) {
-							const { done, value } = await rd.read();
+							const { done, value } = await rd.read().finally(pet);
 							if (done) break;
 							if (dec.decode(value, { stream: true }).includes('data: update')) void refresh();
 						}
+						clearTimeout(dog);
 					}
 				} catch {
 					/* dropped: retry below */
@@ -360,7 +374,13 @@
 		const up = () => {
 			online = true;
 			void flush();
+			void refresh();
 		};
+		// a phone that slept or a tab in the background misses pings: catch up as soon as it is looked at again
+		const wake = () => document.visibilityState === 'visible' && (void refresh(), void flush());
+		document.addEventListener('visibilitychange', wake);
+		addEventListener('focus', wake);
+		addEventListener('pageshow', wake);
 		const down = () => (online = false);
 		addEventListener('online', up);
 		addEventListener('offline', down);
@@ -371,6 +391,9 @@
 			clearInterval(tick);
 			removeEventListener('online', up);
 			removeEventListener('offline', down);
+			document.removeEventListener('visibilitychange', wake);
+			removeEventListener('focus', wake);
+			removeEventListener('pageshow', wake);
 		};
 	});
 

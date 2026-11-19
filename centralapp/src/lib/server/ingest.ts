@@ -1,7 +1,24 @@
 import { pool } from './db';
-import { stampFor } from '$lib/marshal';
+import type { PoolClient } from 'pg';
+import { seenBy, stampFor, undoLocked } from '$lib/marshal';
 
 export type InRead = { tag: string; read_at_ms: number; device_id?: unknown; station?: unknown; bib?: unknown; voided?: unknown; server_time?: unknown; src?: unknown };
+
+/**
+ * A marshal Undo of the tap stored under this device/tag/stamp is refused once the runner has moved on (the same
+ * undoLocked rule the marshal page shows): the page's own copy of the board can be stale, so the server decides.
+ */
+async function undoRefused(c: PoolClient, eventId: number, device: string, tag: string, clientMs: number) {
+	const [row] = (await c.query('select station_id, bib from reads where event_id=$1 and device_id=$2 and tag=$3 and client_ms=$4 and not voided', [eventId, device, tag, clientMs])).rows;
+	if (!row?.station_id || !row.bib) return false;
+	// one after another: a pg client runs one query at a time
+	const stations = await c.query('select id, kind from stations where event_id=$1 order by ord, id', [eventId]);
+	const course = await c.query('select cc.station_id from category_courses cc join participants p on p.category_id=cc.category_id where p.event_id=$1 and p.bib=$2 order by cc.ord', [eventId, row.bib]);
+	const tagged = await c.query('select bib, station_id, read_at_ms::float8 as at from reads where event_id=$1 and bib=$2 and not voided and station_id is not null', [eventId, row.bib]);
+	const ids = course.rows.length ? course.rows.map((r) => r.station_id as number) : stations.rows.map((s) => s.id as number);
+	const finishIds = stations.rows.filter((s) => s.kind === 'finish').map((s) => s.id as number);
+	return undoLocked(row.bib, seenBy(tagged.rows), row.station_id, ids, finishIds);
+}
 
 /** The one place reads enter the database: the live station upload and the manual file upload both use it, so duplicates are judged identically. */
 export async function insertReads(eventId: number, reads: InRead[]) {
@@ -10,11 +27,16 @@ export async function insertReads(eventId: number, reads: InRead[]) {
 		await c.query('begin');
 		let inserted = 0;
 		let updated = 0;
-		for (const r of reads) {
+		const locked: number[] = []; // indexes of marshal Undos refused because the runner has a later read
+		for (const [i, r] of reads.entries()) {
 			// a marshal tap: the server's clock decides the time, the phone's stamp only keys resends and Undo
 			const marshal = r.server_time === true;
 			const at = marshal ? stampFor(r.read_at_ms, Date.now()) : r.read_at_ms;
 			if (marshal) {
+				if (r.voided === true && (await undoRefused(c, eventId, String(r.device_id ?? ''), r.tag, r.read_at_ms))) {
+					locked.push(i);
+					continue;
+				}
 				// station matched by name (case-insensitive); unknown/blank -> null, still stored
 				const res = await c.query(
 					`insert into reads(event_id, station_id, tag, bib, read_at_ms, device_id, voided, station_name_sent, client_ms)
@@ -64,7 +86,7 @@ export async function insertReads(eventId: number, reads: InRead[]) {
 		}
 		await c.query('commit');
 		if (updated) await pool.query("select pg_notify('reads', $1)", [String(eventId)]); // the insert trigger covers new reads, not a void or restore
-		return { received: reads.length, inserted, updated, duplicates: reads.length - inserted - updated };
+		return { received: reads.length, inserted, updated, duplicates: reads.length - inserted - updated - locked.length, locked };
 	} catch (err) {
 		await c.query('rollback');
 		throw err;
