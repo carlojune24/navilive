@@ -46,7 +46,7 @@ export const load = async ({ params, url }) => {
 	const [categories, archived, batches, participants, stations, reads] = await Promise.all([
 		q('select c.id, c.name, c.gun_ms, c.rank_by, c.release, count(p.id)::int as n from categories c left join participants p on p.category_id=c.id where c.event_id=$1 and c.archived_at is null group by c.id order by c.name', [e.id]),
 		q('select id, name from categories where event_id=$1 and archived_at is not null order by name', [e.id]),
-		q('select b.id, b.category_id, b.name, b.gun_ms, b.release, count(p.id)::int as n from batches b join categories c on c.id=b.category_id left join participants p on p.batch_id=b.id where c.event_id=$1 group by b.id order by b.name', [e.id]),
+		q('select b.id, b.category_id, b.name, b.gun_ms, b.release, count(p.id)::int as n from batches b join categories c on c.id=b.category_id left join participants p on p.batch_id=b.id where c.event_id=$1 group by b.id order by b.category_id, (case when b.name ~ \'^[0-9]+$\' then b.name::int end), b.name', [e.id]),
 		q('select p.id, p.bib, p.name, p.tag, p.gender, p.age, p.category_id, p.batch_id, p.penalty_ms::float8 as penalty_ms, p.penalty_note, p.release, c.name as category, (select (extract(epoch from ph.updated_at)*1000)::bigint from participant_photos ph where ph.participant_id=p.id) as photo, (select coalesce(json_agg(json_build_object(\'name\', m.name, \'gender\', m.gender, \'age\', m.age, \'tag\', m.tag) order by m.leg, m.id), \'[]\') from team_members m where m.participant_id=p.id) as members from participants p left join categories c on c.id=p.category_id where p.event_id=$1 order by p.bib', [e.id]),
 		q('select id, name, kind, ord, services from stations where event_id=$1 order by ord, id', [e.id]),
 		q(
@@ -188,12 +188,15 @@ export const actions = {
 		const found = await q<{ bib: string }>('select bib from participants where event_id=$1 and category_id=$2 and bib = any($3)', [e.id, cat, bibs]);
 		const missing = bibs.filter((b) => !found.some((r) => r.bib === b));
 		if (missing.length) return fail(400, { error: `Nothing assigned. Not in this category: ${missing.join(', ')}` });
+		let moved = 0;
 		if (batch) {
-			const taken = await q<{ bib: string; batch: string }>('select p.bib, b.name as batch from participants p join batches b on b.id=p.batch_id where p.event_id=$1 and p.category_id=$2 and p.bib = any($3) and p.batch_id<>$4', [e.id, cat, bibs, batch]);
-			if (taken.length) return fail(400, { error: `Nothing assigned. Already in another batch (remove them there first): ${taken.map((t) => `${t.bib} in ${t.batch}`).join(', ')}` });
+			const taken = await q<{ bib: string; batch: string; gun_ms: string | null }>('select p.bib, b.name as batch, b.gun_ms from participants p join batches b on b.id=p.batch_id where p.event_id=$1 and p.category_id=$2 and p.bib = any($3) and p.batch_id<>$4', [e.id, cat, bibs, batch]);
+			if (taken.length && f.get('move') !== '1') return fail(400, { error: `Nothing assigned. Already in another batch (remove them there first): ${taken.map((t) => `${t.bib} in ${t.batch}`).join(', ')}` });
+			// force move: between any batches, started or not; the runner takes the new batch's start time
+			moved = taken.length;
 		}
 		await q('update participants set batch_id=$3 where event_id=$1 and category_id=$2 and bib = any($4)', [e.id, cat, batch, bibs]);
-		return { batchAssigned: found.length };
+		return { batchAssigned: found.length, batchMoved: moved };
 	},
 	removeFromBatch: async ({ request, params }) => {
 		const e = await ev(params.slug);

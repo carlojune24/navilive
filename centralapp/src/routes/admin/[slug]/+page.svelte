@@ -820,7 +820,12 @@
 				</section>
 
 				<section class="border-2 border-border bg-card">
-					<h2 class="bg-primary px-4 py-2 font-display text-3xl font-black text-primary-foreground uppercase">{stShown.name} batches</h2>
+					<div class="flex flex-wrap items-center justify-between gap-2 bg-primary px-4 py-2 text-primary-foreground">
+						<h2 class="font-display text-3xl font-black uppercase">{stShown.name} batches</h2>
+						{#if stBatches.length}
+							<Button type="button" variant="outline" size="sm" class="text-foreground" onclick={() => copy('batches', stBatches.map((b) => `BATCH ${b.name} ${stShown.name.slice(0, 3).toUpperCase()}\n${data.participants.filter((p) => p.batch_id === b.id).map((p) => p.bib).join('\n')}`).join('\n\n'))}>{copied === 'batches' ? 'Copied' : 'Copy batches as text'}</Button>
+						{/if}
+					</div>
 					{#if stBatches.length}
 						<div class="flex flex-wrap gap-2 border-b-2 border-border/15 p-3" role="tablist" aria-label="Batch">
 							{#each stBatches as b (b.id)}
@@ -830,7 +835,13 @@
 										<span class="font-display text-2xl leading-none font-black uppercase">Batch {b.name} <span class="text-lg">({b.n})</span></span>
 										<span class="text-xs font-bold uppercase">{b.gun_ms ? '● Started' : 'Queued'}</span>
 									</span>
-									<span class="text-base font-bold break-words">{data.participants.filter((p) => p.batch_id === b.id).map((p) => p.bib).join(', ') || 'No runners'}</span>
+									{#each data.participants.filter((p) => p.batch_id === b.id) as p (p.id)}
+											<span class="border-t border-current/20 pt-1 leading-tight first:border-t-0 first:pt-0">
+												<span class="flex items-baseline gap-2"><span class="text-base font-bold">{p.bib}</span><span class="min-w-0 text-sm font-bold break-words">{p.name}</span></span>
+											</span>
+										{:else}
+											<span class="text-base font-bold">No runners</span>
+										{/each}
 								</button>
 							{/each}
 						</div>
@@ -857,7 +868,7 @@
 								{#each members as p (p.id)}
 									<li class="flex items-center gap-2 border-2 border-border/30 py-1 pr-1 pl-2" title={stateOf.get(p.bib) ?? ''}>
 										<span class="font-bold">{p.bib}</span>
-										<span>{p.name}</span>
+										<span class="leading-tight">{p.name}{#if p.members?.length}<span class="block text-xs text-muted-foreground">{p.members.map((m: { name: string }) => m.name).join(' · ')}</span>{/if}</span>
 										{#if !b.gun_ms}
 											<button type="button" onclick={() => (rmTarget = { id: p.id, bib: p.bib, name: p.name, batch: b.name })} class="size-7 font-bold hover:bg-accent" aria-label="Remove {p.bib} from Batch {b.name}">&times;</button>
 										{/if}
@@ -866,6 +877,20 @@
 									<li class="text-muted-foreground">No runners in this batch.</li>
 								{/each}
 							</ul>
+							<!-- add or force-move runners by bib, also into a started batch (they take its start time); several bibs separated by commas -->
+								<form method="POST" action="?tab={tab}&/assignBatch" use:enhance={() => async ({ result, update }) => {
+									await update();
+									// say it where the click happened: the page-top error banner is off-screen here
+									if (result.type === 'failure') toast.error(String(result.data?.error ?? 'Nothing moved'));
+									else if (result.type === 'success') toast.success(result.data?.batchMoved ? `Moved to Batch ${b.name}` : `Added to Batch ${b.name}`);
+								}} class="flex flex-wrap items-center gap-2">
+									<input type="hidden" name="category" value={stShown.id} />
+									<input type="hidden" name="batch" value={b.id} />
+									<input type="hidden" name="move" value="1" />
+									<Input name="bibs" list="free-{b.id}" placeholder="Add or move runner: bib (D12, D40…)" class="h-10 w-72 border-2" aria-label="Add or move runners to Batch {b.name}" required />
+									<datalist id="free-{b.id}">{#each data.participants.filter((p) => p.category_id === stShown?.id && p.batch_id !== b.id) as p (p.id)}<option value={p.bib}>{p.name}{p.batch_id ? ` · now in Batch ${data.batches.find((x) => x.id === p.batch_id)?.name}` : ''}</option>{/each}</datalist>
+									<Button type="submit" variant="outline" size="sm" class={small}>Add / move to Batch {b.name}</Button>
+								</form>
 							{#if !b.gun_ms}
 								<form method="POST" action="?tab={tab}&/deleteBatch" use:enhance>
 									<input type="hidden" name="id" value={b.id} />
