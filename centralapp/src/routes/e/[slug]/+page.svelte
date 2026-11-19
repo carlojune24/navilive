@@ -295,19 +295,22 @@
 <Toaster position="top-center" />
 
 <!-- with sponsors, a laptop or TV screen is locked to the screen height: only the board scrolls, so the sponsor strip always shows -->
-<div class="flex min-h-screen flex-col p-4 md:p-6 {data.sponsors.length ? 'md:h-screen md:overflow-hidden' : ''}">
+<div class="chakra theme-{data.theme} flex min-h-screen flex-col p-4 md:p-6 {data.sponsors.length ? 'md:h-screen md:overflow-hidden' : ''}">
 	<header class="flex flex-wrap items-end justify-between gap-4 border-b-2 border-border pb-4">
 		<div>
 			<!-- the big screen is read from across the venue: everything up here is larger there -->
 			<p class="font-bold tracking-widest uppercase {data.kiosk ? 'text-xl md:text-3xl' : 'text-sm'}">Live results</p>
 			<h1 class="font-display leading-[0.85] font-black uppercase {data.kiosk ? 'text-7xl md:text-[10rem]' : 'text-5xl md:text-8xl'}">{res.event}</h1>
 		</div>
-		<div class="text-right">
+		<div class="flex items-end gap-4 text-right">
+		{#if data.logoV}<img src="/logo?v={data.logoV}" alt="" class="w-auto max-w-48 object-contain {data.kiosk ? 'h-20 md:h-32' : 'h-14 md:h-20'}" />{/if}
+		<div>
 			<p class="flex items-center justify-end gap-2 font-bold uppercase {data.kiosk ? 'text-3xl md:text-4xl' : 'text-xl'}" role="status">
 				<span class="inline-block border-2 border-border {data.kiosk ? 'size-7' : 'size-4'}" style="background:{connected ? 'var(--start)' : 'var(--finish)'}"></span>
 				{connected ? 'Live' : 'Reconnecting…'}
 			</p>
 			<p class="text-muted-foreground {data.kiosk ? 'text-2xl md:text-3xl' : 'text-lg'}">{agoText}</p>
+		</div>
 		</div>
 	</header>
 

@@ -19,7 +19,7 @@
 	import BookOpen from '@lucide/svelte/icons/book-open';
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import MapIcon from '@lucide/svelte/icons/map';
-	import KeyRound from '@lucide/svelte/icons/key-round';
+	import Settings from '@lucide/svelte/icons/settings';
 	import Printer from '@lucide/svelte/icons/printer';
 	import Handshake from '@lucide/svelte/icons/handshake';
 
@@ -119,7 +119,7 @@
 	{/if}
 	<a href="/admin" class="{base} {page.url.pathname === '/admin' ? on : off}"><CalendarDays class="size-5 shrink-0" />{ev ? 'All events' : 'Events'}</a>
 	<a href="/admin/guide" class="{base} {page.url.pathname === '/admin/guide' ? on : off}"><BookOpen class="size-5 shrink-0" />Setup guide</a>
-	<a href="/admin/account" class="{base} {page.url.pathname === '/admin/account' ? on : off}"><KeyRound class="size-5 shrink-0" />Password</a>
+	<a href="/admin/settings" class="{base} {page.url.pathname === '/admin/settings' ? on : off}"><Settings class="size-5 shrink-0" />Settings</a>
 {/snippet}
 
 <!-- desktop: fixed rail, like the station app -->

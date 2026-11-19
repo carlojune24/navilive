@@ -45,7 +45,7 @@
 	<section class="space-y-3 border-2 border-border bg-card p-5">
 		<h2 class="font-display text-3xl font-black uppercase">1. The app is hosted online</h2>
 		<p>Nothing to start or install on your laptop. Open <a class="font-bold underline" href={data.publicUrl}>{data.publicUrl}</a>/admin to manage the event, and share <b>{data.publicUrl}/e/&lt;event name&gt;</b> for the live board.</p>
-		<p>The admin password and the database live on the server. Change the password on the <a class="font-bold underline" href="/admin/account">Password</a> page in the left menu. Five wrong passwords block that address for 10 minutes.</p>
+		<p>The admin password and the database live on the server. Change the password on the <a class="font-bold underline" href="/admin/settings">Settings</a> page in the left menu. Five wrong passwords block that address for 10 minutes.</p>
 		<p>The server saves a database backup every night to <code>/home/ubuntu/backups</code> (the last 14 are kept). Use the Results and Awards pages (Print or Download CSV) for race-day copies of results.</p>
 	</section>
 	{:else}
@@ -66,7 +66,7 @@
 
 	<section class="space-y-3 border-2 border-border bg-card p-5">
 		<h2 class="font-display text-3xl font-black uppercase">2. Set a real admin password (once)</h2>
-		<p>Sign in once with the password from <code>centralapp\.env</code> (<code>ADMIN_PASSWORD</code>), then change it on the <a class="font-bold underline" href="/admin/account">Password</a> page in the left menu.</p>
+		<p>Sign in once with the password from <code>centralapp\.env</code> (<code>ADMIN_PASSWORD</code>), then change it on the <a class="font-bold underline" href="/admin/settings">Settings</a> page in the left menu.</p>
 	</section>
 
 	<section class="space-y-3 border-2 border-border bg-card p-5">

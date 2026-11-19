@@ -44,7 +44,7 @@
 				aria-valuetext={editing ? `${l.x}% across, ${l.y}% down` : undefined}
 				tabindex={editing ? 0 : undefined}
 				onkeydown={(e) => nudge(e, item)}
-				class="text absolute font-display leading-none font-black whitespace-nowrap {item === 'time' ? 'tabular-nums' : 'uppercase'} {editing ? 'cursor-move outline-2 outline-dashed' : ''}"
+				class="text chakra absolute font-display leading-none font-black whitespace-nowrap {item === 'time' ? 'tabular-nums' : 'uppercase'} {editing ? 'cursor-move outline-2 outline-dashed' : ''}"
 				style="left:{l.x}%; top:{l.y}%; font-size:{l.size}cqw; color:{l.color}"
 				onpointerdown={(e) => editing && ((dragging = item), e.currentTarget.setPointerCapture(e.pointerId))}
 				onpointermove={move}

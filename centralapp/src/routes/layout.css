@@ -77,3 +77,47 @@
 		font-variant-numeric: tabular-nums;
 	}
 }
+
+/* Chakra Petch (static/Chakra_Petch): the live board and the finish wall text */
+@font-face { font-family: 'Chakra Petch'; src: url('/Chakra_Petch/ChakraPetch-Regular.ttf') format('truetype'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'Chakra Petch'; src: url('/Chakra_Petch/ChakraPetch-SemiBold.ttf') format('truetype'); font-weight: 600; font-display: swap; }
+@font-face { font-family: 'Chakra Petch'; src: url('/Chakra_Petch/ChakraPetch-Bold.ttf') format('truetype'); font-weight: 700 900; font-display: swap; }
+@font-face { font-family: 'Chakra Petch'; src: url('/Chakra_Petch/ChakraPetch-BoldItalic.ttf') format('truetype'); font-weight: 700 900; font-style: italic; font-display: swap; }
+.chakra,
+.chakra .font-display,
+.chakra .font-sans {
+	font-family: 'Chakra Petch', 'Barlow Semi Condensed', 'Segoe UI', sans-serif;
+}
+
+/* Grit Rush live board theme (Admin > Settings). :has() so the page body and dialogs pick it up too. */
+:root:has(.theme-grit) {
+	--background: #101116;
+	--foreground: #e5e7eb;
+	--card: #1f1f29;
+	--card-foreground: #e5e7eb;
+	--popover: #1f1f29;
+	--popover-foreground: #e5e7eb;
+	--primary: #39ff14;
+	--primary-foreground: #101116;
+	--secondary: #21003d;
+	--secondary-foreground: #e5e7eb;
+	--muted: #1f1f29;
+	--muted-foreground: #9ca3af; /* the palette's #6B7280 is too faint on charcoal for small text */
+	--accent: #7925c7;
+	--accent-foreground: #ffffff;
+	--destructive: #ef4444;
+	--border: #7925c7;
+	--input: #7925c7;
+	--ring: #39ff14;
+	--start: #39ff14;
+	--checkpoint: #f59e0b;
+	--finish: #ef4444;
+	--fresh: #7925c7;
+}
+.theme-grit .font-display {
+	font-style: italic;
+}
+.theme-grit h1 {
+	color: #fff;
+	text-shadow: 0 0 18px rgb(57 255 20 / 0.35);
+}
