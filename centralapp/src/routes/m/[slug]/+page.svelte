@@ -6,6 +6,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { replaceState } from '$app/navigation';
+	import { defaultCourse } from '$lib/progress';
 	import { applyLocal, batchState, gunsOf, lastThrough, newlyStarted, runnerState, seenBy, taggedCount, undoLocked, type Batch, type Person, type Tag } from '$lib/marshal';
 	import { hms, phTime } from '$lib/time';
 	import { Button } from '$lib/components/ui/button/index.js';
@@ -47,7 +48,8 @@
 	let nameInput = $state('');
 
 	const station = $derived(board?.stations.find((s) => s.id === stationId) ?? null);
-	const course = $derived(board?.stations.map((s) => s.id) ?? []); // the default: every station, in order
+	// the default: every station, start first and finish last (a checkpoint added later has a higher ord than Finish)
+	const course = $derived(board ? defaultCourse(board.stations).map((s) => s.id) : []);
 	// a category with its own course skips stations, so its runners must not read as missed at one
 	const courseOf = $derived.by(() => {
 		const m = new Map<number, number[]>();

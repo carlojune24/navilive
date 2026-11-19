@@ -51,6 +51,14 @@ describe('parseTeamCsv (client relay/duo listing)', () => {
 ,Cris,Jay A. Gonzales,crossfit cranium,c@x.com,917,1990-01-01,male,RELAY
 ,Jayvee,Uy,Davao Durian Strong,t@x.com,917,1985-05-08,male,DUO
 ,Kevin,Tan,Davao Durian Strong,k@x.com,917,1986-05-08,male,DUO`;
+	it('lets the members of one team share a tag, but not two teams', () => {
+		const head = 'Bib,Team Name,First Name,Last Name,Role,Tag\n';
+		const shared = parseTeamCsv(head + 'D1,A,Kai,Ong,Captain,T1\nD1,A,Lea,Ong,Teammate,T1\n');
+		expect(shared.errors).toEqual([]);
+		expect(shared.teams[0].members.map((m) => m.tag)).toEqual(['T1', 'T1']);
+		const stolen = parseTeamCsv(head + 'D1,A,Kai,Ong,Captain,T1\nD2,B,Max,Li,Captain,t1\n');
+		expect(stolen.errors).toEqual(['Line 3: tag t1 is used by another team']);
+	});
 	it('detects the client file and groups runners by category + team name', () => {
 		expect(isTeamCsv(csv)).toBe(true);
 		expect(isTeamCsv('bib,name\n1,x')).toBe(false);
@@ -78,10 +86,10 @@ describe('parseTeamCsv (client relay/duo listing)', () => {
 			['D184', 'TEAM ULTRA', [['Ryan Bonete', 37], ['Aljon Mar Omandac', 37]]]
 		]);
 	});
-	it('rejects duplicate tags and duplicate runners', () => {
+	it('rejects duplicate runners; a team may wear one shared tag', () => {
 		const r = parseTeamCsv('Team Name,First Name,Tag\nA,x,T1\nA,y,t1\nA,x,');
-		expect(r.errors).toHaveLength(2);
-		expect(r.teams[0].members).toHaveLength(1);
+		expect(r.errors).toEqual(['Line 4: x is listed twice in A']);
+		expect(r.teams[0].members.map((m) => m.name)).toEqual(['x', 'y']);
 	});
 });
 

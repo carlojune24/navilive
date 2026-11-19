@@ -199,3 +199,18 @@ describe('penalty', () => {
 		expect(c.progress.find((r) => r.bib === '1')).toMatchObject({ time: 720000, penalty: 120000 });
 	});
 });
+
+describe('readGuns (clock nobody started)', () => {
+	const st = [{ id: 1, name: 'Start', kind: 'start', ord: 0 }, { id: 2, name: 'Finish', kind: 'finish', ord: 1 }];
+	const ps = [{ id: 1, bib: '1', name: 'A', category_id: 10 }, { id: 2, bib: '2', name: 'B', category_id: 10 }];
+	const reads = [{ pid: 1, station_id: 1, read_at_ms: 1000 }, { pid: 2, station_id: 1, read_at_ms: 5000 }, { pid: 2, station_id: 2, read_at_ms: 9000 }];
+	it('reports a category clock running from the earliest Start read', () => {
+		const [c] = computeResults([{ id: 10, name: '5K' }], ps, st, reads, 'gun');
+		expect(c.readGuns).toEqual({ c10: 1000 });
+		expect(c.rows[0].time).toBe(8000); // the stray early read sets everyone's clock: why the admin is warned
+	});
+	it('reports nothing once the organizer sets the start', () => {
+		const [c] = computeResults([{ id: 10, name: '5K', gun_ms: 4000 }], ps, st, reads, 'gun');
+		expect(c.readGuns).toEqual({});
+	});
+});

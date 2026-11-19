@@ -11,7 +11,27 @@ import { finishLine, recentFinishers } from '$lib/recent';
  * `includeHiddenAwards` is for the organizer (admin pages, exports). The public board gets no awards while the
  * organizer has them hidden, and `awardsHidden` tells it why.
  */
+// Every open board refetches on the same ping, so one computation serves all public requests that arrive together.
+// Any change notification (version) makes the next request compute afresh; 1.5 s is the most a result is ever reused.
+let version = 0;
+const shared = new Map<string, { version: number; at: number; p: ReturnType<typeof compute> }>();
 export async function loadResults(slug: string, mode: Mode, opts: { includeHiddenAwards?: boolean } = {}) {
+	if (opts.includeHiddenAwards) return compute(slug, mode, opts); // the organizer always gets a fresh one
+	start(); // version only moves while the LISTEN connection runs
+	const key = `${slug}|${mode}`;
+	const hit = shared.get(key);
+	if (hit && hit.version === version && Date.now() - hit.at < 1500) {
+		const r = await hit.p;
+		// clock fields are per request: a reused payload must not shift the board's race clock
+		return r && { ...r, serverMs: Date.now(), lastReadAgoMs: r.lastReadAgoMs === null ? null : r.lastReadAgoMs + (Date.now() - hit.at) };
+	}
+	const p = compute(slug, mode, opts);
+	shared.set(key, { version, at: Date.now(), p });
+	p.catch(() => shared.delete(key));
+	return p;
+}
+
+async function compute(slug: string, mode: Mode, opts: { includeHiddenAwards?: boolean }) {
 	const [ev] = await q<{ id: number; name: string; award_places: number; age_brackets: string; award_exclusive: boolean; award_config: unknown }>(
 		'select id, name, award_places, age_brackets, award_exclusive, award_config from events where slug=$1',
 		[slug]
@@ -72,8 +92,11 @@ function start() {
 	started = true;
 	const connect = async () => {
 		const c = new pg.Client({ connectionString: DATABASE_URL });
-		c.on('notification', (m) => (m.channel === 'hb' ? [...hbSubs] : [...subs, ...hbSubs]).forEach((f) => f(Number(m.payload))));
-		const retry = () => (c.removeAllListeners(), setTimeout(connect, 2000));
+		c.on('notification', (m) => {
+			if (m.channel === 'reads') version++;
+			(m.channel === 'hb' ? [...hbSubs] : [...subs, ...hbSubs]).forEach((f) => f(Number(m.payload)));
+		});
+		const retry = () => (version++, c.removeAllListeners(), setTimeout(connect, 2000)); // changes may be missed while reconnecting
 		c.on('error', retry);
 		c.on('end', retry);
 		try {

@@ -71,6 +71,8 @@ export const load = async ({ params, url }) => {
 	const extraFields = Object.fromEntries(extraRows.map((r) => [r.k, r.vals.slice(0, 100)]));
 	// what the organizer would see on the board, even while the awards are hidden from the public
 	const full = (await loadResults(e.slug, 'gun', { includeHiddenAwards: true }))?.categories ?? [];
+	// clocks running from a Start-mat read because nobody pressed Start: the Starts page shows them so a stray scan is noticed
+	const readGuns: Record<string, number> = Object.assign({}, ...full.map((c) => c.readGuns));
 	const awardPreview = full.map((c) => ({ id: c.id, name: c.name, finished: c.rows.length, total: c.total, awards: c.awards }));
 	// the ranked results and award podiums for the Results and Award list pages (print / export)
 	const resultsData = full.map((c) => ({
@@ -93,7 +95,7 @@ export const load = async ({ params, url }) => {
 		 from finish_overrides o join participants p on p.id=o.participant_id where p.event_id=$1`,
 		[e.id]
 	);
-	return { overrides, routes, stationKm, event: { id: e.id, name: e.name, slug: e.slug }, liveStart: { on: e.live_start, size: e.roll_size }, awards, extraFields, awardPreview, resultsData, progressData, courses, apiKey: e.api_key, port, addresses: lanAddresses(), publicUrl: PUBLIC_URL ?? null, stationData, laptops, categories, archived, batches, participants, stations, reads };
+	return { readGuns, overrides, routes, stationKm, event: { id: e.id, name: e.name, slug: e.slug }, liveStart: { on: e.live_start, size: e.roll_size }, awards, extraFields, awardPreview, resultsData, progressData, courses, apiKey: e.api_key, port, addresses: lanAddresses(), publicUrl: PUBLIC_URL ?? null, stationData, laptops, categories, archived, batches, participants, stations, reads };
 };
 
 export const actions = {
@@ -265,7 +267,7 @@ export const actions = {
 				cat
 			);
 		} catch (err: any) {
-			if (err.code === '23505') return fail(400, { error: 'That tag is already assigned to another participant' });
+			if (err.code === '23505') return fail(400, { error: err.constraint ? 'That tag is already assigned to another participant' : `${err.message}.` });
 			throw err;
 		}
 		return { imported: 1 };
@@ -295,7 +297,13 @@ export const actions = {
 		}
 		const { rows, errors } = parseCsv(text);
 		if (!rows.length) return fail(400, { error: errors.join('; ') || 'No rows found' });
-		return { imported: await importRows(e.id, rows, def), skipped: errors };
+		try {
+			return { imported: await importRows(e.id, rows, def), skipped: errors };
+		} catch (err: any) {
+			// the whole file is rolled back; the message names the tag and the bib that already has it
+			if (err.code === '23505') return fail(400, { error: `Nothing imported. ${err.message}.` });
+			throw err;
+		}
 	},
 	// RFID writer export (bib,name,category,tag,encoded_at). A team bib gives its tag to every member; only existing bibs are touched.
 		importTags: async ({ request, params }) => {
@@ -325,7 +333,7 @@ export const actions = {
 			} catch (err) {
 				await tx.query('rollback');
 				console.error('importTags', err);
-				return fail(400, { error: 'Nothing imported: the tag file could not be applied. Check it and try again.' });
+				return fail(400, { error: (err as { code?: string }).code === '23505' ? `Nothing imported. ${(err as Error).message}.` : 'Nothing imported: the tag file could not be applied. Check it and try again.' });
 			} finally {
 				tx.release();
 			}
@@ -388,7 +396,8 @@ export const actions = {
 			await c.query('commit');
 		} catch (err: any) {
 			await c.query('rollback');
-			if (err.code === '23505') return fail(400, { error: `Bib ${bib} is already used by another participant` });
+			// a bib clash comes from the bib constraint; a tag clash from the tag check (no constraint name)
+			if (err.code === '23505') return fail(400, { error: err.constraint ? `Bib ${bib} is already used by another participant` : `${err.message}.` });
 			throw err;
 		} finally {
 			c.release();
@@ -521,8 +530,10 @@ export const actions = {
 		const name = String(f.get('name') ?? '').trim();
 		const kind = String(f.get('kind'));
 		if (!name || !['start', 'checkpoint', 'finish'].includes(kind)) return fail(400, { error: 'Station needs a name and a kind' });
-		const added = await q('insert into stations(event_id, name, kind, ord) values($1,$2,$3,(select coalesce(max(ord)+1,0) from stations where event_id=$1)) on conflict do nothing returning id', [e.id, name, kind]);
-		if (!added.length) return { warning: `A station named "${name}" already exists. Nothing added.` };
+		// station uploads match names ignoring case, so "CP1" and "cp1" would be one station to them
+		const [same] = await q<{ name: string }>('select name from stations where event_id=$1 and lower(name)=lower($2)', [e.id, name]);
+		if (same) return { warning: `A station named "${same.name}" already exists. Nothing added.` };
+		await q('insert into stations(event_id, name, kind, ord) values($1,$2,$3,(select coalesce(max(ord)+1,0) from stations where event_id=$1)) on conflict do nothing', [e.id, name, kind]);
 		// reads that arrived earlier under this name (station was missing or misspelled) now count
 		await q('update reads r set station_id=s.id from stations s where s.event_id=$1 and s.name=$2 and r.event_id=$1 and r.station_id is null and lower(r.station_name_sent)=lower(s.name)', [e.id, name]);
 	},

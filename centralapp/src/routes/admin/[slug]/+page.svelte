@@ -356,7 +356,12 @@
 </script>
 
 {#snippet gunControls(kind: 'category' | 'batch', id: number, gun: number | string | null, label: string)}
-	<span class="text-sm font-bold uppercase {gun ? '' : 'text-muted-foreground'}">{gun ? `Started ${whenText(gun)}` : 'Not started'}</span>
+	{@const fromRead = gun ? null : data.readGuns[`${kind === 'batch' ? 'b' : 'c'}${id}`]}
+	{#if fromRead}
+		<span class="text-sm font-bold text-destructive uppercase" role="alert" title="Nobody pressed Start, so times count from the earliest read at the Start station. If that was a test scan, set the real start time.">Clock running from first Start read {whenText(fromRead)}. Set the real time</span>
+	{:else}
+		<span class="text-sm font-bold uppercase {gun ? '' : 'text-muted-foreground'}">{gun ? `Started ${whenText(gun)}` : 'Not started'}</span>
+	{/if}
 	{#if gun}
 		<form method="POST" action="?tab={tab}&/clearGun" use:enhance>
 			<input type="hidden" name="kind" value={kind} />
