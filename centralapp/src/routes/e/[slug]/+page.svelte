@@ -34,8 +34,7 @@
 	const slide = $derived({ duration: reduceMotion ? 0 : 450 });
 	const enter = $derived({ y: -24, duration: reduceMotion ? 0 : 350 });
 	let seen: Set<string> | null = null; // null until the first load, so the initial list does not flash
-	let cycleSec = $state(data.cycle); // seconds each category stays on screen while auto-cycling
-	const CYCLE_CHOICES = [5, 8, 12, 20, 30, 60];
+	const cycleSec = data.cycle; // seconds each category stays on screen while auto-cycling (?cycle=, big screen)
 	let view = $state<'results' | 'awards' | 'progress' | 'map' | 'start' | 'finish'>(data.view); // what the board shows for the selected category ('finish' = every category)
 
 	const cat = $derived(res.categories.find((c) => c.id === active) ?? res.categories[0]);
@@ -349,18 +348,6 @@
 						>
 					{/each}
 				</div>
-				<button
-					aria-pressed={auto}
-					onclick={() => (auto = !auto)}
-					class="h-12 border-2 border-border px-4 font-bold uppercase {auto ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-accent'}"
-					>Auto-cycle {auto ? `on · ${remaining}s` : 'off'}</button
-				>
-				<label class="flex h-12 items-center gap-2 border-2 border-border bg-card px-3 font-bold uppercase">
-					Switch every
-					<select bind:value={cycleSec} class="h-8 border-2 border-border bg-card px-1 font-bold" aria-label="Seconds per category">
-						{#each CYCLE_CHOICES as s}<option value={s}>{s}s</option>{/each}
-					</select>
-				</label>
 				<a href="/e/{data.slug}/wall" class="flex h-12 items-center border-2 border-border bg-card px-4 font-bold uppercase hover:bg-accent">Finish wall</a>
 				<a href="?kiosk&mode={mode}&cycle={cycleSec}&view={view}&cat={active}{zoom === 1 ? '' : `&zoom=${zoom}`}{showLatest ? '&latest=1' : ''}" class="flex h-12 items-center border-2 border-border bg-card px-4 font-bold uppercase hover:bg-accent">Big screen</a>
 			</div>
