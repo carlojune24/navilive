@@ -53,6 +53,19 @@
 	const urlZoom = Number(page.url.searchParams.get('zoom'));
 	let zoom = $state(Number.isFinite(urlZoom) && urlZoom >= 0.5 && urlZoom <= 2 ? Math.round(urlZoom * 10) / 10 : 1);
 	const zoomBy = (d: number) => (zoom = Math.round(Math.min(2, Math.max(0.5, zoom + d)) * 10) / 10);
+	// big screen: zoom scales the whole board through the root font size (all sizes are rem), so the table itself stays at 1
+	const tableZoom = $derived(data.kiosk ? 1 : zoom);
+	$effect(() => {
+		if (!data.kiosk) return;
+		document.documentElement.style.fontSize = `${16 * zoom}px`;
+		return () => (document.documentElement.style.fontSize = '');
+	});
+	function zoomKeys(e: KeyboardEvent) {
+		if (!data.kiosk || e.ctrlKey || e.metaKey || e.altKey || (e.target as HTMLElement)?.closest('input, select, textarea')) return;
+		if (e.key === '+' || e.key === '=') zoomBy(0.1);
+		else if (e.key === '-') zoomBy(-0.1);
+		else if (e.key === '0') zoom = 1;
+	}
 	// Progress view, Latest finishers (?latest=1): the last 5 across the finish line, newest on top and highlighted
 	let showLatest = $state(page.url.searchParams.get('latest') === '1');
 	const LATEST_N = 5;
@@ -292,26 +305,22 @@
 {/snippet}
 
 <svelte:head><title>{res.event} · Live results</title></svelte:head>
+<svelte:window onkeydown={zoomKeys} />
 <Toaster position="top-center" />
 
 <!-- with sponsors, a laptop or TV screen is locked to the screen height: only the board scrolls, so the sponsor strip always shows -->
 <div class="chakra theme-{data.theme} flex min-h-screen flex-col p-4 md:p-6 {data.sponsors.length ? 'md:h-screen md:overflow-hidden' : ''}">
-	<header class="flex flex-wrap items-end justify-between gap-4 border-b-2 border-border pb-4">
+	<header class="flex flex-wrap items-center justify-between gap-4 border-b-2 border-border pb-4">
 		<div>
 			<!-- the big screen is read from across the venue: everything up here is larger there -->
-			<p class="font-bold tracking-widest uppercase {data.kiosk ? 'text-xl md:text-3xl' : 'text-sm'}">Live results</p>
+			<p class="flex flex-wrap items-center gap-x-2 font-bold tracking-widest uppercase {data.kiosk ? 'text-xl md:text-3xl' : 'text-sm'}" role="status">
+				<span class="inline-block border-2 border-border {data.kiosk ? 'size-5 md:size-7' : 'size-3.5'}" style="background:{connected ? 'var(--start)' : 'var(--finish)'}"></span>
+				{connected ? 'Live' : 'Reconnecting…'}
+				<span class="font-normal tracking-normal text-muted-foreground normal-case">· {agoText}</span>
+			</p>
 			<h1 class="font-display leading-[0.85] font-black uppercase {data.kiosk ? 'text-7xl md:text-[10rem]' : 'text-5xl md:text-8xl'}">{res.event}</h1>
 		</div>
-		<div class="flex items-end gap-4 text-right">
-		{#if data.logoV}<img src="/logo?v={data.logoV}" alt="" class="w-auto max-w-48 object-contain {data.kiosk ? 'h-20 md:h-32' : 'h-14 md:h-20'}" />{/if}
-		<div>
-			<p class="flex items-center justify-end gap-2 font-bold uppercase {data.kiosk ? 'text-3xl md:text-4xl' : 'text-xl'}" role="status">
-				<span class="inline-block border-2 border-border {data.kiosk ? 'size-7' : 'size-4'}" style="background:{connected ? 'var(--start)' : 'var(--finish)'}"></span>
-				{connected ? 'Live' : 'Reconnecting…'}
-			</p>
-			<p class="text-muted-foreground {data.kiosk ? 'text-2xl md:text-3xl' : 'text-lg'}">{agoText}</p>
-		</div>
-		</div>
+		{#if data.logoV}<img src="/logo?v={data.logoV}" alt="" class="w-auto max-w-64 object-contain {data.kiosk ? 'h-24 md:h-40' : 'h-16 md:h-24'}" />{/if}
 	</header>
 
 	<div class="mt-4 flex flex-wrap items-center gap-2">
@@ -356,7 +365,8 @@
 				<a href="?kiosk&mode={mode}&cycle={cycleSec}&view={view}&cat={active}{zoom === 1 ? '' : `&zoom=${zoom}`}{showLatest ? '&latest=1' : ''}" class="flex h-12 items-center border-2 border-border bg-card px-4 font-bold uppercase hover:bg-accent">Big screen</a>
 			</div>
 		{:else}
-			<p class="ml-auto text-2xl font-bold uppercase md:text-3xl">{view === 'finish' ? 'Finish' : view === 'awards' ? 'Awards' : view === 'progress' ? 'Progress' : view === 'map' ? 'Map' : view === 'start' ? 'Start' : 'Results'}{auto && nextName && view !== 'finish' ? ` · next: ${nextName} in ${remaining}s` : ''}</p>
+			<div class="ml-auto opacity-25 transition-opacity hover:opacity-100 focus-within:opacity-100">{@render zoomControls()}</div>
+			<p class="text-2xl font-bold uppercase md:text-3xl">{view === 'finish' ? 'Finish' : view === 'awards' ? 'Awards' : view === 'progress' ? 'Progress' : view === 'map' ? 'Map' : view === 'start' ? 'Start' : 'Results'}{auto && nextName && view !== 'finish' ? ` · next: ${nextName} in ${remaining}s` : ''}</p>
 		{/if}
 	</div>
 
@@ -370,7 +380,7 @@
 					{#if !data.kiosk}{@render zoomControls()}{/if}
 				</div>
 			</div>
-			<div class="overflow-x-auto" style="zoom:{zoom}">
+			<div class="overflow-x-auto" style="zoom:{tableZoom}">
 				<table class="w-full border-collapse text-left">
 					<thead>
 						<tr class="border-b-2 border-border font-bold tracking-wide uppercase {data.kiosk ? 'text-lg md:text-2xl' : 'text-sm'}">
@@ -516,7 +526,7 @@
 				{/if}
 				{#if showLatest}
 					<!-- the last 5 across the finish line; a 6th pushes the oldest out. Newest on top, highlighted -->
-					<ol class="min-w-0" style="zoom:{zoom}" aria-live="polite" aria-label="Latest finishers, newest first">
+					<ol class="min-w-0" style="zoom:{tableZoom}" aria-live="polite" aria-label="Latest finishers, newest first">
 						{#each latestRows as r, i (r.bib)}
 							<li animate:flip={slide} in:fly|local={enter} class="grid items-center gap-4 border-b-2 border-border/15 px-4 last:border-b-0 {data.kiosk ? 'grid-cols-[10rem_1fr_auto] py-4 md:grid-cols-[14rem_1fr_auto]' : 'grid-cols-[6rem_1fr_auto] py-3 md:grid-cols-[9rem_1fr_auto]'} {i === 0 ? 'latest bg-primary text-primary-foreground' : ''}">
 								<span class="font-display leading-[0.85] font-black {data.kiosk ? 'text-6xl md:text-9xl' : 'text-5xl md:text-7xl'}">{r.bib}</span>
@@ -533,11 +543,11 @@
 				{:else if data.routeCats.includes(cat.id)}
 					<!-- the route map sits beside the table; its pins count who has passed each checkpoint, live -->
 					<div class="grid xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-						<div class="min-w-0" style="zoom:{zoom}">{#key batchSel}<ProgressTable course={cat.course} rows={progRows} big={data.kiosk} batchOf={batchCol} category={cat.name} />{/key}</div>
+						<div class="min-w-0" style="zoom:{tableZoom}">{#key batchSel}<ProgressTable course={cat.course} rows={progRows} big={data.kiosk} batchOf={batchCol} category={cat.name} />{/key}</div>
 						<div class="relative h-[70vh] min-h-[520px] border-t-2 border-border xl:sticky xl:top-0 xl:order-first xl:h-[max(460px,calc(100vh-19.5rem))] xl:border-t-0 xl:border-r-2"><RouteMap slug={data.slug} category={cat.id} compact /></div>
 					</div>
 				{:else}
-					<div class="min-w-0" style="zoom:{zoom}">{#key batchSel}<ProgressTable course={cat.course} rows={progRows} big={data.kiosk} batchOf={batchCol} category={cat.name} />{/key}</div>
+					<div class="min-w-0" style="zoom:{tableZoom}">{#key batchSel}<ProgressTable course={cat.course} rows={progRows} big={data.kiosk} batchOf={batchCol} category={cat.name} />{/key}</div>
 				{/if}
 			{:else}
 			{#key cat.id}
@@ -579,7 +589,7 @@
 	{#if data.sponsors.length}
 		<!-- sponsors, in the organizer's order (Admin > Sponsors); sits at the bottom of the screen when the board is short -->
 		<footer class="mt-auto shrink-0 pt-3" aria-label="Sponsors">
-			<div class="border-2 border-border bg-white px-4 py-2 text-black">
+			<div class="border-2 border-border bg-[#101116] px-4 py-2 text-white">
 				<ul class="flex flex-wrap items-center justify-center gap-x-10 gap-y-2">
 					{#each data.sponsors as s (s.id)}
 						{@const logo = `/e/${data.slug}/sponsor/${s.id}?v=${s.v}`}

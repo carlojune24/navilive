@@ -58,7 +58,7 @@
 		<h2 class="font-display text-3xl font-black uppercase">Add a sponsor</h2>
 		<label class="block {lbl}">Name<input bind:value={name} maxlength="120" required class="mt-1 block h-12 w-full border-2 border-border bg-background px-3 font-normal normal-case" /></label>
 		<label class="block {lbl}">Website <span class="font-normal normal-case text-muted-foreground">(optional; the logo links to it)</span><input bind:value={url} maxlength="500" placeholder="example.com" class="mt-1 block h-12 w-full border-2 border-border bg-background px-3 font-normal normal-case" /></label>
-		<label class="block {lbl}">Logo <span class="font-normal normal-case text-muted-foreground">(PNG with a transparent background looks best)</span><input bind:this={fileInput} type="file" accept="image/png,image/jpeg,image/webp" onchange={(e) => (logo = e.currentTarget.files?.[0] ?? null)} class="mt-1 block" /></label>
+		<label class="block {lbl}">Logo <span class="font-normal normal-case text-muted-foreground">(PNG with a transparent background looks best; shown on a dark strip)</span><input bind:this={fileInput} type="file" accept="image/png,image/jpeg,image/webp" onchange={(e) => (logo = e.currentTarget.files?.[0] ?? null)} class="mt-1 block" /></label>
 		{#if err}<p class="font-bold text-destructive" role="alert">{err}</p>{/if}
 		{#if ok}<p class="font-bold" role="status">{ok}</p>{/if}
 		<Button type="submit" disabled={busy} class="h-11 font-bold uppercase">{busy ? 'Adding…' : 'Add sponsor'}</Button>
@@ -70,7 +70,7 @@
 			{#each data.sponsors as s, i (s.id)}
 				<li class="flex flex-wrap items-center gap-4 border-b-2 border-border/15 px-4 py-3 last:border-b-0">
 					<span class="w-6 font-display text-2xl font-black">{i + 1}</span>
-					<span class="flex h-16 w-32 items-center justify-center bg-white p-1"><img src="/e/{data.event.slug}/sponsor/{s.id}?v={s.v}" alt="{s.name} logo" class="max-h-full max-w-full object-contain" /></span>
+					<span class="flex h-16 w-32 items-center justify-center bg-[#101116] p-1"><img src="/e/{data.event.slug}/sponsor/{s.id}?v={s.v}" alt="{s.name} logo" class="max-h-full max-w-full object-contain" /></span>
 					<span class="min-w-0 flex-1"><b class="block uppercase">{s.name}</b>{#if s.url}<a href={s.url} target="_blank" rel="noopener noreferrer" class="text-sm break-all text-muted-foreground underline">{s.url}</a>{/if}</span>
 					<div class="flex gap-2">
 						{#each [['up', 'Move up', i === 0], ['down', 'Move down', i === data.sponsors.length - 1]] as const as [dir, label, off]}
