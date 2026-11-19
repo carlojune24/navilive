@@ -92,15 +92,15 @@
 /* Grit Rush live board theme (Admin > Settings). :has() so the page body and dialogs pick it up too. */
 :root:has(.theme-grit) {
 	--background: #101116;
-	--foreground: #e5e7eb;
+	--foreground: #ffffff;
 	--card: #1f1f29;
-	--card-foreground: #e5e7eb;
+	--card-foreground: #ffffff;
 	--popover: #1f1f29;
-	--popover-foreground: #e5e7eb;
+	--popover-foreground: #ffffff;
 	--primary: #39ff14;
 	--primary-foreground: #101116;
 	--secondary: #21003d;
-	--secondary-foreground: #e5e7eb;
+	--secondary-foreground: #ffffff;
 	--muted: #1f1f29;
 	--muted-foreground: #9ca3af; /* the palette's #6B7280 is too faint on charcoal for small text */
 	--accent: #7925c7;

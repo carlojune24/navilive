@@ -57,7 +57,7 @@
 		<h2 class="font-display text-3xl font-black uppercase">Live board theme</h2>
 		<p class="text-muted-foreground">The colours of every live board. Open boards change when reloaded.</p>
 		<form method="POST" action="?/theme" use:enhance class="flex flex-wrap gap-3">
-			{#each [['default', 'Bib (light)', ['#f1f3f6', '#26272e', '#ffffff', '#c0392b']], ['grit', 'Grit Rush (dark)', ['#101116', '#21003d', '#7925c7', '#39ff14']]] as const as [id, label, sw]}
+			{#each [['default', 'Bib (light)', ['#f1f3f6', '#26272e', '#ffffff', '#c0392b']], ['grit', 'Grit Rush (dark)', ['#101116', '#21003d', '#7925c7', '#39ff14', '#ffffff']]] as const as [id, label, sw]}
 				<button type="submit" name="theme" value={id} class="flex items-center gap-3 border-2 px-3 py-2 font-bold uppercase {data.theme === id ? 'border-border bg-primary text-primary-foreground' : 'border-border hover:bg-accent'}" aria-pressed={data.theme === id}>
 					<span class="flex">{#each sw as c}<span class="size-6 border border-black/30" style="background:{c}"></span>{/each}</span>{label}
 				</button>
