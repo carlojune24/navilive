@@ -8,7 +8,9 @@
 	let { data, form } = $props();
 	let copy = $state<{ id: number; name: string; date: string } | null>(null); // the event being duplicated
 	let copyError = $state('');
-	let del = $state<{ id: number; name: string } | null>(null); // the archived event waiting for "delete?" confirmation
+	let ren = $state<{ id: number; name: string } | null>(null); // the event being renamed
+	let renError = $state('');
+	let del = $state<{ id: number; name: string; forever?: boolean } | null>(null); // the archived event waiting for "delete?" confirmation
 </script>
 
 <main class="max-w-3xl space-y-6 p-5">
@@ -34,6 +36,7 @@
 					<input type="hidden" name="published" value={e.published ? 'false' : 'true'} />
 					<Button type="submit" variant="outline" class="h-11 border-2 font-bold uppercase">{e.published ? 'Unpublish' : 'Publish'}</Button>
 				</form>
+				<Button type="button" variant="outline" class="h-11 border-2 font-bold uppercase" onclick={() => ((renError = ''), (ren = { id: e.id, name: e.name }))}>Rename</Button>
 				<Button type="button" variant="outline" class="h-11 border-2 font-bold uppercase" onclick={() => ((copyError = ''), (copy = { id: e.id, name: `${e.name} copy`, date: '' }))}>Duplicate</Button>
 				<form method="POST" action="?/archive">
 					<input type="hidden" name="id" value={e.id} />
@@ -75,6 +78,7 @@
 							<input type="hidden" name="id" value={e.id} />
 							<Button type="submit" variant="outline" class="h-11 border-2 font-bold uppercase">Restore</Button>
 						</form>
+						<Button type="button" variant="outline" class="h-11 border-2 border-destructive font-bold text-destructive uppercase" onclick={() => (del = { id: e.id, name: e.name, forever: true })}>Delete now</Button>
 					</li>
 				{/each}
 			</ul>
@@ -86,12 +90,16 @@
 	{#if del}
 		<Dialog.Content class="border-2 border-border sm:max-w-md">
 			<Dialog.Header>
-				<Dialog.Title class="font-display text-4xl leading-[0.85] font-black uppercase">Delete event?</Dialog.Title>
-				<Dialog.Description><b>{del.name}</b> moves to Deleted and is removed for good, with all its runners and reads, in 30 days. You can restore it until then.</Dialog.Description>
+				<Dialog.Title class="font-display text-4xl leading-[0.85] font-black uppercase">{del.forever ? 'Delete for good?' : 'Delete event?'}</Dialog.Title>
+				{#if del.forever}
+					<Dialog.Description><b>{del.name}</b> is removed now, with all its runners, reads and photos. <b>This cannot be undone.</b></Dialog.Description>
+				{:else}
+					<Dialog.Description><b>{del.name}</b> moves to Deleted and is removed for good, with all its runners and reads, in 30 days. You can restore it until then.</Dialog.Description>
+				{/if}
 			</Dialog.Header>
-			<form method="POST" action="?/remove" use:enhance={() => async ({ update }) => { await update(); del = null; }} class="flex gap-2">
+			<form method="POST" action={del.forever ? '?/purge' : '?/remove'} use:enhance={() => async ({ update }) => { await update(); del = null; }} class="flex gap-2">
 				<input type="hidden" name="id" value={del.id} />
-				<Button type="submit" class="h-11 font-bold uppercase">Delete</Button>
+				<Button type="submit" class="h-11 font-bold uppercase {del.forever ? 'bg-destructive text-white hover:bg-destructive/90' : ''}">{del.forever ? 'Delete for good' : 'Delete'}</Button>
 				<Button type="button" variant="outline" class="h-11 border-2 font-bold uppercase" onclick={() => (del = null)}>Cancel</Button>
 			</form>
 		</Dialog.Content>
@@ -122,6 +130,34 @@
 				<div class="flex gap-2">
 					<Button type="submit" class="h-11 font-bold uppercase">Duplicate</Button>
 					<Button type="button" variant="outline" class="h-11 border-2 font-bold uppercase" onclick={() => (copy = null)}>Cancel</Button>
+				</div>
+			</form>
+		</Dialog.Content>
+	{/if}
+</Dialog.Root>
+
+<Dialog.Root open={ren !== null} onOpenChange={(o) => !o && (ren = null)}>
+	{#if ren}
+		<Dialog.Content class="border-2 border-border sm:max-w-md">
+			<Dialog.Header>
+				<Dialog.Title class="font-display text-4xl leading-[0.85] font-black uppercase">Rename event</Dialog.Title>
+				<Dialog.Description>Only the name changes. The event's web address stays the same, so station laptops, big screens and shared links keep working.</Dialog.Description>
+			</Dialog.Header>
+			<form
+				method="POST"
+				action="?/rename"
+				use:enhance={() => async ({ result, update }) => {
+					renError = result.type === 'failure' ? ((result.data as { renameError?: string })?.renameError ?? 'Could not rename') : '';
+					if (result.type !== 'failure') (await update(), (ren = null));
+				}}
+				class="space-y-3"
+			>
+				<input type="hidden" name="id" value={ren.id} />
+				{#if renError}<p class="font-bold text-destructive" role="alert">{renError}</p>{/if}
+				<label class="block font-bold uppercase">Event name<Input name="name" bind:value={ren.name} maxlength={200} class="mt-1 h-11 border-2 font-normal normal-case" required /></label>
+				<div class="flex gap-2">
+					<Button type="submit" class="h-11 font-bold uppercase">Save</Button>
+					<Button type="button" variant="outline" class="h-11 border-2 font-bold uppercase" onclick={() => (ren = null)}>Cancel</Button>
 				</div>
 			</form>
 		</Dialog.Content>

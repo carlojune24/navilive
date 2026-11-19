@@ -8,7 +8,7 @@ const slugify = (s: string) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-'
 async function newSlug(name: string): Promise<{ slug: string } | { error: string }> {
 	const slug = slugify(name);
 	if (!slug) return { error: 'Event name required' };
-	if (['guide', 'account'].includes(slug)) return { error: 'That name is reserved. Use another.' };
+	if (['guide', 'account', 'settings'].includes(slug)) return { error: 'That name is reserved. Use another.' };
 	if ((await q('select 1 from events where slug=$1', [slug])).length) return { error: 'An event with that name exists' };
 	return { slug };
 }
@@ -47,6 +47,21 @@ export const actions = {
 	remove: async ({ request }) => {
 		const f = await request.formData();
 		await q('update events set deleted_at=now() where id=$1 and archived_at is not null and deleted_at is null', [Number(f.get('id'))]);
+	},
+	// the name only: the slug stays, so station laptops, big screens and shared links keep working
+	rename: async ({ request }) => {
+		const f = await request.formData();
+		const id = Number(f.get('id'));
+		const name = String(f.get('name') ?? '').trim().slice(0, 200);
+		if (!name) return fail(400, { renameError: 'Enter the event name.' });
+		await q('update events set name=$2 where id=$1', [id, name]);
+		await q("select pg_notify('reads', $1)", [String(id)]); // open boards refetch and show the new name
+		return { renamed: true };
+	},
+	// for good, now: only an event already in Deleted (cascades to all its runners, reads and photos)
+	purge: async ({ request }) => {
+		const f = await request.formData();
+		await q('delete from events where id=$1 and deleted_at is not null', [Number(f.get('id'))]);
 	},
 	create: async ({ request }) => {
 		const f = await request.formData();
