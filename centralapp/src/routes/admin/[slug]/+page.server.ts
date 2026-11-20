@@ -683,6 +683,40 @@ export const actions = {
 		await q("select pg_notify('reads', $1)", [String(e.id)]); // open boards re-rank
 		return { overrideSaved: bib };
 	},
+	// a checkpoint time set by hand: that runner's reads at the station are voided (kept, restorable) and one manual read added
+	setCheckpointTime: async ({ request, params }) => {
+		const e = await ev(params.slug);
+		const f = await request.formData();
+		const bib = String(f.get('bib') ?? '').trim();
+		const station = Number(f.get('station'));
+		const at = Math.round(Number(f.get('finish_ms')));
+		const by = String(f.get('by') ?? '').trim().slice(0, 80);
+		if (!Number.isFinite(at) || at <= 0) return fail(400, { error: 'Time is not valid.' });
+		if (!by) return fail(400, { error: 'Enter your name.' });
+		const [p] = await q<{ id: number; bib: string; tag: string }>('select id, bib, tag from participants where event_id=$1 and bib=$2', [e.id, bib]);
+		if (!p) return fail(404, { error: `No participant with bib ${bib}` });
+		const ok = await q("select 1 from stations where id=$1 and event_id=$2 and kind='checkpoint'", [station, e.id]);
+		if (!ok.length) return fail(400, { error: 'Unknown checkpoint.' });
+		const c = await pool.connect();
+		try {
+			await c.query('begin');
+			await c.query(`update reads r set voided=true, voided_by_admin=true from participants p where p.id=$3 and r.event_id=$1 and r.station_id=$2 and not r.voided and ${MATCH}`, [e.id, station, p.id]);
+			// the same time typed again: that manual read already exists, so bring it back
+			await c.query(
+				`insert into reads(event_id, station_id, tag, bib, read_at_ms, device_id) values($1,$2,$3,$4,$5,$6)
+				 on conflict(event_id, device_id, read_at_ms, tag, src) do update set voided=false, voided_by_admin=true, station_id=excluded.station_id`,
+				[e.id, station, (p.tag || 'BIB-' + p.bib).toUpperCase(), p.bib, at, 'ADMIN ' + by]
+			);
+			await c.query('commit');
+		} catch (err) {
+			await c.query('rollback');
+			throw err;
+		} finally {
+			c.release();
+		}
+		await q("select pg_notify('reads', $1)", [String(e.id)]); // open boards re-rank
+		return { checkpointSaved: bib };
+	},
 	// a time penalty in minutes (0 clears it); it is added to the runner's or team's total time
 	setPenalty: async ({ request, params }) => {
 		const e = await ev(params.slug);

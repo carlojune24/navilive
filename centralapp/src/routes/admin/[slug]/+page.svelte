@@ -29,7 +29,8 @@
 	const sections = ['participants', 'categories', 'starts', 'stations', 'route', 'progress', 'results', 'awards', 'reads', 'tally', 'bibs', 'marshal', 'release', 'data', 'connect'];
 	const titles: Record<string, string> = { participants: 'Participants', categories: 'Categories', starts: 'Starts', stations: 'Stations', route: 'Route & map', progress: 'Progress', results: 'Results', awards: 'Awards', reads: 'Reads', tally: 'Tally sheets', bibs: 'Bib list', marshal: 'Marshal tap list', release: 'Batch release tally', data: 'Station data', connect: 'Connect stations' };
 	// Results page: the finish-time override panel for one runner
-	let ovr = $state<{ bib: string; name: string; at: string; day: string; start: number | null } | null>(null);
+	// station 0 = the finish; else a checkpoint id from cps (Progress page only)
+	let ovr = $state<{ bib: string; name: string; at: string; day: string; start: number | null; station: number; finishAt: number | null; cps: { id: number; name: string; at: number | null }[] } | null>(null);
 	let ovrBy = $state(typeof localStorage === 'undefined' ? '' : (localStorage.getItem('nv.admin.name') ?? ''));
 	let ovrReason = $state('');
 	let ovrFile = $state<File | null>(null);
@@ -66,14 +67,23 @@
 	}
 	// the runner's start (gun or own), so a finish after midnight lands on the right day
 	const startOfBib = (bib: string) => data.progressData.flatMap((c) => c.progress).find((r) => r.bib === bib)?.start ?? null;
-	function openOverride(r: { bib: string; name: string; finishAt: number | null }) {
-		const start = startOfBib(r.bib);
-		// the day: the runner's own finish, else their start day, else today; the date field shows it and can be changed
-		const ref = r.finishAt ?? start ?? Date.now();
-		const local = new Date(ref - new Date(ref).getTimezoneOffset() * 60000).toISOString();
-		ovr = { bib: r.bib, name: r.name, day: local.slice(0, 10), at: r.finishAt ? local.slice(11, 23) : '', start };
+	function openOverride(r: { bib: string; name: string; finishAt: number | null; cps?: { id: number; name: string; at: number | null }[] }) {
+		ovr = { bib: r.bib, name: r.name, day: '', at: '', start: startOfBib(r.bib), station: 0, finishAt: r.finishAt, cps: r.cps ?? [] };
+		pickOvrStation(0);
 		ovrReason = '';
 		ovrFile = null;
+		ovrErr = '';
+	}
+	// fill the date/time fields from the picked station's current time
+	function pickOvrStation(id: number) {
+		if (!ovr) return;
+		const cur = id ? (ovr.cps.find((c) => c.id === id)?.at ?? null) : ovr.finishAt;
+		// the day: the current time there, else the start day, else today; the date field shows it and can be changed
+		const ref = cur ?? ovr.start ?? Date.now();
+		const local = new Date(ref - new Date(ref).getTimezoneOffset() * 60000).toISOString();
+		ovr.station = id;
+		ovr.day = local.slice(0, 10);
+		ovr.at = cur ? local.slice(11, 23) : '';
 		ovrErr = '';
 	}
 	// what will be saved: a time at or before the start moves to the next day
@@ -81,7 +91,7 @@
 	async function saveOverride() {
 		if (!ovr) return;
 		const ms = ovrMs;
-		if (!Number.isFinite(ms)) return (ovrErr = 'Enter the finish date and time.');
+		if (!Number.isFinite(ms)) return (ovrErr = 'Enter the date and time.');
 		ovrBusy = true;
 		ovrErr = '';
 		try {
@@ -91,7 +101,8 @@
 			fd.set('reason', ovrReason);
 			fd.set('by', ovrBy);
 			if (ovrFile) fd.set('photo', await shrinkImage(ovrFile), 'proof.jpg');
-			const r = await fetch('?tab=results&/setFinishOverride', { method: 'POST', body: fd, headers: { 'x-sveltekit-action': 'true' } });
+			if (ovr.station) fd.set('station', String(ovr.station));
+			const r = await fetch(ovr.station ? '?tab=progress&/setCheckpointTime' : '?tab=results&/setFinishOverride', { method: 'POST', body: fd, headers: { 'x-sveltekit-action': 'true' } });
 			const res = deserialize(await r.text());
 			if (res.type !== 'success') return (ovrErr = (res.type === 'failure' && (res.data as { error?: string })?.error) || 'Could not save the override.');
 			try { localStorage.setItem('nv.admin.name', ovrBy.trim()); } catch { /* private mode */ }
@@ -441,23 +452,32 @@
 	<Dialog.Content class="max-h-[90vh] overflow-y-auto border-2 border-border sm:max-w-md">
 				<div class="space-y-3">
 					<Dialog.Header>
-						<Dialog.Title class="font-display text-4xl leading-[0.85] font-black uppercase">Override finish — {ovr.bib} {ovr.name}</Dialog.Title>
-						<Dialog.Description>Replaces this runner's finish time in the ranking. The original reads are kept. Needs a reason; a proof photo is optional.</Dialog.Description>
+						<Dialog.Title class="font-display text-4xl leading-[0.85] font-black uppercase">Override {ovr.station ? ovr.cps.find((c) => c.id === ovr!.station)?.name : 'finish'} — {ovr.bib} {ovr.name}</Dialog.Title>
+						<Dialog.Description>{#if ovr.station}Sets this runner's time at the checkpoint. Their reads there are voided (still listed on the Reads page, where they can be restored) and replaced by one manual read.{:else}Replaces this runner's finish time in the ranking. The original reads are kept. Needs a reason; a proof photo is optional.{/if}</Dialog.Description>
 					</Dialog.Header>
 					{#if ovrErr}<p class="font-bold text-destructive" role="alert">{ovrErr}</p>{/if}
+					{#if ovr.cps.length}
+						<div class="flex flex-wrap gap-2" role="radiogroup" aria-label="Station to override">
+							{#each [...ovr.cps.map((c) => [c.id, c.name] as const), [0, 'Finish'] as const] as [id, label] (id)}
+								<button type="button" role="radio" aria-checked={ovr.station === id} onclick={() => pickOvrStation(id)} class="h-11 border-2 border-border px-3 font-bold uppercase {ovr.station === id ? 'bg-primary text-primary-foreground' : 'bg-card'}">{label}</button>
+							{/each}
+						</div>
+					{/if}
 					<div class="grid gap-3 sm:grid-cols-2">
-						<label class="block font-bold uppercase">Finish date<input type="date" bind:value={ovr.day} class="mt-1 block h-12 w-full border-2 border-border bg-background px-3" /></label>
-						<label class="block font-bold uppercase">Finish time (time of day)<input type="time" step="0.001" bind:value={ovr.at} class="mt-1 block h-12 w-full border-2 border-border bg-background px-3" /></label>
+						<label class="block font-bold uppercase">{ovr.station ? 'Date' : 'Finish date'}<input type="date" bind:value={ovr.day} class="mt-1 block h-12 w-full border-2 border-border bg-background px-3" /></label>
+						<label class="block font-bold uppercase">{ovr.station ? 'Time' : 'Finish time'} (time of day)<input type="time" step="0.001" bind:value={ovr.at} class="mt-1 block h-12 w-full border-2 border-border bg-background px-3" /></label>
 					</div>
 					{#if Number.isFinite(ovrMs)}
 						{@const moved = localDay(ovrMs) !== ovr.day}
 						<p class="text-sm" role="status">
-							Saves as <b>{new Date(ovrMs).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</b>{#if ovr.start !== null}, total time <b>{fmt(ovrMs - ovr.start)}</b>{/if}{#if moved} — the next day, because that time is before the start ({new Date(ovr.start!).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}){/if}.
+							Saves as <b>{new Date(ovrMs).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</b>{#if ovr.start !== null}, {ovr.station ? 'time from start' : 'total time'} <b>{fmt(ovrMs - ovr.start)}</b>{/if}{#if moved} — the next day, because that time is before the start ({new Date(ovr.start!).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}){/if}.
 						</p>
 					{/if}
+					{#if !ovr.station}
 					<label class="block font-bold uppercase">Reason<input bind:value={ovrReason} maxlength="300" placeholder="e.g. Read delayed; photo shows runner first" class="mt-1 block h-12 w-full border-2 border-border bg-background px-3 font-normal normal-case" /></label>
 					<label class="block font-bold uppercase">Your name<input bind:value={ovrBy} maxlength="80" class="mt-1 block h-12 w-full border-2 border-border bg-background px-3 font-normal normal-case" /></label>
 					<label class="block font-bold uppercase">Proof photo <span class="font-normal normal-case text-muted-foreground">(optional)</span><input type="file" accept="image/*" onchange={(e) => (ovrFile = e.currentTarget.files?.[0] ?? null)} class="mt-1 block" /></label>
+					{/if}
 					<div class="flex gap-2">
 						<Button class="h-11 font-bold uppercase" disabled={ovrBusy} onclick={saveOverride}>{ovrBusy ? 'Saving…' : 'Save override'}</Button>
 						<Button variant="outline" class="h-11 border-2 font-bold uppercase" onclick={() => (ovr = null)}>Cancel</Button>
@@ -1051,7 +1071,7 @@
 						<span>{c.name}</span>
 						<span class="text-base font-normal tracking-wide">{progRows.filter((r) => r.state === 'finished').length} finished · {progRows.filter((r) => r.start !== null).length} started · {progRows.length} registered{flagged ? ` · ${flagged} to check` : ''}</span>
 					</h3>
-					{#key `${c.id}-${progBatch}`}<ProgressTable course={c.course} rows={progRows} category={c.name} flags pageSize={20} onOverride={(r) => openOverride({ bib: r.bib, name: r.name, finishAt: null })} onPenalty={(r) => openPenalty(r)} overridden={(bib) => !!overrideOf(bib)} release={runnerRelease} batchOf={progBatchCol} />{/key}
+					{#key `${c.id}-${progBatch}`}<ProgressTable course={c.course} rows={progRows} category={c.name} flags pageSize={20} onOverride={(r) => openOverride({ bib: r.bib, name: r.name, finishAt: r.at[c.course.findIndex((s) => s.kind === 'finish')] ?? null, cps: c.course.flatMap((s, i) => (s.kind === 'checkpoint' ? [{ id: s.id, name: s.name, at: r.at[i] }] : [])) })} onPenalty={(r) => openPenalty(r)} overridden={(bib) => !!overrideOf(bib)} release={runnerRelease} batchOf={progBatchCol} />{/key}
 				</section>
 				<!-- per checkpoint: who has passed and who has not yet (the start counts a gun start too, like the table) -->
 				<section class="border-2 border-border bg-card">
