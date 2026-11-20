@@ -12,7 +12,7 @@
 	import RouteEditor from '$lib/components/RouteEditor.svelte';
 	import ProgressTable from '$lib/components/ProgressTable.svelte';
 	import { groupTally, byCategory } from '$lib/tally';
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { Toaster } from '$lib/components/ui/sonner/index.js';
 	import { invalidateAll } from '$app/navigation';
@@ -198,6 +198,13 @@
 	let resSel = $state<number | 'all' | null>(null); // Results / Award list: which category is shown
 	const resShown = $derived(resSel === 'all' ? data.resultsData : data.resultsData.filter((c) => c.id === (resSel ?? data.resultsData[0]?.id)));
 	let progBatch = $state<'all' | 'none' | number>('all'); // Progress page: which batch of that category
+	let printing = $state(false); // Progress print: show every row, not the 20 on screen
+	async function printProgress() {
+		printing = true;
+		await tick();
+		window.print();
+		printing = false;
+	}
 	const progBatches = $derived(data.batches.filter((b) => b.category_id === progShown?.id));
 	// the shown category's runners, narrowed to one batch when picked
 	const progRows = $derived.by(() => {
@@ -478,11 +485,11 @@
 		<button type="button" class="h-9 px-2 text-sm font-bold uppercase underline" onclick={() => (printCats = data.categories.map((c) => c.name))}>None</button>
 	</div>
 {/snippet}
-<svelte:head>{#if tab === 'tally' || tab === 'bibs'}{@html '<style>@page{size:8.5in 13in;margin:0.5in}</style>'}{:else if tab === 'release'}{@html '<style>@page{size:A4;margin:0.5in}</style>'}{/if}</svelte:head>
+<svelte:head>{#if tab === 'tally' || tab === 'bibs'}{@html '<style>@page{size:8.5in 13in;margin:0.5in}</style>'}{:else if tab === 'release'}{@html '<style>@page{size:A4;margin:0.5in}</style>'}{:else if tab === 'progress'}{@html '<style>@page{size:A4 landscape;margin:0.4in}</style>'}{/if}</svelte:head>
 
 <Toaster position="top-center" />
 <main class="space-y-5 p-5 print:p-0">
-	<header class={tab === 'tally' || tab === 'bibs' || tab === 'release' ? 'print:hidden' : ''}>
+	<header class={tab === 'tally' || tab === 'bibs' || tab === 'release' || tab === 'progress' ? 'print:hidden' : ''}>
 		<h1 class="font-display text-5xl leading-[0.85] font-black uppercase">{tab === 'tally' || tab === 'bibs' || tab === 'release' ? 'Printables' : titles[tab]}</h1>
 		<p class="mt-1 text-muted-foreground">{data.event.name} &middot; {countRunners(data.participants)} runners{#if countRunners(data.participants) !== data.participants.length}&nbsp;({data.participants.length} entries){/if} &middot; {data.categories.length} categories</p>
 	</header>
@@ -593,16 +600,35 @@
 													</select>
 												</div>
 											{/if}
-											<div class="w-32">
-												<Label class={lbl} for="eg{p.id}">Gender</Label>
-												<select id="eg{p.id}" name="gender" class={field}>
-													<option value="">—</option>
-													<option value="M" selected={p.gender === 'M'}>Male</option>
-													<option value="F" selected={p.gender === 'F'}>Female</option>
-												</select>
-											</div>
-											<div class="w-24"><Label class={lbl} for="ea{p.id}">Age</Label><Input id="ea{p.id}" name="age" inputmode="numeric" value={p.age ?? ''} class="h-11 border-2" /></div>
-											<div class="w-44"><Label class={lbl} for="et{p.id}">Tag</Label><Input id="et{p.id}" name="tag" value={p.tag} class="h-11 border-2" /></div>
+											{#if !p.members?.length}
+												<div class="w-32">
+													<Label class={lbl} for="eg{p.id}">Gender</Label>
+													<select id="eg{p.id}" name="gender" class={field}>
+														<option value="">—</option>
+														<option value="M" selected={p.gender === 'M'}>Male</option>
+														<option value="F" selected={p.gender === 'F'}>Female</option>
+													</select>
+												</div>
+												<div class="w-24"><Label class={lbl} for="ea{p.id}">Age</Label><Input id="ea{p.id}" name="age" inputmode="numeric" value={p.age ?? ''} class="h-11 border-2" /></div>
+												<div class="w-44"><Label class={lbl} for="et{p.id}">Tag</Label><Input id="et{p.id}" name="tag" value={p.tag} class="h-11 border-2" /></div>
+											{/if}
+											{#each p.members ?? [] as m, mi (m.id)}
+												<!-- a relay/duo runner: change the name here when a substitute takes their place -->
+												<div class="flex w-full flex-wrap items-end gap-2 border-t-2 border-border/20 pt-2">
+													<input type="hidden" name="mid" value={m.id} />
+													<div class="min-w-48 flex-1"><Label class={lbl} for="mn{m.id}">Runner {mi + 1} name</Label><Input id="mn{m.id}" name="mname" value={m.name} class="h-11 border-2" required /></div>
+													<div class="w-32">
+														<Label class={lbl} for="mg{m.id}">Gender</Label>
+														<select id="mg{m.id}" name="mgender" class={field}>
+															<option value="">—</option>
+															<option value="M" selected={m.gender === 'M'}>Male</option>
+															<option value="F" selected={m.gender === 'F'}>Female</option>
+														</select>
+													</div>
+													<div class="w-24"><Label class={lbl} for="ma{m.id}">Age</Label><Input id="ma{m.id}" name="mage" inputmode="numeric" value={m.age ?? ''} class="h-11 border-2" /></div>
+													<div class="w-44"><Label class={lbl} for="mt{m.id}">Tag</Label><Input id="mt{m.id}" name="mtag" value={m.tag} class="h-11 border-2" /></div>
+												</div>
+											{/each}
 											<Button type="submit" class="h-11 font-bold uppercase">Save</Button>
 											<Button type="button" variant="outline" class="h-11 border-2 font-bold uppercase" onclick={() => (editing = null)}>Cancel</Button>
 										</form>
@@ -1006,7 +1032,7 @@
 		<!-- PROGRESS: who has reached which station -->
 		{#if tab === 'progress'}
 		<div class="space-y-5">
-			<div class="space-y-2 border-2 border-border bg-card p-4">
+			<div class="space-y-2 border-2 border-border bg-card p-4 print:hidden">
 				<h2 class="flex flex-wrap items-baseline gap-3 font-display text-2xl font-black uppercase">What the public live board shows {#if relMsg}<span class="text-base font-bold tracking-wide {relMsg.startsWith('Not') ? 'text-destructive' : 'text-muted-foreground'}" role="status">{relMsg}</span>{/if}</h2>
 				<p class="text-muted-foreground">Finishes stay off the live board until you release them. <b>Results pending</b> shows live progress and marks finishers as FINISHED with their start time, but holds back finish times, ranks and awards.</p>
 				<div class="flex flex-wrap items-center gap-3 border-b-2 border-border/15 pb-3"><span class="w-40 font-bold uppercase">All categories</span>{@render releaseButtons('all', 0, allLevel)}</div>
@@ -1039,16 +1065,16 @@
 					{/if}
 				{/if}
 			</div>
-			<p class="text-muted-foreground">Live: who has reached which station in each category. Times are the race time at that station (the start shows the clock time). A runner who has a later read but none at an earlier station on their course is flagged, so the missed read can be added on the Reads page. Their result is kept.</p>
+			<p class="text-muted-foreground print:hidden">Live: who has reached which station in each category. Times are the race time at that station (the start shows the clock time). A runner who has a later read but none at an earlier station on their course is flagged, so the missed read can be added on the Reads page. Their result is kept.</p>
 			{#if data.progressData.length > 1}
-				<div class="flex flex-wrap gap-2" role="tablist" aria-label="Category">
+				<div class="flex flex-wrap gap-2 print:hidden" role="tablist" aria-label="Category">
 					{#each data.progressData as c (c.id)}
 						<button type="button" role="tab" aria-selected={c.id === progShown?.id} onclick={() => ((progCat = c.id), (progBatch = 'all'))} class="h-11 border-2 border-border px-4 font-display text-2xl font-black uppercase {c.id === progShown?.id ? 'bg-primary text-primary-foreground' : 'bg-card'}">{c.name}</button>
 					{/each}
 				</div>
 			{/if}
 			{#if progBatches.length}
-				<div class="flex flex-wrap gap-2" role="tablist" aria-label="Batch">
+				<div class="flex flex-wrap gap-2 print:hidden" role="tablist" aria-label="Batch">
 					{#each [['all', 'All batches'], ...progBatches.map((b) => [b.id, b.name]), ['none', 'No batch']] as [id, label]}
 						<button type="button" role="tab" aria-selected={id === progBatch} onclick={() => (progBatch = id as typeof progBatch)} class="h-11 border-2 border-border px-4 text-lg font-bold uppercase {id === progBatch ? 'bg-primary text-primary-foreground' : 'bg-card'}">{label}</button>
 					{/each}
@@ -1057,16 +1083,18 @@
 			{#each progShown ? [progShown] : [] as c (c.id)}
 				{@const flagged = progRows.filter((r) => r.missed.length).length}
 				{@const byHand = progRows.reduce((n, r) => n + r.src.filter((k) => k && k !== 'rfid').length, 0)}
-				<section class="border-2 border-border bg-card">
+				<h2 class="hidden font-display text-3xl font-black uppercase print:block">{data.event.name} · Progress · {c.name}{progBatch === 'all' || !progBatches.length ? '' : progBatch === 'none' ? ' · No batch' : ` · Batch ${progBatches.find((b) => b.id === progBatch)?.name ?? ''}`} <span class="text-base font-normal">printed {new Date(now).toLocaleString()}</span></h2>
+				<section class="border-2 border-border bg-card print:border-0 print:[print-color-adjust:exact]">
 					<h3 class="flex flex-wrap items-baseline justify-between gap-2 bg-primary px-4 py-2 font-display text-3xl font-black text-primary-foreground uppercase">
 						<span>{c.name}</span>
 						<span class="text-base font-normal tracking-wide">{progRows.filter((r) => r.state === 'finished').length} finished · {progRows.filter((r) => r.start !== null).length} started · {progRows.length} registered{flagged ? ` · ${flagged} to check` : ''}</span>
+						<button type="button" class="border-2 border-primary-foreground px-3 py-1 text-sm font-bold tracking-wide uppercase print:hidden" onclick={printProgress}>Print</button>
 					</h3>
 					<p class="border-b-2 border-border px-4 py-2 text-sm">Under each time: <b>RFID</b> = the reader, <b>Marshal tap</b> = a marshal's phone, <b>Station tap</b> = tapped on the station laptop, <b>Admin entry</b> = typed in the Reads tab, <b>Override</b> = finish time corrected by the admin. <b>{byHand}</b> read{byHand === 1 ? '' : 's'} here {byHand === 1 ? 'was' : 'were'} not from the reader.</p>
-					{#key `${c.id}-${progBatch}`}<ProgressTable course={c.course} rows={progRows} category={c.name} flags pageSize={20} onOverride={(r) => openOverride({ bib: r.bib, name: r.name, finishAt: null })} onPenalty={(r) => openPenalty(r)} overridden={(bib) => !!overrideOf(bib)} release={runnerRelease} batchOf={progBatchCol} />{/key}
+					{#key `${c.id}-${progBatch}`}<ProgressTable course={c.course} rows={progRows} category={c.name} flags pageSize={printing ? 0 : 20} onOverride={(r) => openOverride({ bib: r.bib, name: r.name, finishAt: null })} onPenalty={(r) => openPenalty(r)} overridden={(bib) => !!overrideOf(bib)} release={runnerRelease} batchOf={progBatchCol} />{/key}
 				</section>
 				<!-- per checkpoint: who has passed and who has not yet (the start counts a gun start too, like the table) -->
-				<section class="border-2 border-border bg-card">
+				<section class="border-2 border-border bg-card print:hidden">
 					<h3 class="bg-primary px-4 py-2 font-display text-3xl font-black text-primary-foreground uppercase">By checkpoint</h3>
 					<div class="grid gap-4 p-4 md:grid-cols-2">
 						{#each c.course as s, i (s.id)}

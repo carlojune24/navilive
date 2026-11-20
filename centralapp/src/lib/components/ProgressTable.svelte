@@ -57,14 +57,14 @@
 				{/each}
 				<th class="px-3 py-2 font-bold tracking-wide whitespace-nowrap uppercase {head}">Total time</th>
 				{#if flags}<th class="px-3 py-2 font-bold tracking-wide uppercase {head}">Check</th>{/if}
-				{#if release}<th class="px-3 py-2 font-bold tracking-wide uppercase {head}">Live board</th>{/if}
-				{#if onPenalty}<th class="px-3 py-2 font-bold tracking-wide uppercase {head}">Penalty</th>{/if}
-				{#if onOverride}<th class="px-3 py-2 {head}"></th>{/if}
+				{#if release}<th class="print:hidden px-3 py-2 font-bold tracking-wide uppercase {head}">Live board</th>{/if}
+				{#if onPenalty}<th class="print:hidden px-3 py-2 font-bold tracking-wide uppercase {head}">Penalty</th>{/if}
+				{#if onOverride}<th class="print:hidden px-3 py-2 {head}"></th>{/if}
 			</tr>
 		</thead>
 		<tbody>
 			{#each shown as r (r.bib)}
-				<tr animate:flip={slide} class="border-b-2 border-border/15 {r.state === 'not-started' ? 'text-muted-foreground' : ''}">
+				<tr animate:flip={slide} class="print:break-inside-avoid border-b-2 border-border/15 {r.state === 'not-started' ? 'text-muted-foreground' : ''}">
 					<td class="font-display px-3 py-1 text-3xl leading-[0.9] font-black {big ? 'md:text-5xl' : ''}">{r.state === 'finished' && r.rank ? r.rank : '—'}</td>
 					<td class="font-display px-3 py-1 text-3xl leading-[0.9] font-black {big ? 'md:text-5xl' : ''}">{r.bib}</td>
 					{#if batchOf}<td class="font-display px-3 py-1 text-2xl leading-[0.9] font-black whitespace-nowrap {big ? 'md:text-4xl' : ''}">{batchOf(r.bib) ?? '—'}</td>{/if}
@@ -88,9 +88,9 @@
 							{#if r.missed.length}<span class="inline-block border-2 border-destructive px-1 font-bold text-destructive uppercase">Missed: {r.missed.join(', ')}</span>{/if}
 						</td>
 					{/if}
-					{#if release}<td class="px-3 py-1 whitespace-nowrap {text}">{@render release(r)}</td>{/if}
-					{#if onPenalty}<td class="px-3 py-1 whitespace-nowrap {text}"><button type="button" class="underline" onclick={() => onPenalty(r)}>{r.penalty ? `+${mins(r.penalty)}` : 'Add'}</button></td>{/if}
-					{#if onOverride}<td class="px-3 py-1 {text}"><button type="button" class="underline" onclick={() => onOverride(r)}>{overridden?.(r.bib) ? 'Override ✓' : 'Override'}</button></td>{/if}
+					{#if release}<td class="print:hidden px-3 py-1 whitespace-nowrap {text}">{@render release(r)}</td>{/if}
+					{#if onPenalty}<td class="print:hidden px-3 py-1 whitespace-nowrap {text}"><button type="button" class="underline" onclick={() => onPenalty(r)}>{r.penalty ? `+${mins(r.penalty)}` : 'Add'}</button></td>{/if}
+					{#if onOverride}<td class="print:hidden px-3 py-1 {text}"><button type="button" class="underline" onclick={() => onOverride(r)}>{overridden?.(r.bib) ? 'Override ✓' : 'Override'}</button></td>{/if}
 				</tr>
 			{:else}
 				<tr><td colspan={course.length + 11} class="p-6 text-muted-foreground">No runners in this category yet.</td></tr>
