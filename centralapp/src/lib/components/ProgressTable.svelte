@@ -5,15 +5,15 @@
 	import { flip } from 'svelte/animate';
 
 	// Who has reached which station. `flags` (admin) also shows runners who skipped a station, so a missed read can be fixed.
-	type Props = { course: CourseStation[]; rows: ProgressRow[]; flags?: boolean; big?: boolean; pageSize?: number; onOverride?: (r: ProgressRow) => void; overridden?: (bib: string) => boolean; release?: Snippet<[ProgressRow]>; batchOf?: (bib: string) => string | null; category?: string; onPenalty?: (r: ProgressRow) => void };
-	let { course, rows, flags = false, big = false, pageSize = 0, onOverride, overridden, release, batchOf, category = '', onPenalty }: Props = $props();
+	type Props = { course: CourseStation[]; rows: ProgressRow[]; flags?: boolean; big?: boolean; pageSize?: number; onOverride?: (r: ProgressRow) => void; overridden?: (bib: string) => boolean; release?: Snippet<[ProgressRow]>; batchOf?: (bib: string) => string | null; category?: string; onPenalty?: (r: ProgressRow) => void; still?: boolean };
+	let { course, rows, flags = false, big = false, pageSize = 0, onOverride, overridden, release, batchOf, category = '', onPenalty, still = false }: Props = $props();
 	const mins = (ms: number) => `${Math.round((ms / 60000) * 100) / 100} min`;
 	const showDivision = $derived(rows.some((r) => r.division)); // pageSize 0 = show every row
 
 	// when a new finish changes the places, rows slide to their new spot; people who ask for less motion get none
 	let reduceMotion = $state(false);
 	onMount(() => (reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches));
-	const slide = $derived({ duration: reduceMotion ? 0 : 600 });
+	const slide = $derived({ duration: reduceMotion || still ? 0 : 600 });
 
 	let page = $state(0);
 	const pages = $derived(pageSize ? Math.max(1, Math.ceil(rows.length / pageSize)) : 1);
@@ -39,7 +39,7 @@
 	const head = $derived(big ? 'text-base md:text-xl' : 'text-sm');
 </script>
 
-<div class="overflow-x-auto">
+<div class="overflow-x-auto print:overflow-visible">
 	<table class="w-full border-collapse text-left">
 		<thead>
 			<tr class="bg-primary text-primary-foreground">

@@ -1084,14 +1084,14 @@
 				{@const flagged = progRows.filter((r) => r.missed.length).length}
 				{@const byHand = progRows.reduce((n, r) => n + r.src.filter((k) => k && k !== 'rfid').length, 0)}
 				<h2 class="hidden font-display text-3xl font-black uppercase print:block">{data.event.name} · Progress · {c.name}{progBatch === 'all' || !progBatches.length ? '' : progBatch === 'none' ? ' · No batch' : ` · Batch ${progBatches.find((b) => b.id === progBatch)?.name ?? ''}`} <span class="text-base font-normal">printed {new Date(now).toLocaleString()}</span></h2>
-				<section class="border-2 border-border bg-card print:border-0 print:[print-color-adjust:exact]">
+				<section class="border-2 border-border bg-card print:border-0 print:[print-color-adjust:exact] print:[zoom:0.65]">
 					<h3 class="flex flex-wrap items-baseline justify-between gap-2 bg-primary px-4 py-2 font-display text-3xl font-black text-primary-foreground uppercase">
 						<span>{c.name}</span>
 						<span class="text-base font-normal tracking-wide">{progRows.filter((r) => r.state === 'finished').length} finished · {progRows.filter((r) => r.start !== null).length} started · {progRows.length} registered{flagged ? ` · ${flagged} to check` : ''}</span>
 						<button type="button" class="border-2 border-primary-foreground px-3 py-1 text-sm font-bold tracking-wide uppercase print:hidden" onclick={printProgress}>Print</button>
 					</h3>
 					<p class="border-b-2 border-border px-4 py-2 text-sm">Under each time: <b>RFID</b> = the reader, <b>Marshal tap</b> = a marshal's phone, <b>Station tap</b> = tapped on the station laptop, <b>Admin entry</b> = typed in the Reads tab, <b>Override</b> = finish time corrected by the admin. <b>{byHand}</b> read{byHand === 1 ? '' : 's'} here {byHand === 1 ? 'was' : 'were'} not from the reader.</p>
-					{#key `${c.id}-${progBatch}`}<ProgressTable course={c.course} rows={progRows} category={c.name} flags pageSize={printing ? 0 : 20} onOverride={(r) => openOverride({ bib: r.bib, name: r.name, finishAt: null })} onPenalty={(r) => openPenalty(r)} overridden={(bib) => !!overrideOf(bib)} release={runnerRelease} batchOf={progBatchCol} />{/key}
+					{#key `${c.id}-${progBatch}`}<ProgressTable course={c.course} rows={progRows} category={c.name} flags pageSize={printing ? 0 : 20} still={printing} onOverride={(r) => openOverride({ bib: r.bib, name: r.name, finishAt: null })} onPenalty={(r) => openPenalty(r)} overridden={(bib) => !!overrideOf(bib)} release={runnerRelease} batchOf={progBatchCol} />{/key}
 				</section>
 				<!-- per checkpoint: who has passed and who has not yet (the start counts a gun start too, like the table) -->
 				<section class="border-2 border-border bg-card print:hidden">
