@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { applyLocal, batchState, gunsOf, lastThrough, newlyStarted, runnerState, seenBy, stampFor, taggedCount, undoLocked, type Batch, type Person, type Tag } from './marshal';
+import { defaultCourse } from './progress';
 
 const course = [1, 2, 3]; // Start, CP1, Finish
 const p = (bib: string, batch_id: number | null = 7): Person => ({ bib, name: `R${bib}`, tag: '', category_id: 10, batch_id });
@@ -161,5 +162,22 @@ describe('undoLocked', () => {
 	it('a finish read anywhere locks a checkpoint off the course; the finish marshal may still undo their own tap', () => {
 		expect(undoLocked('7', at([2, 4]), 9, course, [4])).toBe(true);
 		expect(undoLocked('7', at([1, 4]), 4, course, [4])).toBe(false);
+	});
+});
+
+describe('finish added before a checkpoint (ord: Start, Finish, CP1)', () => {
+	const st = [
+		{ id: 1, kind: 'start', ord: 0 },
+		{ id: 2, kind: 'finish', ord: 1 },
+		{ id: 3, kind: 'checkpoint', ord: 2 }
+	];
+	const c = defaultCourse(st).map((s) => s.id); // [1, 3, 2]
+	it('a runner read at the finish is missed at the checkpoint, not incoming', () => {
+		const seen = seenBy([{ bib: '101', station_id: 1, at: 1 }, { bib: '101', station_id: 2, at: 9 }]);
+		expect(runnerState('101', seen, 3, c)).toBe('missed');
+	});
+	it('a runner only read at the start is incoming at the checkpoint, and one read at the checkpoint is incoming at the finish', () => {
+		expect(runnerState('102', seenBy([{ bib: '102', station_id: 1, at: 1 }]), 3, c)).toBe('incoming');
+		expect(runnerState('103', seenBy([{ bib: '103', station_id: 3, at: 5 }]), 2, c)).toBe('incoming');
 	});
 });

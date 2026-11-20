@@ -1,7 +1,8 @@
 /**
  * What the marshal tagging page shows, derived from /board. Pure, so the page itself holds no rules.
- * Nothing here gates tagging: a runner may be tapped at any station whatever their state, because a
- * missed checkpoint is exactly the case manual tagging exists for.
+ * Tagging is open at any station, because a missed checkpoint is exactly the case manual tagging exists
+ * for. The one exception, enforced by the page: a runner with a finish read is done and is not tagged
+ * at an earlier station.
  */
 
 export type Tag = { bib: string; station_id: number; at: number };

@@ -7,6 +7,7 @@
 	import { page } from '$app/state';
 	import { replaceState } from '$app/navigation';
 	import { applyLocal, batchState, gunsOf, lastThrough, newlyStarted, runnerState, seenBy, taggedCount, undoLocked, type Batch, type Person, type Tag } from '$lib/marshal';
+	import { defaultCourse } from '$lib/progress';
 	import { hms, phTime } from '$lib/time';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
@@ -50,7 +51,9 @@
 	let nameInput = $state('');
 
 	const station = $derived(board?.stations.find((s) => s.id === stationId) ?? null);
-	const course = $derived(board?.stations.map((s) => s.id) ?? []); // the default: every station, in order
+	// the default: every station, start then checkpoints then finish. Raw `ord` is not enough: a checkpoint added
+	// after the finish gets a higher ord, which made the finish read as "the station before" it.
+	const course = $derived(defaultCourse(board?.stations ?? []).map((s) => s.id));
 	// a category with its own course skips stations, so its runners must not read as missed at one
 	const courseOf = $derived.by(() => {
 		const m = new Map<number, number[]>();
@@ -85,6 +88,8 @@
 	const finishIds = $derived(board?.stations.filter((s) => s.kind === 'finish').map((s) => s.id) ?? []);
 	const locked = (p: Person) =>
 		stationId !== null && undoLocked(p.bib, seen, stationId, (p.category_id !== null ? courseOf.get(p.category_id) : null) ?? course, finishIds);
+	// a runner with a finish read is done: they can no longer be tagged at an earlier checkpoint
+	const finished = (p: Person) => stationId !== null && finishIds.some((id) => id !== stationId && seen.get(p.bib)?.has(id));
 	// one entry per runner per station: the same bib may be tagged at several stations from this device
 	const mineKey = (p: Person) => `${station?.name ?? ''}|${p.bib}`;
 	const rows = $derived.by(() => {
@@ -183,7 +188,7 @@
 	const who = (p: Person) => `${p.bib}${p.name ? ` (${p.name})` : ''}`;
 
 	function tap(p: Person) {
-		if (!station) return;
+		if (!station || finished(p)) return;
 		// a mis-tap on a batch that has not started is the usual cause: ask first
 		const b = p.batch_id ? batchById.get(p.batch_id) : null;
 		if (b && !b.gun_ms) ask = { title: 'Batch not started', body: `${who(p)} is in Batch ${b.name}, which has not started yet. Tag anyway?`, action: 'Tag anyway', run: () => commitTap(p) };
@@ -529,20 +534,27 @@
 						{@const st = stateOf(p)}
 						{#if st === 'tagged'}
 							{@const at = seen.get(p.bib)?.get(station.id)}
-							<div class="{cardCls} bg-muted">
+							<div class="{cardCls} bg-start text-background">
 								<span class="font-display text-3xl font-black">{p.bib}</span>
-								<span class="w-full truncate text-muted-foreground">{p.name}</span>
-								{#if showStart}<span class="w-full truncate text-sm text-muted-foreground">{startOf(p)}</span>{/if}
+								<span class="w-full truncate">{p.name}</span>
+								{#if showStart}<span class="w-full truncate text-sm">{startOf(p)}</span>{/if}
 								<div class="mt-1 flex w-full items-center justify-between gap-2">
 									<span class="font-bold">{at ? clock(at) : ''}</span>
 									{#if mine[mineKey(p)] && !mine[mineKey(p)].voided}
 										{#if locked(p)}
-											<span class="text-sm font-bold text-muted-foreground uppercase" title="Already read at a later checkpoint or the finish. The organizer can fix it on the Reads page.">Locked</span>
+											<span class="text-sm font-bold uppercase" title="Already read at a later checkpoint or the finish. The organizer can fix it on the Reads page.">Locked</span>
 										{:else}
 											<Button variant="outline" size="sm" class="h-9 border-2 font-bold uppercase" onclick={() => undo(p)}>Undo</Button>
 										{/if}
 									{/if}
 								</div>
+							</div>
+						{:else if st === 'missed' && finished(p)}
+							<div class="{cardCls} border-destructive bg-card" aria-disabled="true">
+								<span class="font-display text-3xl font-black">{p.bib}</span>
+								<span class="w-full truncate text-muted-foreground">{p.name}</span>
+								{#if showStart}<span class="w-full truncate text-sm text-muted-foreground">{startOf(p)}</span>{/if}
+								<span class="mt-1 text-sm font-bold text-destructive uppercase">Missed here · finished</span>
 							</div>
 						{:else}
 							<button type="button" onclick={() => tap(p)} class="{cardCls} {st === 'incoming' ? 'bg-checkpoint text-background' : st === 'missed' ? 'border-destructive bg-card' : 'bg-card'}">
