@@ -9,7 +9,7 @@ const course = [
 ];
 const prog = (bib: string, finished: boolean): ProgressRow => ({
 	bib, name: bib, state: finished ? 'finished' : 'on-course', rank: finished ? 1 : null, time: finished ? 600 : null, start: 0,
-	at: finished ? [1, 2, 3] : [1, 2, null], by: [null, null, null], last: finished ? 'Finish' : 'CP1', missed: []
+	at: finished ? [1, 2, 3] : [1, 2, null], by: [null, null, null], src: [null, null, null], last: finished ? 'Finish' : 'CP1', missed: []
 });
 const cat = { id: 1, name: '5K', course, rows: [{ bib: 'A', rank: 1 }, { bib: 'B', rank: 2 }], awards: [{ key: 'overall' }], progress: [prog('A', true), prog('B', true), prog('C', false)] } as unknown as Cat;
 const run = (m: Record<string, Level>) => applyRelease([cat], (b) => m[b] ?? 'checkpoints')[0];

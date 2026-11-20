@@ -199,3 +199,28 @@ describe('penalty', () => {
 		expect(c.progress.find((r) => r.bib === '1')).toMatchObject({ time: 720000, penalty: 120000 });
 	});
 });
+
+describe('how each first read got in (progress src)', () => {
+	const row = (reads: R[], p = ps, bib = '101') => computeResults(cats, p, st, reads, 'gun')[0].progress.find((r) => r.bib === bib)!;
+	it('each station carries the type of its first read', () => {
+		const r = row([
+			{ pid: 1, station_id: 1, read_at_ms: 1000, device_id: 'ESP-A', source: 'rfid' },
+			{ pid: 1, station_id: 2, read_at_ms: 301000, device_id: 'Joy', source: 'marshal' },
+			{ pid: 1, station_id: 3, read_at_ms: 601000, device_id: 'MANUAL-CENTRAL', source: 'admin_manual' }
+		]);
+		expect(r.src).toEqual(['rfid', 'marshal', 'admin_manual']);
+		expect(r.by).toEqual(['ESP-A', 'Joy', 'MANUAL-CENTRAL']);
+	});
+	it('the earliest read decides, a later hand tap does not relabel an RFID read', () => {
+		const r = row([
+			{ pid: 1, station_id: 1, read_at_ms: 1000, device_id: 'ESP-A', source: 'rfid' },
+			{ pid: 1, station_id: 1, read_at_ms: 1500, device_id: 'MANUAL', source: 'station_manual' }
+		]);
+		expect(r.src[0]).toBe('rfid');
+	});
+	it('a station with no read has no type; a finish override is labelled override', () => {
+		const withOverride = ps.map((p) => (p.bib === '101' ? { ...p, finishOverride: 600000 } : p));
+		const r = row([{ pid: 1, station_id: 1, read_at_ms: 1000, device_id: 'ESP-A', source: 'rfid' }], withOverride);
+		expect(r.src).toEqual(['rfid', null, 'override']);
+	});
+});

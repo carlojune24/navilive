@@ -34,6 +34,7 @@ const cat = {
 	'5K': (await one("insert into categories(event_id,name) values($1,'5K') returning id", [ev.id])).id,
 	'10K': (await one("insert into categories(event_id,name,gun_ms) values($1,'10K',$2) returning id", [ev.id, T0 - 10 * MIN])).id
 };
+await db.query("update categories set release='released' where event_id=$1", [ev.id]); // the public board holds finish times back until released; this test reads them from it
 for (const [i, s] of ['Start', 'CP1', 'Finish'].entries()) await db.query('insert into category_courses(category_id,station_id,ord) values($1,$2,$3)', [cat['5K'], st[s], i]);
 const batch = {
 	'Wave A': (await one("insert into batches(category_id,name,gun_ms) values($1,'Wave A',$2) returning id", [cat['5K'], T0])).id,

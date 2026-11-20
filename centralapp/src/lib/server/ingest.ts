@@ -21,7 +21,7 @@ async function undoRefused(c: PoolClient, eventId: number, device: string, tag: 
 }
 
 /** The one place reads enter the database: the live station upload and the manual file upload both use it, so duplicates are judged identically. */
-export async function insertReads(eventId: number, reads: InRead[]) {
+export async function insertReads(eventId: number, reads: InRead[], keyId: number | null = null) {
 	const c = await pool.connect();
 	try {
 		await c.query('begin');
@@ -39,13 +39,13 @@ export async function insertReads(eventId: number, reads: InRead[]) {
 				}
 				// station matched by name (case-insensitive); unknown/blank -> null, still stored
 				const res = await c.query(
-					`insert into reads(event_id, station_id, tag, bib, read_at_ms, device_id, voided, station_name_sent, client_ms)
+					`insert into reads(event_id, station_id, tag, bib, read_at_ms, device_id, voided, station_name_sent, client_ms, source, key_id)
 					 values($1,(select id from stations where event_id=$1 and lower(name)=lower($2)),$3,
-					        coalesce($4,(select bib from participants where event_id=$1 and tag<>'' and upper(tag)=upper($3) limit 1),(select bib from participants where event_id=$1 and bib=$3 limit 1)),$5,$6,$7,$8,$9)
+					        coalesce($4,(select bib from participants where event_id=$1 and tag<>'' and upper(tag)=upper($3) limit 1),(select bib from participants where event_id=$1 and bib=$3 limit 1)),$5,$6,$7,$8,$9,'marshal',$10)
 					 on conflict (event_id, device_id, tag, client_ms) where client_ms is not null do update set voided = excluded.voided
 					   where reads.voided is distinct from excluded.voided and not reads.voided_by_admin
 					 returning (xmax = 0) as inserted`, // an existing read only changes when the station voids/restores it
-					[eventId, String(r.station ?? ''), r.tag, r.bib ? String(r.bib) : null, at, String(r.device_id ?? ''), r.voided === true, String(r.station ?? '').trim().slice(0, 80), r.read_at_ms]
+					[eventId, String(r.station ?? ''), r.tag, r.bib ? String(r.bib) : null, at, String(r.device_id ?? ''), r.voided === true, String(r.station ?? '').trim().slice(0, 80), r.read_at_ms, keyId]
 				);
 				if (res.rows[0]?.inserted) inserted++;
 				else if (res.rows[0]) updated++;
@@ -55,6 +55,8 @@ export async function insertReads(eventId: number, reads: InRead[]) {
 			const device = String(r.device_id ?? '');
 			const src = String(r.src ?? '').slice(0, 100);
 			const voided = r.voided === true;
+			// the station app marks its hand taps with device 'MANUAL' and a 'manual-' identity; anything else is the reader
+			const source = device === 'MANUAL' || src.startsWith('manual-') ? 'station_manual' : 'rfid';
 			// The same read already stored? With an identity (src) it must match exactly, or be a row stored before identities
 			// existed at the same station. Without one (file upload, older station app) device + time + tag decide, as before.
 			const [old] = (
@@ -76,11 +78,11 @@ export async function insertReads(eventId: number, reads: InRead[]) {
 			// station matched by name (case-insensitive); unknown/blank -> null, still stored. The runner: the central app's own
 			// tag mapping first (a station's roster copy can be stale), then the bib the station sent, then a bib typed as the tag.
 			const res = await c.query(
-				`insert into reads(event_id, station_id, tag, bib, read_at_ms, device_id, voided, station_name_sent, src)
+				`insert into reads(event_id, station_id, tag, bib, read_at_ms, device_id, voided, station_name_sent, src, source, key_id)
 				 values($1,(select id from stations where event_id=$1 and lower(name)=lower($2)),$3,
-				        coalesce((select bib from participants where event_id=$1 and tag<>'' and upper(tag)=upper($3) limit 1),$4,(select bib from participants where event_id=$1 and bib=$3 limit 1)),$5,$6,$7,$2,$8)
+				        coalesce((select bib from participants where event_id=$1 and tag<>'' and upper(tag)=upper($3) limit 1),$4,(select bib from participants where event_id=$1 and bib=$3 limit 1)),$5,$6,$7,$2,$8,$9,$10)
 				 on conflict do nothing returning id`,
-				[eventId, station, r.tag, r.bib ? String(r.bib) : null, r.read_at_ms, device, voided, src]
+				[eventId, station, r.tag, r.bib ? String(r.bib) : null, r.read_at_ms, device, voided, src, source, keyId]
 			);
 			if (res.rows[0]) inserted++;
 		}

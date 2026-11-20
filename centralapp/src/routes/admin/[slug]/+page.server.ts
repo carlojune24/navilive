@@ -50,7 +50,7 @@ export const load = async ({ params, url }) => {
 		q('select p.id, p.bib, p.name, p.tag, p.gender, p.age, p.category_id, p.batch_id, p.penalty_ms::float8 as penalty_ms, p.penalty_note, p.release, c.name as category, (select (extract(epoch from ph.updated_at)*1000)::bigint from participant_photos ph where ph.participant_id=p.id) as photo, (select coalesce(json_agg(json_build_object(\'name\', m.name, \'gender\', m.gender, \'age\', m.age, \'tag\', m.tag) order by m.leg, m.id), \'[]\') from team_members m where m.participant_id=p.id) as members from participants p left join categories c on c.id=p.category_id where p.event_id=$1 order by p.bib', [e.id]),
 		q('select id, name, kind, ord, services from stations where event_id=$1 order by ord, id', [e.id]),
 		q(
-			`select r.id, r.read_at_ms, r.tag, r.device_id, r.voided, s.name as station,
+			`select r.id, r.read_at_ms, r.tag, r.device_id, r.source, r.voided, s.name as station,
 			        coalesce(r.bib, p.bib) as bib, p.name
 			 from reads r left join stations s on s.id=r.station_id
 			 left join participants p on ${MATCH}
@@ -93,7 +93,13 @@ export const load = async ({ params, url }) => {
 		 from finish_overrides o join participants p on p.id=o.participant_id where p.event_id=$1`,
 		[e.id]
 	);
-	return { overrides, routes, stationKm, event: { id: e.id, name: e.name, slug: e.slug }, liveStart: { on: e.live_start, size: e.roll_size }, awards, extraFields, awardPreview, resultsData, progressData, courses, apiKey: e.api_key, port, addresses: lanAddresses(), publicUrl: PUBLIC_URL ?? null, stationData, laptops, categories, archived, batches, participants, stations, reads };
+	const stationKeys = await q<{ id: number; label: string; created_ms: number; last_used_ms: number | null; revoked: boolean }>(
+		`select id, label, (extract(epoch from created_at)*1000)::float8 as created_ms, (extract(epoch from last_used_at)*1000)::float8 as last_used_ms, revoked_at is not null as revoked
+		 from station_keys where event_id=$1 order by id`,
+		[e.id]
+	);
+	const [{ require_station_keys: requireKeys }] = await q<{ require_station_keys: boolean }>('select require_station_keys from events where id=$1', [e.id]);
+	return { overrides, routes, stationKm, event: { id: e.id, name: e.name, slug: e.slug }, liveStart: { on: e.live_start, size: e.roll_size }, awards, extraFields, awardPreview, resultsData, progressData, courses, apiKey: e.api_key, stationKeys, requireKeys, port, addresses: lanAddresses(), publicUrl: PUBLIC_URL ?? null, stationData, laptops, categories, archived, batches, participants, stations, reads };
 };
 
 export const actions = {
@@ -588,12 +594,34 @@ export const actions = {
 		const key = newKey();
 		await q('update events set api_key_hash=$1, api_key=$2 where id=$3', [hashKey(key), key, e.id]);
 	},
+	// One key per station laptop. Only the hash is kept, so the key is shown once (in the action result) and cannot be looked up again.
+	createStationKey: async ({ request, params }) => {
+		const e = await ev(params.slug);
+		const label = String((await request.formData()).get('label') ?? '').trim().slice(0, 60);
+		if (!label) return fail(400, { error: 'Name the laptop this key is for.' });
+		const key = newKey();
+		await q('insert into station_keys(event_id, label, key_hash) values($1,$2,$3)', [e.id, label, hashKey(key)]);
+		return { stationKey: { label, key } };
+	},
+	revokeStationKey: async ({ request, params }) => {
+		const e = await ev(params.slug);
+		await q('update station_keys set revoked_at=now() where id=$1 and event_id=$2 and revoked_at is null', [Number((await request.formData()).get('id')), e.id]);
+	},
+	setRequireStationKeys: async ({ request, params }) => {
+		const e = await ev(params.slug);
+		const on = (await request.formData()).get('on') === 'true';
+		if (on && !(await q('select 1 from station_keys where event_id=$1 and revoked_at is null', [e.id])).length) return fail(400, { error: 'Make a station key first, or every laptop would be locked out.' });
+		await q('update events set require_station_keys=$2 where id=$1', [e.id, on]);
+	},
 	// Reads are never deleted one by one: void/restore keeps an audit trail.
 	voidRead: async ({ request, params }) => {
 		const e = await ev(params.slug);
 		const f = await request.formData();
 		// voided_by_admin: the station's own value no longer overwrites this decision when it uploads the read again
-		await q('update reads set voided=$3, voided_by_admin=true where id=$1 and event_id=$2', [Number(f.get('id')), e.id, f.get('voided') === 'true']);
+		const id = Number(f.get('id'));
+		const voided = f.get('voided') === 'true';
+		const hit = await q('update reads set voided=$3, voided_by_admin=true where id=$1 and event_id=$2 returning id', [id, e.id, voided]);
+		if (hit.length) await q('insert into read_audit(event_id, read_id, action, reason) values($1,$2,$3,$4)', [e.id, id, voided ? 'void' : 'restore', String(f.get('reason') ?? '').trim().slice(0, 200)]);
 	},
 	manualRead: async ({ request, params }) => {
 		const e = await ev(params.slug);
@@ -610,11 +638,12 @@ export const actions = {
 		const ok = await q('select 1 from stations where id=$1 and event_id=$2', [station, e.id]);
 		if (!ok.length) return fail(400, { error: 'Unknown station' });
 		const res = await q(
-			`insert into reads(event_id, station_id, tag, bib, read_at_ms, device_id) values($1,$2,$3,$4,$5,'MANUAL-CENTRAL')
+			`insert into reads(event_id, station_id, tag, bib, read_at_ms, device_id, source) values($1,$2,$3,$4,$5,'MANUAL-CENTRAL','admin_manual')
 			 on conflict do nothing returning id`,
 			[e.id, station, (p.tag || 'BIB-' + p.bib).toUpperCase(), p.bib, at]
 		);
 		if (!res.length) return fail(400, { error: 'That exact read already exists' });
+		await q("insert into read_audit(event_id, read_id, action, reason) values($1,$2,'admin_add',$3)", [e.id, res[0].id, String(f.get('reason') ?? '').trim().slice(0, 200)]);
 		return { manualAdded: true };
 	},
 	// What the public live board shows. A batch may also 'inherit' its category's level; 'all' sets every category and clears the batch overrides.

@@ -8,7 +8,7 @@ export type Laptop = {
 	clock_skew_ms: number | null;
 	last_seen_ms: number;
 	first_seen_ms: number;
-	payload: { stations?: { name: string; kind: string; readersTotal: number; readersOnline: number; lastReadMs: number | null; pending: number }[]; pending?: number; lastError?: string };
+	payload: { stations?: { name: string; kind: string; readersTotal: number; readersOnline: number; lastReadMs: number | null; pending: number; rfidCount?: number | null; manualCount?: number | null }[]; pending?: number; lastError?: string };
 };
 
 export async function loadLaptops(eventId: number) {

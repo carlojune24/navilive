@@ -415,6 +415,11 @@ fn heartbeat_reports_readers_online_and_reads_waiting() {
     assert_eq!((b["readers_total"].as_i64(), b["readers_online"].as_i64()), (Some(2), Some(1)));
     assert_eq!(b["pending"].as_i64(), Some(2));
     assert!(b["last_read_ms"].as_i64().is_some());
+    // the reader's two reads are RFID; a hand tap is counted apart
+    assert_eq!((b["rfid_count"].as_i64(), b["manual_count"].as_i64()), (Some(2), Some(0)));
+    manual_read(&mut c, "T1", sid, 5_000).unwrap();
+    let b = &station_beats(&c, now).unwrap()[0];
+    assert_eq!((b["rfid_count"].as_i64(), b["manual_count"].as_i64()), (Some(2), Some(1)));
     // once the central app confirms them, nothing is waiting any more
     let ids: Vec<(i64, bool)> = unsynced_reads(&c, 10).unwrap().iter().map(|r| (r.id, r.voided)).collect();
     mark_synced(&mut c, &ids).unwrap();

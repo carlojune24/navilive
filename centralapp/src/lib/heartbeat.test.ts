@@ -9,6 +9,11 @@ describe('parseHeartbeat', () => {
 		expect(b).toMatchObject({ laptopId: 'L1', laptopName: 'Finish laptop', pending: 3 });
 		expect(b.stations[0]).toMatchObject({ name: 'Finish', readersOnline: 1, readersTotal: 2, lastReadMs: 1_799_999_999_000 });
 	});
+	it('reads the per-station RFID and hand-tap counts; an older app that sends none gives null, not 0', () => {
+		const withCounts = parseHeartbeat({ ...good, stations: [{ ...good.stations[0], rfid_count: 7, manual_count: 2 }] })!;
+		expect(withCounts.stations[0]).toMatchObject({ rfidCount: 7, manualCount: 2 });
+		expect(parseHeartbeat(good)!.stations[0]).toMatchObject({ rfidCount: null, manualCount: null });
+	});
 	it('defaults a missing name and allows a station that has not read anything', () => {
 		const b = parseHeartbeat({ ...good, laptop_name: '', stations: [{ name: 'Start', readers_total: 1, readers_online: 1, last_read_ms: null }] })!;
 		expect(b.laptopName).toBe('Station laptop');

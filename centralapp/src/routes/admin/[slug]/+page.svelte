@@ -18,6 +18,8 @@
 	import { invalidateAll } from '$app/navigation';
 	import { ago } from '$lib/time';
 	import { fmt, genderLabel } from '$lib/results';
+	import { countRunners } from '$lib/runners';
+	import { sourceLabel } from '$lib/readtrail';
 	import { finishAt, localDay } from '$lib/time';
 	import { shrinkImage } from '$lib/image';
 	import { deserialize } from '$app/forms';
@@ -468,7 +470,7 @@
 <main class="space-y-5 p-5 print:p-0">
 	<header class={tab === 'tally' || tab === 'bibs' || tab === 'release' ? 'print:hidden' : ''}>
 		<h1 class="font-display text-5xl leading-[0.85] font-black uppercase">{tab === 'tally' || tab === 'bibs' || tab === 'release' ? 'Printables' : titles[tab]}</h1>
-		<p class="mt-1 text-muted-foreground">{data.event.name} &middot; {data.participants.length} participants &middot; {data.categories.length} categories</p>
+		<p class="mt-1 text-muted-foreground">{data.event.name} &middot; {countRunners(data.participants)} runners{#if countRunners(data.participants) !== data.participants.length}&nbsp;({data.participants.length} entries){/if} &middot; {data.categories.length} categories</p>
 	</header>
 
 	{#if tab === 'tally' || tab === 'bibs' || tab === 'release'}
@@ -524,7 +526,7 @@
 		<div class="space-y-3">
 			<div class="flex flex-wrap items-center justify-between gap-3">
 				<p class="text-lg" role="status">
-					{#if filtering}Showing <b>{filtered.length}</b> of <b>{data.participants.length}</b> participants{:else}<b>{data.participants.length}</b> participants in <b>{data.categories.length}</b> categories{/if}
+					{#if filtering}Showing <b>{countRunners(filtered)}</b> of <b>{countRunners(data.participants)}</b> runners{:else}<b>{countRunners(data.participants)}</b> runners{#if countRunners(data.participants) !== data.participants.length}&nbsp;({data.participants.length} entries){/if} in <b>{data.categories.length}</b> categories{/if}
 				</p>
 				<Button class="h-11 font-bold uppercase" onclick={() => ((importError = ''), (importOpen = true))}>Import participants</Button>
 			</div>
@@ -537,8 +539,8 @@
 					<Label class={lbl} for="pcat">Category</Label>
 					<select id="pcat" bind:value={catFilter} class={field}>
 						<option value="">All categories</option>
-						{#each data.categories as c}<option value={String(c.id)}>{c.name} ({c.n})</option>{/each}
-						<option value="none">No category ({data.participants.filter((p) => p.category_id === null).length})</option>
+						{#each data.categories as c}<option value={String(c.id)}>{c.name} ({countRunners(data.participants.filter((p) => p.category_id === c.id))})</option>{/each}
+						<option value="none">No category ({countRunners(data.participants.filter((p) => p.category_id === null))})</option>
 					</select>
 				</div>
 				{#if filtering}<Button type="button" variant="outline" class="h-11 border-2 border-border bg-card font-bold uppercase hover:bg-accent" onclick={() => ((search = ''), (catFilter = ''))}>Clear</Button>{/if}
@@ -1040,11 +1042,13 @@
 			{/if}
 			{#each progShown ? [progShown] : [] as c (c.id)}
 				{@const flagged = progRows.filter((r) => r.missed.length).length}
+				{@const byHand = progRows.reduce((n, r) => n + r.src.filter((k) => k && k !== 'rfid').length, 0)}
 				<section class="border-2 border-border bg-card">
 					<h3 class="flex flex-wrap items-baseline justify-between gap-2 bg-primary px-4 py-2 font-display text-3xl font-black text-primary-foreground uppercase">
 						<span>{c.name}</span>
 						<span class="text-base font-normal tracking-wide">{progRows.filter((r) => r.state === 'finished').length} finished · {progRows.filter((r) => r.start !== null).length} started · {progRows.length} registered{flagged ? ` · ${flagged} to check` : ''}</span>
 					</h3>
+					<p class="border-b-2 border-border px-4 py-2 text-sm">Under each time: <b>RFID</b> = the reader, <b>Marshal tap</b> = a marshal's phone, <b>Station tap</b> = tapped on the station laptop, <b>Admin entry</b> = typed in the Reads tab, <b>Override</b> = finish time corrected by the admin. <b>{byHand}</b> read{byHand === 1 ? '' : 's'} here {byHand === 1 ? 'was' : 'were'} not from the reader.</p>
 					{#key `${c.id}-${progBatch}`}<ProgressTable course={c.course} rows={progRows} category={c.name} flags pageSize={20} onOverride={(r) => openOverride({ bib: r.bib, name: r.name, finishAt: null })} onPenalty={(r) => openPenalty(r)} overridden={(bib) => !!overrideOf(bib)} release={runnerRelease} batchOf={progBatchCol} />{/key}
 				</section>
 				<!-- per checkpoint: who has passed and who has not yet (the start counts a gun start too, like the table) -->
@@ -1285,6 +1289,7 @@
 						</select>
 					</div>
 					<div class="w-60"><Label class={lbl} for="mt">Time (optional)</Label><Input id="mt" name="time" type="datetime-local" step="1" class="h-11 border-2" /></div>
+					<div class="w-60"><Label class={lbl} for="mr">Reason (optional)</Label><Input id="mr" name="reason" maxlength={200} placeholder="e.g. tag fell off" class="h-11 border-2" /></div>
 					<Button type="submit" class="h-11 font-bold uppercase">Add read</Button>
 				</div>
 			</form>
@@ -1305,12 +1310,12 @@
 								<Table.Cell>{r.station ?? '—'}</Table.Cell>
 								<Table.Cell class="font-display text-2xl font-black">{r.bib ?? '?'}</Table.Cell>
 								<Table.Cell>{r.name || (r.bib ? '—' : r.tag)}</Table.Cell>
-								<Table.Cell>{r.device_id === 'MANUAL-CENTRAL' ? 'Manual' : r.device_id || '—'}</Table.Cell>
+								<Table.Cell><b class={r.source === 'rfid' ? 'text-muted-foreground' : ''}>{sourceLabel(r.source)}</b>{#if r.device_id && !['MANUAL', 'MANUAL-CENTRAL'].includes(r.device_id)}<span class="block text-xs text-muted-foreground">{r.device_id}</span>{/if}</Table.Cell>
 								<Table.Cell class="text-right">
-									{#if r.bib}<button type="button" class="mr-2 underline" onclick={() => openOverride({ bib: r.bib, name: r.name ?? '', finishAt: null })}>{overrideOf(r.bib) ? 'Override ✓' : 'Override'}</button>{/if}
 									<form method="POST" action="?tab={tab}&/voidRead" use:enhance class="inline">
 										<input type="hidden" name="id" value={r.id} />
 										<input type="hidden" name="voided" value={r.voided ? 'false' : 'true'} />
+										<input name="reason" maxlength="200" placeholder="Reason" aria-label="Reason" class="mr-1 h-8 w-28 border-2 border-border bg-card px-2 text-sm" />
 										<Button type="submit" variant="outline" size="sm" class={small}>{r.voided ? 'Restore' : 'Void'}</Button>
 									</form>
 								</Table.Cell>
@@ -1515,6 +1520,36 @@
 			{:else}
 				<p class="border-2 border-border bg-card p-3 font-bold">This event has no key to show yet. Rotate the key to create one.</p>
 			{/if}
+
+			<div class="space-y-3 border-2 border-border bg-card p-4">
+				<h3 class="font-bold tracking-wide uppercase">Station keys (one per laptop)</h3>
+				<p class="text-muted-foreground">With the shared key above, a read cannot be traced to a laptop. Make a key for each station laptop and paste it as that laptop's API key. Every read it sends is then marked with it, and one laptop can be cut off alone.</p>
+				<form method="POST" action="?tab={tab}&/createStationKey" use:enhance class="flex flex-wrap items-end gap-2">
+					<div class="w-64"><Label class={lbl} for="skl">Laptop name</Label><Input id="skl" name="label" maxlength={60} placeholder="e.g. Finish laptop" class="h-11 border-2" required /></div>
+					<Button type="submit" class="h-11 font-bold uppercase">Make key</Button>
+				</form>
+				{#if form?.stationKey}
+					<div class="space-y-1 border-2 border-border bg-muted p-3">
+						<p class="font-bold">Key for {form.stationKey.label} - copy it now, it is not shown again:</p>
+						<code class="block text-sm break-all select-all">{form.stationKey.key}</code>
+						<Button variant="outline" size="sm" class={small} onclick={() => copy('Station key copied', form.stationKey.key)}>Copy</Button>
+					</div>
+				{/if}
+				{#each data.stationKeys as k (k.id)}
+					<div class="flex flex-wrap items-center gap-3 border-t-2 border-border pt-2 {k.revoked ? 'text-muted-foreground line-through' : ''}">
+						<span class="min-w-40 font-bold">{k.label}</span>
+						<span>{k.last_used_ms ? 'last used ' + new Date(k.last_used_ms).toLocaleString() : 'never used'}</span>
+						{#if !k.revoked}
+							<form method="POST" action="?tab={tab}&/revokeStationKey" use:enhance><input type="hidden" name="id" value={k.id} /><Button type="submit" variant="outline" size="sm" class={small}>Revoke</Button></form>
+						{:else}<span class="no-underline">revoked</span>{/if}
+					</div>
+				{/each}
+				<form method="POST" action="?tab={tab}&/setRequireStationKeys" use:enhance class="flex flex-wrap items-center gap-3 border-t-2 border-border pt-2">
+					<input type="hidden" name="on" value={data.requireKeys ? 'false' : 'true'} />
+					<Button type="submit" variant="outline" class={small}>{data.requireKeys ? 'Stop requiring station keys' : 'Require station keys'}</Button>
+					<p class="min-w-64 flex-1 text-muted-foreground">{data.requireKeys ? 'On: reader and station-tap uploads are refused unless they use a station key. Marshal phones are not affected.' : 'Off: the shared key still works for every laptop. Turn on once each laptop has its own key.'}</p>
+				</form>
+			</div>
 
 			<form method="POST" action="?tab={tab}&/rotateKey" use:enhance class="flex flex-wrap items-center gap-3 border-2 border-border bg-card p-4">
 				<Button type="button" onclick={(e) => confirmSubmit('Rotate key?', 'Every station and marshal phone stops uploading at once, until each one gets the new code. Only do this if the key has leaked.', 'Rotate key', e)} class="h-11 border-2 border-border bg-destructive font-bold text-white uppercase hover:bg-destructive/90">Rotate key</Button>

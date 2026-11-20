@@ -22,6 +22,7 @@
 	import Settings from '@lucide/svelte/icons/settings';
 	import Printer from '@lucide/svelte/icons/printer';
 	import Handshake from '@lucide/svelte/icons/handshake';
+	import ScrollText from '@lucide/svelte/icons/scroll-text';
 
 	let { children } = $props();
 	let now = $state(Date.now());
@@ -71,7 +72,8 @@
 	const ev = $derived(page.data.event as { name: string; slug: string } | undefined);
 	const isStation = $derived(page.url.pathname.includes('/station/'));
 	const isSponsors = $derived(page.url.pathname.endsWith('/sponsors'));
-	const activeTab = $derived(isStation ? 'data' : isSponsors ? 'sponsors' : (page.url.searchParams.get('tab') ?? 'participants'));
+	const isReports = $derived(page.url.pathname.endsWith('/reports'));
+	const activeTab = $derived(isStation ? 'data' : isSponsors ? 'sponsors' : isReports ? 'reports-trail' : (page.url.searchParams.get('tab') ?? 'participants'));
 
 	const eventItems = [
 		['participants', 'Participants', Users],
@@ -84,6 +86,7 @@
 		['awards', 'Awards', Trophy],
 		['sponsors', 'Sponsors', Handshake],
 		['reads', 'Reads', ListChecks],
+		['reports-trail', 'Reports', ScrollText],
 		['printables', 'Printables', Printer],
 		['data', 'Station data', Activity],
 		['connect', 'Connect', Plug]
@@ -110,7 +113,7 @@
 {#snippet nav(compact: boolean)}
 	{#if ev}
 		{#each eventItems as [id, label, Icon]}
-			<a href={id === 'sponsors' ? `/admin/${ev.slug}/sponsors` : `/admin/${ev.slug}?tab=${id === 'printables' ? 'tally' : id}`} class="{base} {isOn(id) ? on : off}" aria-current={isOn(id) ? 'page' : undefined}>
+			<a href={id === 'sponsors' ? `/admin/${ev.slug}/sponsors` : id === 'reports-trail' ? `/admin/${ev.slug}/reports` :`/admin/${ev.slug}?tab=${id === 'printables' ? 'tally' : id}`} class="{base} {isOn(id) ? on : off}" aria-current={isOn(id) ? 'page' : undefined}>
 				<Icon class="size-5 shrink-0" />{label}
 			</a>
 		{/each}

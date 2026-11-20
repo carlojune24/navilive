@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { categoryLabel, fmt, type CourseStation, type ProgressRow } from '$lib/results';
+	import { sourceLabel } from '$lib/readtrail';
 	import { onMount, type Snippet } from 'svelte';
 	import { flip } from 'svelte/animate';
 
@@ -77,7 +78,7 @@
 						<td class="px-3 py-1 font-display whitespace-nowrap {big ? 'text-3xl' : 'text-xl'} font-black" title={r.at[i] !== null ? `Read at ${clock(r.at[i]!)} (station clock)` : ''}>
 								{v ?? '—'}
 								<!-- the read time as the station recorded it; the first line is the race time since the start -->
-								{#if flags && r.by[i]}<span class="block font-sans text-xs font-bold normal-case" title="Tagged by">{r.by[i] === 'MANUAL-CENTRAL' ? 'Manual' : r.by[i]}</span>{/if}
+								{#if flags && (r.src[i] || r.by[i])}<span class="block font-sans text-xs normal-case" title="How this read got in, and who tagged it">{#if r.src[i]}<b class={r.src[i] === 'rfid' ? 'font-bold text-muted-foreground' : 'border-2 border-border bg-accent px-1 font-bold'}>{sourceLabel(r.src[i])}</b>{/if}{#if r.by[i] && !['MANUAL', 'MANUAL-CENTRAL', 'Override'].includes(r.by[i]!)}<span class="ml-1 text-muted-foreground">{r.by[i]}</span>{/if}</span>{/if}
 								{#if v !== null && r.at[i] !== null && course[i].kind !== 'finish' && (!isStart(i) ? r.start !== null : r.at[i] !== r.start)}<span class="block font-sans {big ? 'text-base' : 'text-xs'} font-normal text-muted-foreground">{isStart(i) ? 'read ' : ''}{clock(r.at[i]!)}</span>{/if}
 							</td>
 					{/each}

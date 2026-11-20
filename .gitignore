@@ -7,4 +7,5 @@ target/
 .env.*
 !.env.example
 *.log
+centralapp/e2e/data/
 .DS_Store

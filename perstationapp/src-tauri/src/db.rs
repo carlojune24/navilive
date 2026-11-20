@@ -900,13 +900,16 @@ pub fn station_beats(conn: &Connection, now: i64) -> Res<Vec<Value>> {
            (SELECT COUNT(*) FROM devices d WHERE d.station_id=s.id),
            (SELECT COUNT(*) FROM devices d WHERE d.station_id=s.id AND d.last_seen_ms > ?1 - 15000),
            (SELECT MAX(r.read_at_ms) FROM reads r WHERE r.station_id=s.id AND r.test=0),
-           (SELECT COUNT(*) FROM reads r WHERE r.station_id=s.id AND r.synced=0 AND r.test=0)
+           (SELECT COUNT(*) FROM reads r WHERE r.station_id=s.id AND r.synced=0 AND r.test=0),
+           (SELECT COUNT(*) FROM reads r WHERE r.station_id=s.id AND r.test=0 AND r.voided=0 AND r.device_id<>'MANUAL'),
+           (SELECT COUNT(*) FROM reads r WHERE r.station_id=s.id AND r.test=0 AND r.voided=0 AND r.device_id='MANUAL')
          FROM stations s ORDER BY s.sort_order, s.id",
     )?;
     let rows = st.query_map([now], |r| {
         Ok(json!({"name": r.get::<_, String>(0)?, "kind": r.get::<_, String>(1)?,
                   "readers_total": r.get::<_, i64>(2)?, "readers_online": r.get::<_, i64>(3)?,
-                  "last_read_ms": r.get::<_, Option<i64>>(4)?, "pending": r.get::<_, i64>(5)?}))
+                  "last_read_ms": r.get::<_, Option<i64>>(4)?, "pending": r.get::<_, i64>(5)?,
+                  "rfid_count": r.get::<_, i64>(6)?, "manual_count": r.get::<_, i64>(7)?}))
     })?;
     rows.collect()
 }

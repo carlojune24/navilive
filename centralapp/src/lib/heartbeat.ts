@@ -4,7 +4,7 @@ export const BEAT_EVERY_MS = 5_000;
 export const ONLINE_MS = 15_000; // up to 3 missed beats is still "online"
 export const LATE_MS = 45_000; // after this it is offline
 
-export type BeatStation = { name: string; kind: string; readersTotal: number; readersOnline: number; lastReadMs: number | null; pending: number };
+export type BeatStation = { name: string; kind: string; readersTotal: number; readersOnline: number; lastReadMs: number | null; pending: number; rfidCount: number | null; manualCount: number | null };
 export type Beat = { laptopId: string; laptopName: string; appVersion: string; nowMs: number; pending: number; lastError: string; stations: BeatStation[] };
 
 const str = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
@@ -29,7 +29,10 @@ export function parseHeartbeat(raw: unknown): Beat | null {
 			readersTotal: num(o.readers_total, 0, 1000) ?? 0,
 			readersOnline: num(o.readers_online, 0, 1000) ?? 0,
 			lastReadMs: o.last_read_ms === null || o.last_read_ms === undefined ? null : num(o.last_read_ms, 1, 4_102_444_800_000),
-			pending: num(o.pending, 0, 10_000_000) ?? 0
+			pending: num(o.pending, 0, 10_000_000) ?? 0,
+			// null = an older station app that does not send counts; the report then shows "unknown", not 0
+			rfidCount: num(o.rfid_count, 0, 10_000_000),
+			manualCount: num(o.manual_count, 0, 10_000_000)
 		});
 	}
 	return {

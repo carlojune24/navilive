@@ -22,7 +22,7 @@ export type P = {
 	members?: { id: number; name: string; gender?: string; age?: number | null }[]; // relay/duo: the runners of this team
 };
 export type S = { id: number; name: string; kind: string; ord: number };
-export type R = { pid: number; station_id: number; read_at_ms: number; device_id?: string };
+export type R = { pid: number; station_id: number; read_at_ms: number; device_id?: string; source?: string };
 export type Split = { station: string; elapsed: number };
 export type Row = {
 	rank: number | null;
@@ -191,7 +191,7 @@ export function computeResults(
 			const members = ps.filter((p) => (p.category_id ?? 0) === cat.id);
 			const course = resolveCourse(stations, courseFor(cat.id));
 			const inCourse = new Set(course.map((s) => s.id));
-			const track = new Map<string, Pick<Person, 'start' | 'first' | 'by'>>(); // per runner, for the progress view
+			const track = new Map<string, Pick<Person, 'start' | 'first' | 'by' | 'src'>>(); // per runner, for the progress view
 			let noStart = 0;
 			let badStart = 0;
 			const crossed = new Set<string>(); // has a finish read (or override), whatever the start says
@@ -218,8 +218,12 @@ export function computeResults(
 				const penalty = Math.max(0, Number(p.penaltyMs) || 0);
 				const first = new Map<number, number>();
 				const by = new Map<number, string>();
+				const src = new Map<number, string>(); // how that same first read got in: rfid, marshal, station_manual, admin_manual
 				for (const r of all) {
-					if (r.read_at_ms < (first.get(r.station_id) ?? Infinity) && r.device_id) by.set(r.station_id, r.device_id);
+					if (r.read_at_ms < (first.get(r.station_id) ?? Infinity)) {
+						if (r.device_id) by.set(r.station_id, r.device_id);
+						if (r.source) src.set(r.station_id, r.source);
+					}
 					first.set(r.station_id, Math.min(first.get(r.station_id) ?? Infinity, r.read_at_ms));
 				}
 				// an override is the finish: the progress view shows it in the finish column, not a missing read ("Verifying")
@@ -228,8 +232,9 @@ export function computeResults(
 						if (s.kind === 'finish') {
 							first.set(id, p.finishOverride);
 							by.set(id, 'Override');
+							src.set(id, 'override');
 						}
-				track.set(p.bib, { start, first, by });
+				track.set(p.bib, { start, first, by, src });
 				const seen = new Map<number, number>();
 				for (const r of all)
 					if (start !== null && r.read_at_ms > start && kind.get(r.station_id)?.kind === 'checkpoint' && inCourse.has(r.station_id)) seen.set(r.station_id, Math.min(seen.get(r.station_id) ?? Infinity, r.read_at_ms));
@@ -263,7 +268,7 @@ export function computeResults(
 			const timeOf = new Map(done.map((r) => [r.bib, r.time]));
 			const progress = buildProgress(
 				course,
-				members.map((p) => ({ bib: p.bib, name: p.name, start: track.get(p.bib)!.start, first: track.get(p.bib)!.first, by: track.get(p.bib)!.by, finished: rankOf.has(p.bib) || crossed.has(p.bib), rank: rankOf.get(p.bib) ?? null, time: timeOf.get(p.bib) ?? null, division: divisionOf(p), penalty: Math.max(0, Number(p.penaltyMs) || 0) }))
+				members.map((p) => ({ bib: p.bib, name: p.name, start: track.get(p.bib)!.start, first: track.get(p.bib)!.first, by: track.get(p.bib)!.by, src: track.get(p.bib)!.src, finished: rankOf.has(p.bib) || crossed.has(p.bib), rank: rankOf.get(p.bib) ?? null, time: timeOf.get(p.bib) ?? null, division: divisionOf(p), penalty: Math.max(0, Number(p.penaltyMs) || 0) }))
 			);
 			return { id: cat.id, name: cat.name, rows: done, started, total: members.length, awards: buildAwards(done, o), places: o.places, course, progress, noStart, badStart, gunMs: gun.get(`c${cat.id}`) ?? null, gunManual: manual.has(`c${cat.id}`), rankBy: (rankBy === 'chip' || rankBy === 'finish' ? rankBy : 'elapsed') as 'elapsed' | 'chip' | 'finish', underway: members.some((p) => (byP.get(p.id) ?? []).some((r) => kind.get(r.station_id)?.kind !== 'start')) };
 		})

@@ -5,6 +5,8 @@ import { MATCH } from '$lib/server/stationdata';
 import { fmt, genderLabel, type Row } from '$lib/results';
 import { parseConfig, resolveOptions } from '$lib/awardcfg';
 import { toCsv } from '$lib/csv';
+import { loadTrails } from '$lib/server/trails';
+import { SOURCE_LABEL } from '$lib/readtrail';
 
 // Under /admin, so the session check in hooks.server.ts already protects it.
 export const GET = async ({ params, url }) => {
@@ -17,17 +19,38 @@ export const GET = async ({ params, url }) => {
 		const [ev] = await q<{ id: number }>('select id from events where slug=$1', [params.slug]);
 		if (!ev) error(404, 'Event not found');
 		const reads = await q(
-			`select r.read_at_ms, s.name as station, coalesce(r.bib, p.bib) as bib, p.name, r.tag, r.device_id, r.voided
+			`select r.read_at_ms, s.name as station, coalesce(r.bib, p.bib) as bib, p.name, r.tag, r.device_id, r.source, r.voided
 			 from reads r left join stations s on s.id=r.station_id
 			 left join participants p on ${MATCH}
 			 where r.event_id=$1 order by r.read_at_ms, r.id`,
 			[ev.id]
 		);
 		rows = [
-			['time_iso', 'time_ms', 'station', 'bib', 'name', 'tag', 'device', 'voided'],
-			...reads.map((r) => [new Date(r.read_at_ms).toISOString(), r.read_at_ms, r.station, r.bib, r.name, r.tag, r.device_id, r.voided ? 'yes' : ''])
+			['time_iso', 'time_ms', 'station', 'bib', 'name', 'tag', 'device', 'source', 'voided'],
+			...reads.map((r) => [new Date(r.read_at_ms).toISOString(), r.read_at_ms, r.station, r.bib, r.name, r.tag, r.device_id, SOURCE_LABEL[r.source as keyof typeof SOURCE_LABEL] ?? r.source, r.voided ? 'yes' : ''])
 		];
 		name = 'reads';
+	} else if (kind === 'trail') {
+		const [ev] = await q<{ id: number }>('select id from events where slug=$1', [params.slug]);
+		if (!ev) error(404, 'Event not found');
+		const { stations, trails } = await loadTrails(ev.id);
+		const stName = new Map(stations.map((s) => [s.id, s.name]));
+		// one row per runner per course station: who saw them there, which read counts, and the runner's flags
+		rows = [
+			['bib', 'name', 'category', 'station', 'rfid_reads', 'hand_reads', 'voided_reads', 'counted_time_iso', 'counted_source', 'runner_flags'],
+			...trails.flatMap(({ p, trail }) =>
+				trail.slots.map((s) => [
+					p.bib, p.name, p.category, stName.get(s.station_id) ?? '',
+					s.reads.filter((r) => !r.voided && r.source === 'rfid').length,
+					s.reads.filter((r) => !r.voided && r.source !== 'rfid').length,
+					s.reads.filter((r) => r.voided).length,
+					s.counted ? new Date(s.counted.read_at_ms).toISOString() : '',
+					s.counted ? SOURCE_LABEL[s.counted.source] : '',
+					trail.flags.join(' ')
+				])
+			)
+		];
+		name = 'read-trails';
 	} else if (kind === 'template') {
 		rows = [['bib', 'name', 'gender', 'age', 'tag'], ['101', 'Jane Doe', 'F', 34, '0000000001'], ['102', 'John Smith', 'M', 41, '']];
 		name = 'participants-template';

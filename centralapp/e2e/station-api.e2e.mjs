@@ -65,13 +65,13 @@ test('roster: participants come back with category and tag, sorted by bib', asyn
 
 test('upload: insert, resend is a duplicate, void and restore update in place', async () => {
 	const batch = [read({ tag: 'T101', read_at_ms: T0 }), read({ tag: 'T101', station: 'Finish', read_at_ms: T0 + 1_500_000 })];
-	assert.deepEqual((await upload(batch)).body, { received: 2, inserted: 2, updated: 0, duplicates: 0 });
-	assert.deepEqual((await upload(batch)).body, { received: 2, inserted: 0, updated: 0, duplicates: 2 });
+	assert.deepEqual((await upload(batch)).body, { received: 2, inserted: 2, updated: 0, duplicates: 0, locked: [] });
+	assert.deepEqual((await upload(batch)).body, { received: 2, inserted: 0, updated: 0, duplicates: 2, locked: [] });
 
 	const voided = [{ ...batch[1], voided: true }];
-	assert.deepEqual((await upload(voided)).body, { received: 1, inserted: 0, updated: 1, duplicates: 0 });
+	assert.deepEqual((await upload(voided)).body, { received: 1, inserted: 0, updated: 1, duplicates: 0, locked: [] });
 	assert.equal((await rows('select voided from reads where event_id=$1 and read_at_ms=$2', [ev.id, T0 + 1_500_000]))[0].voided, true);
-	assert.deepEqual((await upload([batch[1]])).body, { received: 1, inserted: 0, updated: 1, duplicates: 0 });
+	assert.deepEqual((await upload([batch[1]])).body, { received: 1, inserted: 0, updated: 1, duplicates: 0, locked: [] });
 	assert.equal((await rows('select count(*)::int n from reads where event_id=$1', [ev.id]))[0].n, 2);
 });
 
@@ -127,6 +127,7 @@ test('heartbeat: stored with clock skew, malformed is 400', async () => {
 
 test('results: uploaded start/finish reads produce a ranked time on the public board', async () => {
 	await upload([read({ tag: 'T104', read_at_ms: T0 + 10 }), read({ tag: 'T104', station: 'Finish', read_at_ms: T0 + 1_200_000 })]);
+	await db.query("update categories set release='released' where event_id=$1", [ev.id]); // the board holds finish times back until an organizer releases them
 	const r = await fetch(`${BASE}/e/${slug}/results`);
 	assert.equal(r.status, 200);
 	const cat = (await r.json()).categories.find((c) => c.name === '5K');
@@ -182,7 +183,7 @@ test('upgrade: a read stored by an older station app (no identity) is matched, n
 	const at = T0 + 12_121;
 	await upload([read({ tag: 'T101', station: 'CP1', read_at_ms: at })]); // older app: no src
 	const r = await upload([read({ tag: 'T101', station: 'CP1', read_at_ms: at, src: 'b1:12', voided: true })]);
-	assert.deepEqual(r.body, { received: 1, inserted: 0, updated: 1, duplicates: 0 });
+	assert.deepEqual(r.body, { received: 1, inserted: 0, updated: 1, duplicates: 0, locked: [] });
 	assert.deepEqual(await rows('select src, voided from reads where event_id=$1 and read_at_ms=$2', [ev.id, at]), [{ src: 'b1:12', voided: true }]);
 });
 
@@ -191,4 +192,17 @@ test('file upload without identity (station CSV) still dedupes against the live 
 	await upload([read({ tag: 'T104', station: 'Finish', read_at_ms: at, src: 'b1:13' })]);
 	assert.equal((await upload([read({ tag: 'T104', station: 'Finish', read_at_ms: at })])).body.duplicates, 1);
 	assert.equal((await rows('select count(*)::int n from reads where event_id=$1 and read_at_ms=$2', [ev.id, at]))[0].n, 1);
+});
+
+test('source: reader, station hand tap and marshal tap are stored as what they are, and a resend keeps it', async () => {
+	const at = T0 + 14_141;
+	const batch = [
+		read({ tag: 'T101', station: 'CP1', read_at_ms: at, src: 'b1:20' }), // reader
+		read({ tag: 'T102', station: 'CP1', read_at_ms: at, device_id: 'MANUAL', src: 'manual-L1:3' }), // hand tap on the station laptop
+		read({ tag: 'T104', station: 'CP1', read_at_ms: at, device_id: 'MANUAL', server_time: true }) // a marshal who is named MANUAL is still a marshal
+	];
+	await upload(batch);
+	await upload(batch);
+	const got = await rows("select tag, source from reads where event_id=$1 and read_at_ms=$2 or (event_id=$1 and client_ms=$2) order by tag", [ev.id, at]);
+	assert.deepEqual(got, [{ tag: 'T101', source: 'rfid' }, { tag: 'T102', source: 'station_manual' }, { tag: 'T104', source: 'marshal' }]);
 });

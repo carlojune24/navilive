@@ -7,7 +7,7 @@ const course = [
 	{ id: 3, name: 'Finish', kind: 'finish' }
 ];
 const row = (bib: string, fin: number | null, state: ProgressRow['state'] = fin === null ? 'on-course' : 'finished') =>
-	({ bib, name: 'N' + bib, state, rank: null, time: null, start: 0, at: [0, fin], by: [null, null], last: null, missed: [] }) as ProgressRow;
+	({ bib, name: 'N' + bib, state, rank: null, time: null, start: 0, at: [0, fin], by: [null, null], src: [null, null], last: null, missed: [] }) as ProgressRow;
 
 describe('recentFinishers', () => {
 	it('newest first, limited, skipping runners still on course', () => {

@@ -23,7 +23,7 @@ export async function loadResults(slug: string, mode: Mode, opts: { includeHidde
 		q('select id, name, kind, ord from stations where event_id=$1', [ev.id]),
 		// a read belongs to the participant whose bib it carries, else whose tag matches
 		q(
-			`select p.id as pid, r.station_id, r.read_at_ms, r.device_id from reads r
+			`select p.id as pid, r.station_id, r.read_at_ms, r.device_id, r.source from reads r
 			 join participants p on ${MATCH}
 			 where r.event_id=$1 and not r.voided and r.station_id is not null`,
 			[ev.id]
@@ -57,8 +57,8 @@ export async function loadResults(slug: string, mode: Mode, opts: { includeHidde
 		finishLine: finishers,
 		batchOf: Object.fromEntries(ps.filter((p) => p.batch_id).map((p) => [p.bib, p.batch_id as number])),
 		categories: (hidden ? categories.map((c) => ({ ...c, awards: [] })) : categories).map((c) =>
-			// marshal names are for the organizer only
-			opts.includeHiddenAwards ? c : { ...c, progress: c.progress.map((r) => ({ ...r, by: r.by.map(() => null) })) }
+			// who tagged a read and how it got in (reader, marshal, hand tap) are for the organizer only: the public board is shown on a TV or projector
+			opts.includeHiddenAwards ? c : { ...c, progress: c.progress.map((r) => ({ ...r, by: r.by.map(() => null), src: r.src.map(() => null) })) }
 		)
 	};
 }
