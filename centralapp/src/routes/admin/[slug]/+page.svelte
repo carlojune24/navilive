@@ -26,8 +26,8 @@
 
 	let { data, form } = $props();
 	// the left menu picks the section with ?tab=...
-	const sections = ['participants', 'categories', 'starts', 'stations', 'route', 'progress', 'results', 'awards', 'reads', 'tally', 'bibs', 'release', 'data', 'connect'];
-	const titles: Record<string, string> = { participants: 'Participants', categories: 'Categories', starts: 'Starts', stations: 'Stations', route: 'Route & map', progress: 'Progress', results: 'Results', awards: 'Awards', reads: 'Reads', tally: 'Tally sheets', bibs: 'Bib list', release: 'Batch release tally', data: 'Station data', connect: 'Connect stations' };
+	const sections = ['participants', 'categories', 'starts', 'stations', 'route', 'progress', 'results', 'awards', 'reads', 'tally', 'bibs', 'marshal', 'release', 'data', 'connect'];
+	const titles: Record<string, string> = { participants: 'Participants', categories: 'Categories', starts: 'Starts', stations: 'Stations', route: 'Route & map', progress: 'Progress', results: 'Results', awards: 'Awards', reads: 'Reads', tally: 'Tally sheets', bibs: 'Bib list', marshal: 'Marshal tap list', release: 'Batch release tally', data: 'Station data', connect: 'Connect stations' };
 	// Results page: the finish-time override panel for one runner
 	let ovr = $state<{ bib: string; name: string; at: string; day: string; start: number | null } | null>(null);
 	let ovrBy = $state(typeof localStorage === 'undefined' ? '' : (localStorage.getItem('nv.admin.name') ?? ''));
@@ -332,6 +332,7 @@
 	// Batch release tally: 0.45in rows on A4 (0.5in margins). Chrome fits 22 on one page; 21 leaves room for other browsers' margins
 	const RELEASE_ROWS_A4 = 21;
 	let releaseRows = $state(RELEASE_ROWS_A4);
+	let printCat = $state(''); // Tally sheets / Bib list: '' prints every category
 	const kindColor = (k: string) => (k === 'start' ? 'var(--start)' : k === 'finish' ? 'var(--finish)' : 'var(--checkpoint)');
 
 	const addr = $derived(data.addresses[addrIdx]);
@@ -467,19 +468,19 @@
 </Dialog.Root>
 {/snippet}
 
-<svelte:head>{#if tab === 'tally' || tab === 'bibs'}{@html '<style>@page{size:8.5in 13in;margin:0.5in}</style>'}{:else if tab === 'release'}{@html '<style>@page{size:A4;margin:0.5in}</style>'}{/if}</svelte:head>
+<svelte:head>{#if tab === 'tally' || tab === 'bibs' || tab === 'marshal'}{@html '<style>@page{size:8.5in 13in;margin:0.5in}</style>'}{:else if tab === 'release'}{@html '<style>@page{size:A4;margin:0.5in}</style>'}{/if}</svelte:head>
 
 <Toaster position="top-center" />
 <main class="space-y-5 p-5 print:p-0">
-	<header class={tab === 'tally' || tab === 'bibs' || tab === 'release' ? 'print:hidden' : ''}>
-		<h1 class="font-display text-5xl leading-[0.85] font-black uppercase">{tab === 'tally' || tab === 'bibs' || tab === 'release' ? 'Printables' : titles[tab]}</h1>
+	<header class={tab === 'tally' || tab === 'bibs' || tab === 'marshal' || tab === 'release' ? 'print:hidden' : ''}>
+		<h1 class="font-display text-5xl leading-[0.85] font-black uppercase">{tab === 'tally' || tab === 'bibs' || tab === 'marshal' || tab === 'release' ? 'Printables' : titles[tab]}</h1>
 		<p class="mt-1 text-muted-foreground">{data.event.name} &middot; {data.participants.length} participants &middot; {data.categories.length} categories</p>
 	</header>
 
-	{#if tab === 'tally' || tab === 'bibs' || tab === 'release'}
+	{#if tab === 'tally' || tab === 'bibs' || tab === 'marshal' || tab === 'release'}
 		<!-- Printables: one menu item, one tab per sheet -->
 		<div class="flex flex-wrap gap-2 print:hidden" role="tablist" aria-label="Printables">
-			{#each [['tally', 'Tally sheets'], ['bibs', 'Bib list'], ['release', 'Batch release tally']] as [id, label]}
+			{#each [['tally', 'Tally sheets'], ['bibs', 'Bib list'], ['marshal', 'Marshal tap list'], ['release', 'Batch release tally']] as [id, label]}
 				<a href="?tab={id}" role="tab" aria-selected={tab === id} class="flex h-11 items-center border-2 border-border px-4 text-lg font-bold uppercase {tab === id ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-accent'}">{label}</a>
 			{/each}
 		</div>
@@ -1163,10 +1164,12 @@
 
 		<!-- TALLY: printable sheets to write finish times by hand, one batch per long bond page -->
 		{#if tab === 'tally'}
-		{@const sheets = groupTally(data.categories, data.batches, data.participants)}
+		{@const all = groupTally(data.categories, data.batches, data.participants)}
+		{@const sheets = all.filter((s) => !printCat || s.category === printCat)}
 		<div class="space-y-5">
 			<div class="flex flex-wrap items-center gap-3 print:hidden">
 				<Button class="h-11 font-bold uppercase" onclick={() => window.print()} disabled={!sheets.length}>Print tally sheets</Button>
+				<select bind:value={printCat} class="h-11 border-2 border-border bg-card px-3 font-bold uppercase" aria-label="Category to print"><option value="">All categories</option>{#each [...new Set(all.map((s) => s.category))] as c}<option value={c}>{c}</option>{/each}</select>
 				<p class="text-muted-foreground">One page per category and batch, runners by bib. Prints on long bond paper (8.5 &times; 13 in): pick that size in the print dialog if it is not already selected.</p>
 			</div>
 			{#each sheets as s, i}
@@ -1204,10 +1207,12 @@
 		<!-- BIB LIST: organizer checklist, tick each runner once registered and their bib is written -->
 		{#if tab === 'bibs'}
 		<!-- teams (duo/relay) expand to one row per runner, all under the team's bib -->
-		{@const sheets = groupTally(data.categories, data.batches, data.participants.flatMap((p) => (p.members?.length ? p.members.map((m: { name: string }) => ({ ...p, name: m.name })) : [p])))}
+		{@const all = groupTally(data.categories, data.batches, data.participants.flatMap((p) => (p.members?.length ? p.members.map((m: { name: string }) => ({ ...p, name: m.name })) : [p])))}
+		{@const sheets = all.filter((s) => !printCat || s.category === printCat)}
 		<div class="space-y-5">
 			<div class="flex flex-wrap items-center gap-3 print:hidden">
 				<Button class="h-11 font-bold uppercase" onclick={() => window.print()} disabled={!sheets.length}>Print bib list</Button>
+				<select bind:value={printCat} class="h-11 border-2 border-border bg-card px-3 font-bold uppercase" aria-label="Category to print"><option value="">All categories</option>{#each [...new Set(all.map((s) => s.category))] as c}<option value={c}>{c}</option>{/each}</select>
 				<p class="text-muted-foreground">Checklist for the organizer: tick each runner once they have registered and their bib is written. One page per category and batch, runners by bib. Prints on long bond paper (8.5 &times; 13 in).</p>
 			</div>
 			{#each sheets as s, i}
@@ -1242,6 +1247,43 @@
 			{:else}
 				<p class="text-muted-foreground">No participants yet.</p>
 			{/each}
+		</div>
+		{/if}
+
+		<!-- MARSHAL TAP LIST: every bib on one list, for a marshal writing times by hand -->
+		{#if tab === 'marshal'}
+		{@const catName = new Map(data.categories.map((c: { id: number; name: string }) => [c.id, c.name]))}
+		{@const rows = data.participants.filter((p) => !printCat || catName.get(p.category_id) === printCat).sort((a, b) => a.bib.localeCompare(b.bib, undefined, { numeric: true }))}
+		<div class="space-y-5">
+			<div class="flex flex-wrap items-center gap-3 print:hidden">
+				<Button class="h-11 font-bold uppercase" onclick={() => window.print()} disabled={!rows.length}>Print marshal tap list</Button>
+				<select bind:value={printCat} class="h-11 border-2 border-border bg-card px-3 font-bold uppercase" aria-label="Category to print"><option value="">All categories</option>{#each data.categories as c}<option value={c.name}>{c.name}</option>{/each}</select>
+				<p class="text-muted-foreground">Every bib on one list, by bib number. Teams show the team name. Prints on long bond paper (8.5 &times; 13 in).</p>
+			</div>
+			<section class="border-2 border-border bg-card p-4 print:border-0 print:p-0">
+				<div class="mb-1 flex items-baseline justify-between gap-3">
+					<h2 class="font-display text-xl leading-none font-black uppercase">Marshal tap list{printCat ? ` · ${printCat}` : ''} <span class="font-sans text-xs font-bold">&mdash; {data.event.name}</span></h2>
+					<div class="flex items-baseline gap-4 text-xs font-bold whitespace-nowrap uppercase"><span>Checkpoint #: <span class="inline-block w-24 border-b border-black align-baseline">&nbsp;</span></span><span>{rows.length} bibs</span></div>
+				</div>
+				<table class="w-full table-fixed border-collapse border-2 border-black text-left">
+					<thead>
+						<tr class="border-b-2 border-black bg-black/5 text-xs font-bold uppercase">
+							<th class="border border-black w-20 px-1 py-0.5">Bib</th><th class="border border-black px-1 py-0.5">Team name or name</th><th class="border border-black w-60 px-1 py-0.5">Time</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each rows as r (r.bib)}
+							<tr class="h-[0.3in] border-b border-black print:break-inside-avoid">
+								<td class="font-display border border-black px-1 text-lg leading-none font-black">{r.bib}</td>
+								<td class="border border-black px-1 text-sm leading-tight font-bold break-words uppercase">{r.name || '—'}</td>
+								<td class="border border-black"></td>
+							</tr>
+						{:else}
+							<tr><td colspan="3" class="px-1 py-2 text-muted-foreground">No participants yet.</td></tr>
+						{/each}
+					</tbody>
+				</table>
+			</section>
 		</div>
 		{/if}
 
