@@ -1083,6 +1083,10 @@
 			{#each progShown ? [progShown] : [] as c (c.id)}
 				{@const flagged = progRows.filter((r) => r.missed.length).length}
 				{@const byHand = progRows.reduce((n, r) => n + r.src.filter((k) => k && k !== 'rfid').length, 0)}
+				{@const penalised = progRows.filter((r) => r.penalty)}
+				{@const missedReads = progRows.reduce((n, r) => n + r.missed.length, 0)}
+				{@const corrected = progRows.filter((r) => overrideOf(r.bib)).length}
+				{@const pmin = (ms: number) => Math.round((ms / 60000) * 100) / 100}
 				<h2 class="hidden font-display text-3xl font-black uppercase print:block">{data.event.name} · Progress · {c.name}{progBatch === 'all' || !progBatches.length ? '' : progBatch === 'none' ? ' · No batch' : ` · Batch ${progBatches.find((b) => b.id === progBatch)?.name ?? ''}`} <span class="text-base font-normal">printed {new Date(now).toLocaleString()}</span></h2>
 				<section class="border-2 border-border bg-card print:border-0 print:[print-color-adjust:exact] print:[zoom:0.65]">
 					<h3 class="flex flex-wrap items-baseline justify-between gap-2 bg-primary px-4 py-2 font-display text-3xl font-black text-primary-foreground uppercase">
@@ -1092,6 +1096,35 @@
 					</h3>
 					<p class="border-b-2 border-border px-4 py-2 text-sm">Under each time: <b>RFID</b> = the reader, <b>Marshal tap</b> = a marshal's phone, <b>Station tap</b> = tapped on the station laptop, <b>Admin entry</b> = typed in the Reads tab, <b>Override</b> = finish time corrected by the admin. <b>{byHand}</b> read{byHand === 1 ? '' : 's'} here {byHand === 1 ? 'was' : 'were'} not from the reader.</p>
 					{#key `${c.id}-${progBatch}`}<ProgressTable course={c.course} rows={progRows} category={c.name} flags pageSize={printing ? 0 : 20} still={printing} onOverride={(r) => openOverride({ bib: r.bib, name: r.name, finishAt: null })} onPenalty={(r) => openPenalty(r)} overridden={(bib) => !!overrideOf(bib)} release={runnerRelease} batchOf={progBatchCol} />{/key}
+				</section>
+				<!-- print only: the summary that closes the printed sheet -->
+				<section class="hidden space-y-3 border-2 border-black p-4 text-black print:block print:break-inside-avoid">
+					<h3 class="font-display text-2xl font-black uppercase">Summary · {c.name}</h3>
+					<p><b>{progRows.length}</b> registered · <b>{progRows.filter((r) => r.start !== null).length}</b> started · <b>{progRows.filter((r) => r.state === 'on-course').length}</b> on course · <b>{progRows.filter((r) => r.state === 'not-started').length}</b> not started · <b>{progRows.filter((r) => r.state === 'finished').length}</b> finished · <b>{flagged}</b> to check</p>
+					<table class="w-full border-collapse text-sm">
+						<thead><tr class="border-b-2 border-black text-left"><th class="py-1">Station</th><th>Read</th><th>Missed</th><th>Hand-entered</th></tr></thead>
+						<tbody>
+							{#each c.course as s, i (s.id)}
+								<tr class="border-b border-black/30">
+									<td class="py-1 font-bold uppercase">{s.name}</td>
+									<td>{progRows.filter((r) => (s.kind === 'start' ? r.start !== null || r.at[i] !== null : r.at[i] !== null)).length}</td>
+									<td>{progRows.filter((r) => r.missed.includes(s.name)).length}</td>
+									<td>{progRows.filter((r) => r.src[i] && r.src[i] !== 'rfid').length}</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+					<p><b>{flagged}</b> runner{flagged === 1 ? '' : 's'} missed at least one checkpoint · <b>{missedReads}</b> missed read{missedReads === 1 ? '' : 's'} in total · <b>{byHand}</b> read{byHand === 1 ? '' : 's'} not from the reader</p>
+					{#if penalised.length}
+						<div>
+							<p><b>{penalised.length}</b> runner{penalised.length === 1 ? '' : 's'} with a penalty · <b>{pmin(penalised.reduce((n, r) => n + (r.penalty ?? 0), 0))} min</b> in total</p>
+							<ul class="list-disc pl-5">
+								{#each penalised as r (r.bib)}<li>{r.bib} {r.name} · +{pmin(r.penalty ?? 0)} min{data.participants.find((p) => p.bib === r.bib)?.penalty_note ? ` · ${data.participants.find((p) => p.bib === r.bib)?.penalty_note}` : ''}</li>{/each}
+							</ul>
+						</div>
+					{/if}
+					{#if corrected}<p><b>{corrected}</b> finish time{corrected === 1 ? '' : 's'} corrected by the admin</p>{/if}
+					<div class="grid grid-cols-3 gap-6 pt-8 text-sm"><span class="border-t border-black pt-1">Prepared by</span><span class="border-t border-black pt-1">Checked by</span><span class="border-t border-black pt-1">Date and time: {new Date(now).toLocaleString()}</span></div>
 				</section>
 				<!-- per checkpoint: who has passed and who has not yet (the start counts a gun start too, like the table) -->
 				<section class="border-2 border-border bg-card print:hidden">

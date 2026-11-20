@@ -85,7 +85,7 @@
 					<td class="px-3 py-1 font-display whitespace-nowrap {big ? 'text-3xl' : 'text-xl'} font-black">{r.time !== null ? fmt(r.time) : '—'}{#if r.penalty && r.time !== null}<span class="block font-sans text-xs font-bold text-destructive normal-case" title="Included in the total time">+{mins(r.penalty)} penalty</span>{/if}</td>
 					{#if flags}
 						<td class="px-3 py-1">
-							{#if r.missed.length}<span class="inline-block border-2 border-destructive px-1 font-bold text-destructive uppercase">Missed: {r.missed.join(', ')}</span>{/if}
+							{#if r.missed.length}<span class="inline-block border-2 border-destructive px-1 font-bold text-destructive uppercase">Missed {r.missed.length}: {r.missed.join(', ')}</span>{/if}
 						</td>
 					{/if}
 					{#if release}<td class="print:hidden px-3 py-1 whitespace-nowrap {text}">{@render release(r)}</td>{/if}
