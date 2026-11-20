@@ -177,6 +177,9 @@
 
 	function tap(p: Person) {
 		if (!station) return;
+		// a mis-tap on a batch that has not started is the usual cause: ask first
+		const b = p.batch_id ? batchById.get(p.batch_id) : null;
+		if (b && !b.gun_ms && !confirm(`${p.bib}${p.name ? ` (${p.name})` : ''} is in Batch ${b.name}, which has not started yet. Tag anyway?`)) return;
 		// the device's own corrected clock, captured now: a tap that syncs an hour late keeps this time
 		const qd: Queued = { bib: p.bib, tag: (p.tag || `BIB-${p.bib}`).toUpperCase(), read_at_ms: Math.round(Date.now() + offset), station: station.name, voided: false, by: name };
 		mine = { ...mine, [mineKey(p)]: qd };

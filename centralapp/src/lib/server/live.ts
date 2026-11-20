@@ -30,7 +30,7 @@ export async function loadResults(slug: string, mode: Mode, opts: { includeHidde
 		),
 		q<{ ago: number | null }>("select extract(epoch from now()-max(ingested_at))*1000 as ago from reads where event_id=$1", [ev.id]),
 		q<{ category_id: number; station_id: number }>('select cc.category_id, cc.station_id from category_courses cc join categories c on c.id=cc.category_id where c.event_id=$1 order by cc.category_id, cc.ord', [ev.id]),
-		q<{ id: number; name: string; category_id: number; gun_ms: number | null }>('select b.id, b.name, b.category_id, b.gun_ms from batches b join categories c on c.id=b.category_id where c.event_id=$1 order by b.id', [ev.id])
+		q<{ id: number; name: string; category_id: number; gun_ms: number | null }>('select b.id, b.name, b.category_id, b.gun_ms from batches b join categories c on c.id=b.category_id where c.event_id=$1 order by (case when b.name ~ \'^[0-9]{1,9}$\' then b.name::int end), b.name, b.id', [ev.id])
 	]);
 	const courses = new Map<number, number[]>();
 	for (const r of courseRows) (courses.get(r.category_id) ?? courses.set(r.category_id, []).get(r.category_id)!).push(r.station_id);

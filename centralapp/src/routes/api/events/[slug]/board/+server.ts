@@ -11,7 +11,7 @@ export const GET = async ({ params, request }) => {
 	const [stations, categories, batches, participants, tagged, courses] = await Promise.all([
 		q('select id, name, kind, ord from stations where event_id=$1 order by ord, id', [e.id]),
 		q('select id, name, gun_ms::float8 as gun_ms from categories where event_id=$1 and archived_at is null order by name', [e.id]),
-		q('select b.id, b.name, b.category_id, b.gun_ms::float8 as gun_ms from batches b join categories c on c.id=b.category_id where c.event_id=$1 order by b.id', [e.id]),
+		q('select b.id, b.name, b.category_id, b.gun_ms::float8 as gun_ms from batches b join categories c on c.id=b.category_id where c.event_id=$1 order by (case when b.name ~ \'^[0-9]{1,9}$\' then b.name::int end), b.name, b.id', [e.id]),
 		q('select bib, name, tag, category_id, batch_id from participants where event_id=$1 order by bib', [e.id]),
 		// one row per bib per station: drives both "already tagged here" and the incoming/missed badges
 		q(

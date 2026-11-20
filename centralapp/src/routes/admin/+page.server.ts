@@ -105,7 +105,8 @@ export const actions = {
 			await c.query(
 				`insert into batches(category_id, name, release)
 				 select nc.id, b.name, b.release from batches b
-				 join categories oc on oc.id=b.category_id and oc.event_id=$1 join categories nc on nc.event_id=$2 and nc.name=oc.name`,
+				 join categories oc on oc.id=b.category_id and oc.event_id=$1 join categories nc on nc.event_id=$2 and nc.name=oc.name
+					 order by b.id`,
 				[src, to]
 			);
 			await c.query(
