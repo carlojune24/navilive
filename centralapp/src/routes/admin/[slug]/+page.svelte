@@ -254,7 +254,7 @@
 			if (catFilter === 'none' ? p.category_id !== null : catFilter !== '' && String(p.category_id) !== catFilter) return false;
 			const hay = `${p.bib} ${p.name} ${p.members?.map((m: { name: string; tag: string }) => `${m.name} ${m.tag}`).join(' ') ?? ''} ${p.tag} ${p.category ?? ''} ${p.gender === 'M' ? 'male men' : p.gender === 'F' ? 'female women' : ''} ${p.age ?? ''}`.toLowerCase();
 			return words.every((w) => hay.includes(w)); // every word must match somewhere, so "maria 10k" narrows
-		});
+		}).sort((a, b) => a.bib.localeCompare(b.bib, undefined, { numeric: true }));
 	});
 	const filtering = $derived(search.trim() !== '' || catFilter !== '');
 	let importMode = $state<'bibs' | 'csv' | 'one' | 'tags'>('bibs');
