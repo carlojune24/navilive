@@ -55,7 +55,7 @@
 		try {
 			const fd = new FormData();
 			fd.set('bib', pen.bib);
-			fd.set('minutes', clear ? '0' : pen.minutes.trim() || '0');
+			fd.set('minutes', clear ? '0' : String(pen.minutes ?? '').trim() || '0');
 			fd.set('note', clear ? '' : pen.note);
 			const r = await fetch('?tab=progress&/setPenalty', { method: 'POST', body: fd, headers: { 'x-sveltekit-action': 'true' } });
 			const res = deserialize(await r.text());

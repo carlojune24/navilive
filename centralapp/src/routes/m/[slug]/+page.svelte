@@ -544,7 +544,7 @@
 										{#if locked(p)}
 											<span class="text-sm font-bold uppercase" title="Already read at a later checkpoint or the finish. The organizer can fix it on the Reads page.">Locked</span>
 										{:else}
-											<Button variant="outline" size="sm" class="h-9 border-2 font-bold uppercase" onclick={() => undo(p)}>Undo</Button>
+											<Button variant="outline" size="sm" class="h-9 border-2 font-bold text-foreground uppercase" onclick={() => undo(p)}>Undo</Button>
 										{/if}
 									{/if}
 								</div>
