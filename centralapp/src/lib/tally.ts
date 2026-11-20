@@ -2,6 +2,17 @@ export type TallySheet = { category: string; batch: string; runners: { bib: stri
 
 const byBib = (a: { bib: string }, b: { bib: string }) => a.bib.localeCompare(b.bib, undefined, { numeric: true });
 
+/** Merge the batch sheets of each category into one sheet (batch is ''), runners by bib. */
+export function byCategory(sheets: TallySheet[]): TallySheet[] {
+	const out: TallySheet[] = [];
+	for (const s of sheets) {
+		const last = out[out.length - 1];
+		if (last && last.category === s.category) last.runners = [...last.runners, ...s.runners].sort(byBib);
+		else out.push({ category: s.category, batch: '', runners: [...s.runners] });
+	}
+	return out;
+}
+
 /** One sheet per category and batch (runners without a batch last, as "No batch"), runners by bib. Empty groups are skipped. */
 export function groupTally(
 	categories: { id: number; name: string }[],

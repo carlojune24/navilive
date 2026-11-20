@@ -11,7 +11,7 @@
 	import CourseEditor from '$lib/components/CourseEditor.svelte';
 	import RouteEditor from '$lib/components/RouteEditor.svelte';
 	import ProgressTable from '$lib/components/ProgressTable.svelte';
-	import { groupTally } from '$lib/tally';
+	import { groupTally, byCategory } from '$lib/tally';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { Toaster } from '$lib/components/ui/sonner/index.js';
@@ -334,6 +334,7 @@
 	// Batch release tally: 0.45in rows on A4 (0.5in margins). Chrome fits 22 on one page; 21 leaves room for other browsers' margins
 	const RELEASE_ROWS_A4 = 21;
 	let releaseRows = $state(RELEASE_ROWS_A4);
+	let bibView = $state<'batch' | 'category'>('batch');
 	const kindColor = (k: string) => (k === 'start' ? 'var(--start)' : k === 'finish' ? 'var(--finish)' : 'var(--checkpoint)');
 
 	const addr = $derived(data.addresses[addrIdx]);
@@ -1166,10 +1167,10 @@
 		<div class="space-y-5">
 			<div class="flex flex-wrap items-center gap-3 print:hidden">
 				<Button class="h-11 font-bold uppercase" onclick={() => window.print()} disabled={!sheets.length}>Print tally sheets</Button>
-				<p class="text-muted-foreground">One page per category and batch, runners by bib. Prints on long bond paper (8.5 &times; 13 in): pick that size in the print dialog if it is not already selected.</p>
+				<p class="text-muted-foreground">One sheet per category and batch, runners by bib, packed onto each page (a batch is never split across pages unless it is longer than a page). Prints on long bond paper (8.5 &times; 13 in): pick that size in the print dialog if it is not already selected.</p>
 			</div>
-			{#each sheets as s, i}
-				<section class="border-2 border-border bg-card p-4 print:break-inside-auto print:border-0 print:p-0 {i ? 'print:break-before-page' : ''}">
+			{#each sheets as s}
+				<section class="border-2 border-border bg-card p-4 print:mb-4 print:break-inside-avoid print:border-0 print:p-0">
 					<div class="mb-1 flex items-baseline justify-between gap-3">
 						<div>
 							<h2 class="font-display text-xl leading-none font-black uppercase">{s.category} &middot; {s.batch} <span class="font-sans text-xs font-bold">&mdash; {data.event.name}</span></h2>
@@ -1203,16 +1204,22 @@
 		<!-- BIB LIST: organizer checklist, tick each runner once registered and their bib is written -->
 		{#if tab === 'bibs'}
 		<!-- teams (duo/relay) expand to one row per runner, all under the team's bib -->
-		{@const sheets = groupTally(data.categories, data.batches, data.participants.flatMap((p) => (p.members?.length ? p.members.map((m: { name: string }) => ({ ...p, name: m.name })) : [p])))}
+		{@const batchSheets = groupTally(data.categories, data.batches, data.participants.flatMap((p) => (p.members?.length ? p.members.map((m: { name: string }) => ({ ...p, name: m.name })) : [p])))}
+		{@const sheets = bibView === 'category' ? byCategory(batchSheets) : batchSheets}
 		<div class="space-y-5">
 			<div class="flex flex-wrap items-center gap-3 print:hidden">
 				<Button class="h-11 font-bold uppercase" onclick={() => window.print()} disabled={!sheets.length}>Print bib list</Button>
-				<p class="text-muted-foreground">Checklist for the organizer: tick each runner once they have registered and their bib is written. One page per category and batch, runners by bib. Prints on long bond paper (8.5 &times; 13 in).</p>
+				<div class="flex gap-2" role="group" aria-label="List by">
+					{#each [['batch', 'Per batch'], ['category', 'Per category']] as [id, label]}
+						<button type="button" aria-pressed={bibView === id} class="h-11 border-2 border-border px-4 font-bold uppercase {bibView === id ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-accent'}" onclick={() => (bibView = id as 'batch' | 'category')}>{label}</button>
+					{/each}
+				</div>
+				<p class="text-muted-foreground">Checklist for the organizer: tick each runner once they have registered and their bib is written. {bibView === 'batch' ? 'One list per category and batch, packed onto each page (a batch is never split across pages unless it is longer than a page)' : 'One list per category, starting on a new page'}, runners by bib. Prints on long bond paper (8.5 &times; 13 in).</p>
 			</div>
 			{#each sheets as s, i}
-				<section class="border-2 border-border bg-card p-4 print:break-inside-auto print:border-0 print:p-0 {i ? 'print:break-before-page' : ''}">
+				<section class="border-2 border-border bg-card p-4 print:border-0 print:p-0 {bibView === 'category' ? `print:break-inside-auto ${i ? 'print:break-before-page' : ''}` : 'print:mb-4 print:break-inside-avoid'}">
 					<div class="mb-1 flex items-baseline justify-between gap-3">
-						<h2 class="font-display text-xl leading-none font-black uppercase">{s.category} &middot; {s.batch} <span class="font-sans text-xs font-bold">&mdash; {data.event.name}</span></h2>
+						<h2 class="font-display text-xl leading-none font-black uppercase">{s.category}{s.batch ? ` · ${s.batch}` : ''} <span class="font-sans text-xs font-bold">&mdash; {data.event.name}</span></h2>
 						<span class="text-xs font-bold whitespace-nowrap uppercase">{s.runners.length} runners</span>
 					</div>
 					<table class="w-full table-fixed border-collapse border-2 border-black text-left">
