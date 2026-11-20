@@ -335,6 +335,9 @@
 	const RELEASE_ROWS_A4 = 21;
 	let releaseRows = $state(RELEASE_ROWS_A4);
 	let bibView = $state<'batch' | 'category'>('batch');
+	// categories left out of the Tally sheets / Bib list printout (empty = print all)
+	let printCats = $state<string[]>([]);
+	const printable = $derived(data.categories.filter((c) => !printCats.includes(c.name)));
 	const kindColor = (k: string) => (k === 'start' ? 'var(--start)' : k === 'finish' ? 'var(--finish)' : 'var(--checkpoint)');
 
 	const addr = $derived(data.addresses[addrIdx]);
@@ -465,6 +468,16 @@
 </Dialog.Root>
 {/snippet}
 
+{#snippet catPicker()}
+	<div class="flex flex-wrap items-center gap-2 print:hidden" role="group" aria-label="Categories to print">
+		<span class="text-sm font-bold uppercase">Print:</span>
+		{#each data.categories as c (c.id)}
+			<button type="button" aria-pressed={!printCats.includes(c.name)} class="h-9 border-2 border-border px-3 text-sm font-bold uppercase {printCats.includes(c.name) ? 'bg-card text-muted-foreground line-through hover:bg-accent' : 'bg-primary text-primary-foreground'}" onclick={() => (printCats = printCats.includes(c.name) ? printCats.filter((n) => n !== c.name) : [...printCats, c.name])}>{c.name}</button>
+		{/each}
+		<button type="button" class="h-9 px-2 text-sm font-bold uppercase underline" onclick={() => (printCats = [])}>All</button>
+		<button type="button" class="h-9 px-2 text-sm font-bold uppercase underline" onclick={() => (printCats = data.categories.map((c) => c.name))}>None</button>
+	</div>
+{/snippet}
 <svelte:head>{#if tab === 'tally' || tab === 'bibs'}{@html '<style>@page{size:8.5in 13in;margin:0.5in}</style>'}{:else if tab === 'release'}{@html '<style>@page{size:A4;margin:0.5in}</style>'}{/if}</svelte:head>
 
 <Toaster position="top-center" />
@@ -1163,12 +1176,13 @@
 
 		<!-- TALLY: printable sheets to write finish times by hand, one batch per long bond page -->
 		{#if tab === 'tally'}
-		{@const sheets = groupTally(data.categories, data.batches, data.participants)}
+		{@const sheets = groupTally(printable, data.batches, data.participants)}
 		<div class="space-y-5">
 			<div class="flex flex-wrap items-center gap-3 print:hidden">
 				<Button class="h-11 font-bold uppercase" onclick={() => window.print()} disabled={!sheets.length}>Print tally sheets</Button>
 				<p class="text-muted-foreground">One sheet per category and batch, runners by bib, packed onto each page (a batch is never split across pages unless it is longer than a page). Prints on long bond paper (8.5 &times; 13 in): pick that size in the print dialog if it is not already selected.</p>
 			</div>
+			{@render catPicker()}
 			{#each sheets as s}
 				<section class="border-2 border-border bg-card p-4 print:mb-4 print:break-inside-avoid print:border-0 print:p-0">
 					<div class="mb-1 flex items-baseline justify-between gap-3">
@@ -1196,7 +1210,7 @@
 					</table>
 				</section>
 			{:else}
-				<p class="text-muted-foreground">No participants yet.</p>
+				<p class="text-muted-foreground">{printCats.length ? 'No runners in the selected categories.' : 'No participants yet.'}</p>
 			{/each}
 		</div>
 		{/if}
@@ -1204,7 +1218,7 @@
 		<!-- BIB LIST: organizer checklist, tick each runner once registered and their bib is written -->
 		{#if tab === 'bibs'}
 		<!-- teams (duo/relay) expand to one row per runner, all under the team's bib -->
-		{@const batchSheets = groupTally(data.categories, data.batches, data.participants.flatMap((p) => (p.members?.length ? p.members.map((m: { name: string }) => ({ ...p, name: m.name })) : [p])))}
+		{@const batchSheets = groupTally(printable,data.batches, data.participants.flatMap((p) => (p.members?.length ? p.members.map((m: { name: string }) => ({ ...p, name: m.name })) : [p])))}
 		{@const sheets = bibView === 'category' ? byCategory(batchSheets) : batchSheets}
 		<div class="space-y-5">
 			<div class="flex flex-wrap items-center gap-3 print:hidden">
@@ -1216,6 +1230,7 @@
 				</div>
 				<p class="text-muted-foreground">Checklist for the organizer: tick each runner once they have registered and their bib is written. {bibView === 'batch' ? 'One list per category and batch, packed onto each page (a batch is never split across pages unless it is longer than a page)' : 'One list per category, starting on a new page'}, runners by bib. Prints on long bond paper (8.5 &times; 13 in).</p>
 			</div>
+			{@render catPicker()}
 			{#each sheets as s, i}
 				<section class="border-2 border-border bg-card p-4 print:border-0 print:p-0 {bibView === 'category' ? `print:break-inside-auto ${i ? 'print:break-before-page' : ''}` : 'print:mb-4 print:break-inside-avoid'}">
 					<div class="mb-1 flex items-baseline justify-between gap-3">
@@ -1246,7 +1261,7 @@
 					</div>
 				</section>
 			{:else}
-				<p class="text-muted-foreground">No participants yet.</p>
+				<p class="text-muted-foreground">{printCats.length ? 'No runners in the selected categories.' : 'No participants yet.'}</p>
 			{/each}
 		</div>
 		{/if}

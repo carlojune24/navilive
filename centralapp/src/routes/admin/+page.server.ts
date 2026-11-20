@@ -78,8 +78,8 @@ export const actions = {
 		);
 		redirect(303, `/admin/${s.slug}`);
 	},
-	// Copies the setup of an event (settings, stations, categories, courses, participants, teams, finish wall backdrops, sponsors) under a new name.
-	// Reads, start clocks, batches, release levels, photos and the API key are never copied: the new event starts clean.
+	// Copies the setup of an event (settings, route, stations, categories, courses, batches and who is in them, release levels, participants, penalties, teams, finish wall backdrops, sponsors) under a new name.
+	// Reads, start clocks (nothing is started in the copy), photos and the API key are never copied.
 	duplicate: async ({ request }) => {
 		const f = await request.formData();
 		const src = Number(f.get('id'));
@@ -94,13 +94,20 @@ export const actions = {
 			await c.query('begin');
 			// the old and the new rows are matched by their unique keys: category name, station name, bib
 			const ev = await c.query(
-				`insert into events(name, slug, date, api_key_hash, api_key, award_places, age_brackets, award_exclusive, award_config)
-				 select $2, $3, $4, $5, $6, award_places, age_brackets, award_exclusive, award_config from events where id=$1 returning id`,
+				`insert into events(name, slug, date, api_key_hash, api_key, award_places, age_brackets, award_exclusive, award_config, live_start, roll_size, gpx, gpx_name)
+				 select $2, $3, $4, $5, $6, award_places, age_brackets, award_exclusive, award_config, live_start, roll_size, gpx, gpx_name from events where id=$1 returning id`,
 				[src, name, s.slug, date, hashKey(key), key]
 			);
 			const to = ev.rows[0].id;
 			await c.query('insert into stations(event_id, name, kind, ord, km, services) select $2, name, kind, ord, km, services from stations where event_id=$1', [src, to]);
-			await c.query('insert into categories(event_id, name, rank_by, gpx, gpx_name, archived_at) select $2, name, rank_by, gpx, gpx_name, archived_at from categories where event_id=$1', [src, to]);
+			await c.query('insert into categories(event_id, name, rank_by, gpx, gpx_name, archived_at, release) select $2, name, rank_by, gpx, gpx_name, archived_at, release from categories where event_id=$1', [src, to]);
+			// batches keep their name and release level, not their start clock (gun_ms stays null = not started)
+			await c.query(
+				`insert into batches(category_id, name, release)
+				 select nc.id, b.name, b.release from batches b
+				 join categories oc on oc.id=b.category_id and oc.event_id=$1 join categories nc on nc.event_id=$2 and nc.name=oc.name`,
+				[src, to]
+			);
 			await c.query(
 				`insert into category_courses(category_id, station_id, ord)
 				 select nc.id, ns.id, cc.ord from category_courses cc
@@ -116,9 +123,10 @@ export const actions = {
 				[src, to]
 			);
 			await c.query(
-				`insert into participants(event_id, category_id, bib, name, tag, extra, gender, age)
-				 select $2, nc.id, p.bib, p.name, p.tag, p.extra, p.gender, p.age from participants p
+				`insert into participants(event_id, category_id, batch_id, bib, name, tag, extra, gender, age, release, penalty_ms, penalty_note)
+				 select $2, nc.id, nb.id, p.bib, p.name, p.tag, p.extra, p.gender, p.age, p.release, p.penalty_ms, p.penalty_note from participants p
 				 left join categories oc on oc.id=p.category_id left join categories nc on nc.event_id=$2 and nc.name=oc.name
+				 left join batches ob on ob.id=p.batch_id left join batches nb on nb.category_id=nc.id and nb.name=ob.name
 				 where p.event_id=$1`,
 				[src, to]
 			);
