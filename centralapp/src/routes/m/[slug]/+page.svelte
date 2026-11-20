@@ -10,6 +10,9 @@
 	import { hms, phTime } from '$lib/time';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
+	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
+	import { Toaster } from '$lib/components/ui/sonner/index.js';
+	import { toast } from 'svelte-sonner';
 
 	type Station = { id: number; name: string; kind: string; ord: number };
 	type Category = { id: number; name: string; gun_ms: number | null };
@@ -175,34 +178,48 @@
 		localStorage.setItem(K_STATION, String(id));
 	}
 
+	// the one confirmation dialog; `run` fires only if the marshal presses the action button
+	let ask = $state<{ title: string; body: string; action: string; run: () => void } | null>(null);
+	const who = (p: Person) => `${p.bib}${p.name ? ` (${p.name})` : ''}`;
+
 	function tap(p: Person) {
 		if (!station) return;
 		// a mis-tap on a batch that has not started is the usual cause: ask first
 		const b = p.batch_id ? batchById.get(p.batch_id) : null;
-		if (b && !b.gun_ms && !confirm(`${p.bib}${p.name ? ` (${p.name})` : ''} is in Batch ${b.name}, which has not started yet. Tag anyway?`)) return;
+		if (b && !b.gun_ms) ask = { title: 'Batch not started', body: `${who(p)} is in Batch ${b.name}, which has not started yet. Tag anyway?`, action: 'Tag anyway', run: () => commitTap(p) };
+		else commitTap(p);
+	}
+
+	function commitTap(p: Person) {
+		if (!station) return;
 		// the device's own corrected clock, captured now: a tap that syncs an hour late keeps this time
 		const qd: Queued = { bib: p.bib, tag: (p.tag || `BIB-${p.bib}`).toUpperCase(), read_at_ms: Math.round(Date.now() + offset), station: station.name, voided: false, by: name };
 		mine = { ...mine, [mineKey(p)]: qd };
 		queue = [...queue, qd];
 		save();
 		void flush();
+		toast.success(`Tagged ${who(p)}`);
 	}
 
 	function undo(p: Person) {
 		const prev = mine[mineKey(p)];
 		if (!prev || prev.voided) return;
 		if (locked(p)) return void alertLocked(p);
-		if (!confirm(`Undo tag for ${p.bib}${p.name ? ` (${p.name})` : ''}?`)) return;
+		ask = { title: 'Undo tag?', body: `Undo tag for ${who(p)}?`, action: 'Undo tag', run: () => commitUndo(p, prev) };
+	}
+
+	function commitUndo(p: Person, prev: Queued) {
 		// the same tag+time+device re-sent as voided: the ingest upsert flips the existing row
 		const qd = { ...prev, voided: true };
 		mine = { ...mine, [mineKey(p)]: qd };
 		queue = [...queue, qd];
 		save();
 		void flush();
+		toast(`Undid tag for ${who(p)}`);
 	}
 
 	function alertLocked(p: Person) {
-		err = `${p.bib} already has a later read, so this tag can't be undone here. Ask the organizer to fix it on the Reads page.`;
+		toast.error(`${p.bib} already has a later read, so this tag can't be undone here. Ask the organizer to fix it on the Reads page.`);
 	}
 
 	function badKey(message: string) {
@@ -543,3 +560,18 @@
 		</div>
 	{/if}
 </main>
+
+<Toaster position="top-center" />
+
+<AlertDialog.Root open={!!ask} onOpenChange={(o) => !o && (ask = null)}>
+	<AlertDialog.Content>
+		<AlertDialog.Header>
+			<AlertDialog.Title>{ask?.title}</AlertDialog.Title>
+			<AlertDialog.Description>{ask?.body}</AlertDialog.Description>
+		</AlertDialog.Header>
+		<AlertDialog.Footer>
+			<AlertDialog.Cancel class="h-12 font-bold uppercase">Cancel</AlertDialog.Cancel>
+			<AlertDialog.Action class="h-12 font-bold uppercase" onclick={() => ask?.run()}>{ask?.action}</AlertDialog.Action>
+		</AlertDialog.Footer>
+	</AlertDialog.Content>
+</AlertDialog.Root>
