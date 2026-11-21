@@ -19,6 +19,7 @@
 	import { ago } from '$lib/time';
 	import { fmt, genderLabel } from '$lib/results';
 	import { countRunners } from '$lib/runners';
+	import { headcount } from '$lib/headcount';
 	import { sourceLabel } from '$lib/readtrail';
 	import { finishAt, localDay } from '$lib/time';
 	import { shrinkImage } from '$lib/image';
@@ -28,8 +29,8 @@
 
 	let { data, form } = $props();
 	// the left menu picks the section with ?tab=...
-	const sections = ['participants', 'categories', 'starts', 'stations', 'route', 'progress', 'results', 'awards', 'reads', 'tally', 'bibs', 'release', 'data', 'connect'];
-	const titles: Record<string, string> = { participants: 'Participants', categories: 'Categories', starts: 'Starts', stations: 'Stations', route: 'Route & map', progress: 'Progress', results: 'Results', awards: 'Awards', reads: 'Reads', tally: 'Tally sheets', bibs: 'Bib list', release: 'Batch release tally', data: 'Station data', connect: 'Connect stations' };
+	const sections = ['participants', 'categories', 'starts', 'stations', 'route', 'progress', 'results', 'awards', 'reads', 'tally', 'bibs', 'release', 'count', 'data', 'connect'];
+	const titles: Record<string, string> = { participants: 'Participants', categories: 'Categories', starts: 'Starts', stations: 'Stations', route: 'Route & map', progress: 'Progress', results: 'Results', awards: 'Awards', reads: 'Reads', tally: 'Tally sheets', bibs: 'Bib list', release: 'Batch release tally', count: 'Headcount', data: 'Station data', connect: 'Connect stations' };
 	// Results page: the finish-time override panel for one runner
 	let ovr = $state<{ bib: string; name: string; at: string; day: string; start: number | null } | null>(null);
 	let ovrBy = $state(typeof localStorage === 'undefined' ? '' : (localStorage.getItem('nv.admin.name') ?? ''));
@@ -342,6 +343,7 @@
 	const RELEASE_ROWS_A4 = 21;
 	let releaseRows = $state(RELEASE_ROWS_A4);
 	let bibView = $state<'batch' | 'category'>('batch');
+	const printTab = $derived(['tally', 'bibs', 'release', 'count'].includes(tab));
 	// categories left out of the Tally sheets / Bib list printout (empty = print all)
 	let printCats = $state<string[]>([]);
 	const printable = $derived(data.categories.filter((c) => !printCats.includes(c.name)));
@@ -485,19 +487,19 @@
 		<button type="button" class="h-9 px-2 text-sm font-bold uppercase underline" onclick={() => (printCats = data.categories.map((c) => c.name))}>None</button>
 	</div>
 {/snippet}
-<svelte:head>{#if tab === 'tally' || tab === 'bibs'}{@html '<style>@page{size:8.5in 13in;margin:0.5in}</style>'}{:else if tab === 'release'}{@html '<style>@page{size:A4;margin:0.5in}</style>'}{:else if tab === 'progress'}{@html '<style>@page{size:A4 landscape;margin:0.4in}</style>'}{/if}</svelte:head>
+<svelte:head>{#if tab === 'tally' || tab === 'bibs'}{@html '<style>@page{size:8.5in 13in;margin:0.5in}</style>'}{:else if tab === 'release' || tab === 'count'}{@html '<style>@page{size:A4;margin:0.5in}</style>'}{:else if tab === 'progress'}{@html '<style>@page{size:A4 landscape;margin:0.4in}</style>'}{/if}</svelte:head>
 
 <Toaster position="top-center" />
 <main class="space-y-5 p-5 print:p-0">
-	<header class={tab === 'tally' || tab === 'bibs' || tab === 'release' || tab === 'progress' ? 'print:hidden' : ''}>
-		<h1 class="font-display text-5xl leading-[0.85] font-black uppercase">{tab === 'tally' || tab === 'bibs' || tab === 'release' ? 'Printables' : titles[tab]}</h1>
+	<header class={printTab || tab === 'progress' ? 'print:hidden' : ''}>
+		<h1 class="font-display text-5xl leading-[0.85] font-black uppercase">{printTab ? 'Printables' : titles[tab]}</h1>
 		<p class="mt-1 text-muted-foreground">{data.event.name} &middot; {countRunners(data.participants)} runners{#if countRunners(data.participants) !== data.participants.length}&nbsp;({data.participants.length} entries){/if} &middot; {data.categories.length} categories</p>
 	</header>
 
-	{#if tab === 'tally' || tab === 'bibs' || tab === 'release'}
+	{#if printTab}
 		<!-- Printables: one menu item, one tab per sheet -->
 		<div class="flex flex-wrap gap-2 print:hidden" role="tablist" aria-label="Printables">
-			{#each [['tally', 'Tally sheets'], ['bibs', 'Bib list'], ['release', 'Batch release tally']] as [id, label]}
+			{#each [['tally', 'Tally sheets'], ['bibs', 'Bib list'], ['release', 'Batch release tally'], ['count', 'Headcount']] as [id, label]}
 				<a href="?tab={id}" role="tab" aria-selected={tab === id} class="flex h-11 items-center border-2 border-border px-4 text-lg font-bold uppercase {tab === id ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-accent'}">{label}</a>
 			{/each}
 		</div>
@@ -1354,6 +1356,83 @@
 					</tbody>
 				</table>
 			</section>
+		</div>
+		{/if}
+
+		<!-- HEADCOUNT: how many men, women, mixed and per age group, counted the way the awards count -->
+		{#if tab === 'count'}
+		{@const hc = headcount(data.participants.filter((p) => p.category_id === null || printable.some((c) => c.id === p.category_id)), printable, data.awards, data.awards.config)}
+		{@const warn = 'font-black underline text-destructive print:text-black'}
+		{@const th = 'border border-black px-2 py-1 text-right'}
+		{@const td = 'border border-black px-2 py-1 text-right text-lg font-bold tabular-nums'}
+		<div class="space-y-5">
+			<div class="flex flex-wrap items-center gap-3 print:hidden">
+				<Button class="h-11 font-bold uppercase" onclick={() => window.print()} disabled={!hc.entries}>Print headcount</Button>
+				<p class="text-muted-foreground">How many men, women, mixed and per age group in each category, counted the way the awards count them: a duo or relay is one entry, Mixed when it has both men and women, and its age is the members' average. Age groups follow the Awards settings. Underlined numbers are runners with no gender or no age. Prints on A4.</p>
+			</div>
+			{@render catPicker()}
+			{#if hc.entries}
+				<section class="border-2 border-border bg-card p-4 print:break-inside-avoid print:border-0 print:p-0">
+					<div class="mb-2 flex items-baseline justify-between gap-4">
+						<h2 class="font-display text-2xl leading-none font-black uppercase">Headcount <span class="font-sans text-xs font-bold">&mdash; {data.event.name}</span></h2>
+						<span class="text-sm font-bold whitespace-nowrap uppercase">{hc.runners} runners &middot; {hc.entries} entries</span>
+					</div>
+					<table class="w-full table-fixed border-collapse border-2 border-black text-left">
+						<thead>
+							<tr class="border-b-2 border-black bg-black/5 text-xs font-bold uppercase">
+								<th class="w-36 border border-black px-2 py-1">Category</th><th class={th}>Men</th><th class={th}>Women</th><th class={th}>Mixed</th><th class={th}>No gender</th><th class={th}>Entries</th><th class={th}>Runners</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each hc.categories as c (c.id)}
+								<tr>
+									<td class="font-display border border-black px-2 py-1 text-lg leading-none font-black uppercase">{c.name}</td>
+									{#each c.rows as r (r.key)}<td class="{td} {r.key === '' && r.counts.total ? warn : ''}">{r.counts.total || '–'}</td>{/each}
+									<td class={td}>{c.entries}</td><td class={td}>{c.runners}</td>
+								</tr>
+							{/each}
+							<tr class="border-t-2 border-black bg-black/5">
+								<td class="border border-black px-2 py-1 text-xs font-bold uppercase">Total</td>
+								{#each [hc.byGender.M, hc.byGender.F, hc.byGender.X, hc.byGender['']] as n, i}<td class="{td} font-black {i === 3 && n ? warn : ''}">{n || '–'}</td>{/each}
+								<td class="{td} font-black">{hc.entries}</td><td class="{td} font-black">{hc.runners}</td>
+							</tr>
+						</tbody>
+					</table>
+				</section>
+				{#each hc.categories.filter((c) => c.entries) as c (c.id)}
+					<section class="border-2 border-border bg-card p-4 print:break-inside-avoid print:border-0 print:p-0">
+						<div class="mb-1 flex items-baseline justify-between gap-3">
+							<h2 class="font-display text-xl leading-none font-black uppercase">{c.name} <span class="font-sans text-xs font-bold">&mdash; by age group</span></h2>
+							<span class="text-xs font-bold whitespace-nowrap uppercase">{c.entries} entries{c.runners !== c.entries ? ` · ${c.runners} runners` : ''}</span>
+						</div>
+						<table class="w-full table-fixed border-collapse border-2 border-black text-left">
+							<thead>
+								<tr class="border-b-2 border-black bg-black/5 text-xs font-bold uppercase">
+									<th class="w-28 border border-black px-2 py-1"></th>
+									{#each c.groups as g (g.label)}<th class={th}>{g.label}</th>{/each}
+									<th class={th}>No age</th><th class={th}>Total</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each c.rows.filter((r) => r.counts.total || r.key === 'M' || r.key === 'F') as r (r.key)}
+									<tr>
+										<td class="border border-black px-2 py-1 text-sm font-bold uppercase">{r.label}</td>
+										{#each r.counts.groups as n}<td class={td}>{n || '–'}</td>{/each}
+										<td class="{td} {r.counts.noAge ? warn : ''}">{r.counts.noAge || '–'}</td><td class="{td} font-black">{r.counts.total || '–'}</td>
+									</tr>
+								{/each}
+								<tr class="border-t-2 border-black bg-black/5">
+									<td class="border border-black px-2 py-1 text-sm font-black uppercase">All</td>
+									{#each c.all.groups as n}<td class="{td} font-black">{n || '–'}</td>{/each}
+									<td class="{td} font-black {c.all.noAge ? warn : ''}">{c.all.noAge || '–'}</td><td class="{td} font-black">{c.all.total}</td>
+								</tr>
+							</tbody>
+						</table>
+					</section>
+				{/each}
+			{:else}
+				<p class="text-muted-foreground">{printCats.length ? 'No runners in the selected categories.' : 'No participants yet.'}</p>
+			{/if}
 		</div>
 		{/if}
 

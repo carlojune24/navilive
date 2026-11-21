@@ -102,7 +102,7 @@
 	const receiving = $derived(lastIn !== null && now - lastIn < 10 * 60_000);
 
 	// Printables is one menu item; its sheets are tabs inside the page
-	const PRINT_TABS = ['tally', 'bibs', 'release'];
+	const PRINT_TABS = ['tally', 'bibs', 'release', 'count'];
 	const isOn = (id: string) => activeTab === id || (id === 'printables' && PRINT_TABS.includes(activeTab));
 
 	const base = 'flex h-10 items-center gap-3 border-2 px-3 text-sm font-bold uppercase';
