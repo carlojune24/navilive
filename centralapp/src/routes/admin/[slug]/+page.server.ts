@@ -621,9 +621,10 @@ export const actions = {
 		const ok = await q('select 1 from stations where id=$1 and event_id=$2', [station, e.id]);
 		if (!ok.length) return fail(400, { error: 'Unknown station' });
 		const res = await q(
-			`insert into reads(event_id, station_id, tag, bib, read_at_ms, device_id) values($1,$2,$3,$4,$5,'MANUAL-CENTRAL')
+			// src per station: the same typed time at another station is a different read, not a duplicate
+			`insert into reads(event_id, station_id, tag, bib, read_at_ms, device_id, src) values($1,$2,$3,$4,$5,'MANUAL-CENTRAL',$6)
 			 on conflict do nothing returning id`,
-			[e.id, station, (p.tag || 'BIB-' + p.bib).toUpperCase(), p.bib, at]
+			[e.id, station, (p.tag || 'BIB-' + p.bib).toUpperCase(), p.bib, at, 'st' + station]
 		);
 		if (!res.length) return fail(400, { error: 'That exact read already exists' });
 		return { manualAdded: true };
@@ -703,9 +704,9 @@ export const actions = {
 			await c.query(`update reads r set voided=true, voided_by_admin=true from participants p where p.id=$3 and r.event_id=$1 and r.station_id=$2 and not r.voided and ${MATCH}`, [e.id, station, p.id]);
 			// the same time typed again: that manual read already exists, so bring it back
 			await c.query(
-				`insert into reads(event_id, station_id, tag, bib, read_at_ms, device_id) values($1,$2,$3,$4,$5,$6)
-				 on conflict(event_id, device_id, read_at_ms, tag, src) do update set voided=false, voided_by_admin=true, station_id=excluded.station_id`,
-				[e.id, station, (p.tag || 'BIB-' + p.bib).toUpperCase(), p.bib, at, 'ADMIN ' + by]
+				`insert into reads(event_id, station_id, tag, bib, read_at_ms, device_id, src) values($1,$2,$3,$4,$5,$6,$7)
+				 on conflict(event_id, device_id, read_at_ms, tag, src) do update set voided=false, voided_by_admin=true`,
+				[e.id, station, (p.tag || 'BIB-' + p.bib).toUpperCase(), p.bib, at, 'ADMIN ' + by, 'st' + station]
 			);
 			await c.query('commit');
 		} catch (err) {
