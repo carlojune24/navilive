@@ -3,11 +3,15 @@ import { q } from './db';
 // A read belongs to the participant whose bib it carries, else whose tag matches. A manual entry at a station for a runner
 // without an RFID tag is recorded under the bib number itself, so when no tag matches, a participant whose bib equals the
 // read's tag also counts (the station app applies the same rule).
-export const MATCH = `p.event_id=r.event_id and (p.bib=r.bib or (r.bib is null and (
-	(p.tag<>'' and upper(p.tag)=upper(r.tag))
-	or exists (select 1 from team_members tm where tm.participant_id=p.id and tm.tag<>'' and upper(tm.tag)=upper(r.tag))
-	or (p.bib=r.tag and not exists (select 1 from participants q where q.event_id=r.event_id and q.tag<>'' and upper(q.tag)=upper(r.tag)))
-)))`;
+// Written as a direct lookup per read (bib, then tag, then a team member's tag, then a bib typed as the tag): an OR join
+// over every runner took seconds on a big event and slowed every board refresh. Same matches, checked on real data.
+export const MATCH = `p.id = coalesce(
+	(select x.id from participants x where x.event_id=r.event_id and x.bib=r.bib),
+	case when r.bib is null then coalesce(
+		(select x.id from participants x where x.event_id=r.event_id and x.tag<>'' and upper(x.tag)=upper(r.tag) limit 1),
+		(select tm.participant_id from team_members tm where tm.event_id=r.event_id and tm.tag<>'' and upper(tm.tag)=upper(r.tag) limit 1),
+		(select x.id from participants x where x.event_id=r.event_id and x.bib=r.tag limit 1)
+	) end)`;
 const INGESTED = `(extract(epoch from max(ingested_at))*1000)::bigint`;
 
 /** What each station has sent, plus reads whose station name matches no station (a setup mistake worth surfacing). */

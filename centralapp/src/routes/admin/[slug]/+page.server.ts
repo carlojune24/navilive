@@ -71,6 +71,8 @@ export const load = async ({ params, url }) => {
 	const extraFields = Object.fromEntries(extraRows.map((r) => [r.k, r.vals.slice(0, 100)]));
 	// what the organizer would see on the board, even while the awards are hidden from the public
 	const full = (await loadResults(e.slug, 'gun', { includeHiddenAwards: true }))?.categories ?? [];
+	// clocks running from a Start-mat read because nobody pressed Start: the Starts page shows them so a stray scan is noticed
+	const readGuns: Record<string, number> = Object.assign({}, ...full.map((c) => c.readGuns));
 	const awardPreview = full.map((c) => ({ id: c.id, name: c.name, finished: c.rows.length, total: c.total, awards: c.awards }));
 	// the ranked results and award podiums for the Results and Award list pages (print / export)
 	const resultsData = full.map((c) => ({
@@ -99,7 +101,7 @@ export const load = async ({ params, url }) => {
 		[e.id]
 	);
 	const [{ require_station_keys: requireKeys }] = await q<{ require_station_keys: boolean }>('select require_station_keys from events where id=$1', [e.id]);
-	return { overrides, routes, stationKm, event: { id: e.id, name: e.name, slug: e.slug }, liveStart: { on: e.live_start, size: e.roll_size }, awards, extraFields, awardPreview, resultsData, progressData, courses, apiKey: e.api_key, stationKeys, requireKeys, port, addresses: lanAddresses(), publicUrl: PUBLIC_URL ?? null, stationData, laptops, categories, archived, batches, participants, stations, reads };
+	return { readGuns, overrides, routes, stationKm, event: { id: e.id, name: e.name, slug: e.slug }, liveStart: { on: e.live_start, size: e.roll_size }, awards, extraFields, awardPreview, resultsData, progressData, courses, apiKey: e.api_key, stationKeys, requireKeys, port, addresses: lanAddresses(), publicUrl: PUBLIC_URL ?? null, stationData, laptops, categories, archived, batches, participants, stations, reads };
 };
 
 export const actions = {
@@ -271,7 +273,7 @@ export const actions = {
 				cat
 			);
 		} catch (err: any) {
-			if (err.code === '23505') return fail(400, { error: 'That tag is already assigned to another participant' });
+			if (err.code === '23505') return fail(400, { error: err.constraint ? 'That tag is already assigned to another participant' : `${err.message}.` });
 			throw err;
 		}
 		return { imported: 1 };
@@ -301,7 +303,13 @@ export const actions = {
 		}
 		const { rows, errors } = parseCsv(text);
 		if (!rows.length) return fail(400, { error: errors.join('; ') || 'No rows found' });
-		return { imported: await importRows(e.id, rows, def), skipped: errors };
+		try {
+			return { imported: await importRows(e.id, rows, def), skipped: errors };
+		} catch (err: any) {
+			// the whole file is rolled back; the message names the tag and the bib that already has it
+			if (err.code === '23505') return fail(400, { error: `Nothing imported. ${err.message}.` });
+			throw err;
+		}
 	},
 	// RFID writer export (bib,name,category,tag,encoded_at). A team bib gives its tag to every member; only existing bibs are touched.
 		importTags: async ({ request, params }) => {
@@ -331,7 +339,7 @@ export const actions = {
 			} catch (err) {
 				await tx.query('rollback');
 				console.error('importTags', err);
-				return fail(400, { error: 'Nothing imported: the tag file could not be applied. Check it and try again.' });
+				return fail(400, { error: (err as { code?: string }).code === '23505' ? `Nothing imported. ${(err as Error).message}.` : 'Nothing imported: the tag file could not be applied. Check it and try again.' });
 			} finally {
 				tx.release();
 			}
@@ -410,7 +418,8 @@ export const actions = {
 		} catch (err: any) {
 			await c.query('rollback');
 			if (err.code === '23505' && err.constraint === 'team_members_name_key') return fail(400, { error: 'Two runners in this team have the same name' });
-			if (err.code === '23505') return fail(400, { error: `Bib ${bib} is already used by another participant` });
+			// a bib clash comes from the bib constraint; a tag clash from the tag check (no constraint name)
+			if (err.code === '23505') return fail(400, { error: err.constraint ? `Bib ${bib} is already used by another participant` : `${err.message}.` });
 			throw err;
 		} finally {
 			c.release();
@@ -543,8 +552,10 @@ export const actions = {
 		const name = String(f.get('name') ?? '').trim();
 		const kind = String(f.get('kind'));
 		if (!name || !['start', 'checkpoint', 'finish'].includes(kind)) return fail(400, { error: 'Station needs a name and a kind' });
-		const added = await q('insert into stations(event_id, name, kind, ord) values($1,$2,$3,(select coalesce(max(ord)+1,0) from stations where event_id=$1)) on conflict do nothing returning id', [e.id, name, kind]);
-		if (!added.length) return { warning: `A station named "${name}" already exists. Nothing added.` };
+		// station uploads match names ignoring case, so "CP1" and "cp1" would be one station to them
+		const [same] = await q<{ name: string }>('select name from stations where event_id=$1 and lower(name)=lower($2)', [e.id, name]);
+		if (same) return { warning: `A station named "${same.name}" already exists. Nothing added.` };
+		await q('insert into stations(event_id, name, kind, ord) values($1,$2,$3,(select coalesce(max(ord)+1,0) from stations where event_id=$1)) on conflict do nothing', [e.id, name, kind]);
 		// reads that arrived earlier under this name (station was missing or misspelled) now count
 		await q('update reads r set station_id=s.id from stations s where s.event_id=$1 and s.name=$2 and r.event_id=$1 and r.station_id is null and lower(r.station_name_sent)=lower(s.name)', [e.id, name]);
 	},
@@ -654,9 +665,10 @@ export const actions = {
 		const ok = await q('select 1 from stations where id=$1 and event_id=$2', [station, e.id]);
 		if (!ok.length) return fail(400, { error: 'Unknown station' });
 		const res = await q(
-			`insert into reads(event_id, station_id, tag, bib, read_at_ms, device_id, source) values($1,$2,$3,$4,$5,'MANUAL-CENTRAL','admin_manual')
+			// src per station: the same typed time at another station is a different read, not a duplicate
+			`insert into reads(event_id, station_id, tag, bib, read_at_ms, device_id, src, source) values($1,$2,$3,$4,$5,'MANUAL-CENTRAL',$6,'admin_manual')
 			 on conflict do nothing returning id`,
-			[e.id, station, (p.tag || 'BIB-' + p.bib).toUpperCase(), p.bib, at]
+			[e.id, station, (p.tag || 'BIB-' + p.bib).toUpperCase(), p.bib, at, 'st' + station]
 		);
 		if (!res.length) return fail(400, { error: 'That exact read already exists' });
 		await q("insert into read_audit(event_id, read_id, action, reason) values($1,$2,'admin_add',$3)", [e.id, res[0].id, String(f.get('reason') ?? '').trim().slice(0, 200)]);
@@ -716,6 +728,40 @@ export const actions = {
 		);
 		await q("select pg_notify('reads', $1)", [String(e.id)]); // open boards re-rank
 		return { overrideSaved: bib };
+	},
+	// a checkpoint time set by hand: that runner's reads at the station are voided (kept, restorable) and one manual read added
+	setCheckpointTime: async ({ request, params }) => {
+		const e = await ev(params.slug);
+		const f = await request.formData();
+		const bib = String(f.get('bib') ?? '').trim();
+		const station = Number(f.get('station'));
+		const at = Math.round(Number(f.get('finish_ms')));
+		const by = String(f.get('by') ?? '').trim().slice(0, 80);
+		if (!Number.isFinite(at) || at <= 0) return fail(400, { error: 'Time is not valid.' });
+		if (!by) return fail(400, { error: 'Enter your name.' });
+		const [p] = await q<{ id: number; bib: string; tag: string }>('select id, bib, tag from participants where event_id=$1 and bib=$2', [e.id, bib]);
+		if (!p) return fail(404, { error: `No participant with bib ${bib}` });
+		const ok = await q("select 1 from stations where id=$1 and event_id=$2 and kind='checkpoint'", [station, e.id]);
+		if (!ok.length) return fail(400, { error: 'Unknown checkpoint.' });
+		const c = await pool.connect();
+		try {
+			await c.query('begin');
+			await c.query(`update reads r set voided=true, voided_by_admin=true from participants p where p.id=$3 and r.event_id=$1 and r.station_id=$2 and not r.voided and ${MATCH}`, [e.id, station, p.id]);
+			// the same time typed again: that manual read already exists, so bring it back
+			await c.query(
+				`insert into reads(event_id, station_id, tag, bib, read_at_ms, device_id, src) values($1,$2,$3,$4,$5,$6,$7)
+				 on conflict(event_id, device_id, read_at_ms, tag, src) do update set voided=false, voided_by_admin=true`,
+				[e.id, station, (p.tag || 'BIB-' + p.bib).toUpperCase(), p.bib, at, 'ADMIN ' + by, 'st' + station]
+			);
+			await c.query('commit');
+		} catch (err) {
+			await c.query('rollback');
+			throw err;
+		} finally {
+			c.release();
+		}
+		await q("select pg_notify('reads', $1)", [String(e.id)]); // open boards re-rank
+		return { checkpointSaved: bib };
 	},
 	// a time penalty in minutes (0 clears it); it is added to the runner's or team's total time
 	setPenalty: async ({ request, params }) => {

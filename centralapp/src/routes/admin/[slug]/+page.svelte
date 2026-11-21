@@ -29,10 +29,11 @@
 
 	let { data, form } = $props();
 	// the left menu picks the section with ?tab=...
-	const sections = ['participants', 'categories', 'starts', 'stations', 'route', 'progress', 'results', 'awards', 'reads', 'tally', 'bibs', 'release', 'count', 'data', 'connect'];
-	const titles: Record<string, string> = { participants: 'Participants', categories: 'Categories', starts: 'Starts', stations: 'Stations', route: 'Route & map', progress: 'Progress', results: 'Results', awards: 'Awards', reads: 'Reads', tally: 'Tally sheets', bibs: 'Bib list', release: 'Batch release tally', count: 'Headcount', data: 'Station data', connect: 'Connect stations' };
+	const sections = ['participants', 'categories', 'starts', 'stations', 'route', 'progress', 'results', 'awards', 'reads', 'tally', 'bibs', 'marshal', 'release', 'count', 'data', 'connect'];
+	const titles: Record<string, string> = { participants: 'Participants', categories: 'Categories', starts: 'Starts', stations: 'Stations', route: 'Route & map', progress: 'Progress', results: 'Results', awards: 'Awards', reads: 'Reads', tally: 'Tally sheets', bibs: 'Bib list', marshal: 'Marshal tap list', release: 'Batch release tally', count: 'Headcount', data: 'Station data', connect: 'Connect stations' };
 	// Results page: the finish-time override panel for one runner
-	let ovr = $state<{ bib: string; name: string; at: string; day: string; start: number | null } | null>(null);
+	// station 0 = the finish; else a checkpoint id from cps (Progress page only)
+	let ovr = $state<{ bib: string; name: string; at: string; day: string; start: number | null; station: number; finishAt: number | null; cps: { id: number; name: string; at: number | null }[] } | null>(null);
 	let ovrBy = $state(typeof localStorage === 'undefined' ? '' : (localStorage.getItem('nv.admin.name') ?? ''));
 	let ovrReason = $state('');
 	let ovrFile = $state<File | null>(null);
@@ -69,14 +70,23 @@
 	}
 	// the runner's start (gun or own), so a finish after midnight lands on the right day
 	const startOfBib = (bib: string) => data.progressData.flatMap((c) => c.progress).find((r) => r.bib === bib)?.start ?? null;
-	function openOverride(r: { bib: string; name: string; finishAt: number | null }) {
-		const start = startOfBib(r.bib);
-		// the day: the runner's own finish, else their start day, else today; the date field shows it and can be changed
-		const ref = r.finishAt ?? start ?? Date.now();
-		const local = new Date(ref - new Date(ref).getTimezoneOffset() * 60000).toISOString();
-		ovr = { bib: r.bib, name: r.name, day: local.slice(0, 10), at: r.finishAt ? local.slice(11, 23) : '', start };
+	function openOverride(r: { bib: string; name: string; finishAt: number | null; cps?: { id: number; name: string; at: number | null }[] }) {
+		ovr = { bib: r.bib, name: r.name, day: '', at: '', start: startOfBib(r.bib), station: 0, finishAt: r.finishAt, cps: r.cps ?? [] };
+		pickOvrStation(0);
 		ovrReason = '';
 		ovrFile = null;
+		ovrErr = '';
+	}
+	// fill the date/time fields from the picked station's current time
+	function pickOvrStation(id: number) {
+		if (!ovr) return;
+		const cur = id ? (ovr.cps.find((c) => c.id === id)?.at ?? null) : ovr.finishAt;
+		// the day: the current time there, else the start day, else today; the date field shows it and can be changed
+		const ref = cur ?? ovr.start ?? Date.now();
+		const local = new Date(ref - new Date(ref).getTimezoneOffset() * 60000).toISOString();
+		ovr.station = id;
+		ovr.day = local.slice(0, 10);
+		ovr.at = cur ? local.slice(11, 23) : '';
 		ovrErr = '';
 	}
 	// what will be saved: a time at or before the start moves to the next day
@@ -84,7 +94,7 @@
 	async function saveOverride() {
 		if (!ovr) return;
 		const ms = ovrMs;
-		if (!Number.isFinite(ms)) return (ovrErr = 'Enter the finish date and time.');
+		if (!Number.isFinite(ms)) return (ovrErr = 'Enter the date and time.');
 		ovrBusy = true;
 		ovrErr = '';
 		try {
@@ -94,7 +104,8 @@
 			fd.set('reason', ovrReason);
 			fd.set('by', ovrBy);
 			if (ovrFile) fd.set('photo', await shrinkImage(ovrFile), 'proof.jpg');
-			const r = await fetch('?tab=results&/setFinishOverride', { method: 'POST', body: fd, headers: { 'x-sveltekit-action': 'true' } });
+			if (ovr.station) fd.set('station', String(ovr.station));
+			const r = await fetch(ovr.station ? '?tab=progress&/setCheckpointTime' : '?tab=results&/setFinishOverride', { method: 'POST', body: fd, headers: { 'x-sveltekit-action': 'true' } });
 			const res = deserialize(await r.text());
 			if (res.type !== 'success') return (ovrErr = (res.type === 'failure' && (res.data as { error?: string })?.error) || 'Could not save the override.');
 			try { localStorage.setItem('nv.admin.name', ovrBy.trim()); } catch { /* private mode */ }
@@ -264,7 +275,7 @@
 			if (catFilter === 'none' ? p.category_id !== null : catFilter !== '' && String(p.category_id) !== catFilter) return false;
 			const hay = `${p.bib} ${p.name} ${p.members?.map((m: { name: string; tag: string }) => `${m.name} ${m.tag}`).join(' ') ?? ''} ${p.tag} ${p.category ?? ''} ${p.gender === 'M' ? 'male men' : p.gender === 'F' ? 'female women' : ''} ${p.age ?? ''}`.toLowerCase();
 			return words.every((w) => hay.includes(w)); // every word must match somewhere, so "maria 10k" narrows
-		});
+		}).sort((a, b) => a.bib.localeCompare(b.bib, undefined, { numeric: true }));
 	});
 	const filtering = $derived(search.trim() !== '' || catFilter !== '');
 	let importMode = $state<'bibs' | 'csv' | 'one' | 'tags'>('bibs');
@@ -343,7 +354,7 @@
 	const RELEASE_ROWS_A4 = 21;
 	let releaseRows = $state(RELEASE_ROWS_A4);
 	let bibView = $state<'batch' | 'category'>('batch');
-	const printTab = $derived(['tally', 'bibs', 'release', 'count'].includes(tab));
+	const printTab = $derived(['tally', 'bibs', 'marshal', 'release', 'count'].includes(tab));
 	// categories left out of the Tally sheets / Bib list printout (empty = print all)
 	let printCats = $state<string[]>([]);
 	const printable = $derived(data.categories.filter((c) => !printCats.includes(c.name)));
@@ -371,7 +382,12 @@
 </script>
 
 {#snippet gunControls(kind: 'category' | 'batch', id: number, gun: number | string | null, label: string)}
-	<span class="text-sm font-bold uppercase {gun ? '' : 'text-muted-foreground'}">{gun ? `Started ${whenText(gun)}` : 'Not started'}</span>
+	{@const fromRead = gun ? null : data.readGuns[`${kind === 'batch' ? 'b' : 'c'}${id}`]}
+	{#if fromRead}
+		<span class="text-sm font-bold text-destructive uppercase" role="alert" title="Nobody pressed Start, so times count from the earliest read at the Start station. If that was a test scan, set the real start time.">Clock running from first Start read {whenText(fromRead)}. Set the real time</span>
+	{:else}
+		<span class="text-sm font-bold uppercase {gun ? '' : 'text-muted-foreground'}">{gun ? `Started ${whenText(gun)}` : 'Not started'}</span>
+	{/if}
 	{#if gun}
 		<form method="POST" action="?tab={tab}&/clearGun" use:enhance>
 			<input type="hidden" name="kind" value={kind} />
@@ -450,23 +466,32 @@
 	<Dialog.Content class="max-h-[90vh] overflow-y-auto border-2 border-border sm:max-w-md">
 				<div class="space-y-3">
 					<Dialog.Header>
-						<Dialog.Title class="font-display text-4xl leading-[0.85] font-black uppercase">Override finish — {ovr.bib} {ovr.name}</Dialog.Title>
-						<Dialog.Description>Replaces this runner's finish time in the ranking. The original reads are kept. Needs a reason; a proof photo is optional.</Dialog.Description>
+						<Dialog.Title class="font-display text-4xl leading-[0.85] font-black uppercase">Override {ovr.station ? ovr.cps.find((c) => c.id === ovr!.station)?.name : 'finish'} — {ovr.bib} {ovr.name}</Dialog.Title>
+						<Dialog.Description>{#if ovr.station}Sets this runner's time at the checkpoint. Their reads there are voided (still listed on the Reads page, where they can be restored) and replaced by one manual read.{:else}Replaces this runner's finish time in the ranking. The original reads are kept. Needs a reason; a proof photo is optional.{/if}</Dialog.Description>
 					</Dialog.Header>
 					{#if ovrErr}<p class="font-bold text-destructive" role="alert">{ovrErr}</p>{/if}
+					{#if ovr.cps.length}
+						<div class="flex flex-wrap gap-2" role="radiogroup" aria-label="Station to override">
+							{#each [...ovr.cps.map((c) => [c.id, c.name] as const), [0, 'Finish'] as const] as [id, label] (id)}
+								<button type="button" role="radio" aria-checked={ovr.station === id} onclick={() => pickOvrStation(id)} class="h-11 border-2 border-border px-3 font-bold uppercase {ovr.station === id ? 'bg-primary text-primary-foreground' : 'bg-card'}">{label}</button>
+							{/each}
+						</div>
+					{/if}
 					<div class="grid gap-3 sm:grid-cols-2">
-						<label class="block font-bold uppercase">Finish date<input type="date" bind:value={ovr.day} class="mt-1 block h-12 w-full border-2 border-border bg-background px-3" /></label>
-						<label class="block font-bold uppercase">Finish time (time of day)<input type="time" step="0.001" bind:value={ovr.at} class="mt-1 block h-12 w-full border-2 border-border bg-background px-3" /></label>
+						<label class="block font-bold uppercase">{ovr.station ? 'Date' : 'Finish date'}<input type="date" bind:value={ovr.day} class="mt-1 block h-12 w-full border-2 border-border bg-background px-3" /></label>
+						<label class="block font-bold uppercase">{ovr.station ? 'Time' : 'Finish time'} (time of day)<input type="time" step="0.001" bind:value={ovr.at} class="mt-1 block h-12 w-full border-2 border-border bg-background px-3" /></label>
 					</div>
 					{#if Number.isFinite(ovrMs)}
 						{@const moved = localDay(ovrMs) !== ovr.day}
 						<p class="text-sm" role="status">
-							Saves as <b>{new Date(ovrMs).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</b>{#if ovr.start !== null}, total time <b>{fmt(ovrMs - ovr.start)}</b>{/if}{#if moved} — the next day, because that time is before the start ({new Date(ovr.start!).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}){/if}.
+							Saves as <b>{new Date(ovrMs).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</b>{#if ovr.start !== null}, {ovr.station ? 'time from start' : 'total time'} <b>{fmt(ovrMs - ovr.start)}</b>{/if}{#if moved} — the next day, because that time is before the start ({new Date(ovr.start!).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}){/if}.
 						</p>
 					{/if}
+					{#if !ovr.station}
 					<label class="block font-bold uppercase">Reason<input bind:value={ovrReason} maxlength="300" placeholder="e.g. Read delayed; photo shows runner first" class="mt-1 block h-12 w-full border-2 border-border bg-background px-3 font-normal normal-case" /></label>
 					<label class="block font-bold uppercase">Your name<input bind:value={ovrBy} maxlength="80" class="mt-1 block h-12 w-full border-2 border-border bg-background px-3 font-normal normal-case" /></label>
 					<label class="block font-bold uppercase">Proof photo <span class="font-normal normal-case text-muted-foreground">(optional)</span><input type="file" accept="image/*" onchange={(e) => (ovrFile = e.currentTarget.files?.[0] ?? null)} class="mt-1 block" /></label>
+					{/if}
 					<div class="flex gap-2">
 						<Button class="h-11 font-bold uppercase" disabled={ovrBusy} onclick={saveOverride}>{ovrBusy ? 'Saving…' : 'Save override'}</Button>
 						<Button variant="outline" class="h-11 border-2 font-bold uppercase" onclick={() => (ovr = null)}>Cancel</Button>
@@ -487,7 +512,7 @@
 		<button type="button" class="h-9 px-2 text-sm font-bold uppercase underline" onclick={() => (printCats = data.categories.map((c) => c.name))}>None</button>
 	</div>
 {/snippet}
-<svelte:head>{#if tab === 'tally' || tab === 'bibs'}{@html '<style>@page{size:8.5in 13in;margin:0.5in}</style>'}{:else if tab === 'release' || tab === 'count'}{@html '<style>@page{size:A4;margin:0.5in}</style>'}{:else if tab === 'progress'}{@html '<style>@page{size:A4 landscape;margin:0.4in}</style>'}{/if}</svelte:head>
+<svelte:head>{#if tab === 'tally' || tab === 'bibs' || tab === 'marshal'}{@html '<style>@page{size:8.5in 13in;margin:0.5in}</style>'}{:else if tab === 'release' || tab === 'count'}{@html '<style>@page{size:A4;margin:0.5in}</style>'}{:else if tab === 'progress'}{@html '<style>@page{size:A4 landscape;margin:0.4in}</style>'}{/if}</svelte:head>
 
 <Toaster position="top-center" />
 <main class="space-y-5 p-5 print:p-0">
@@ -499,7 +524,7 @@
 	{#if printTab}
 		<!-- Printables: one menu item, one tab per sheet -->
 		<div class="flex flex-wrap gap-2 print:hidden" role="tablist" aria-label="Printables">
-			{#each [['tally', 'Tally sheets'], ['bibs', 'Bib list'], ['release', 'Batch release tally'], ['count', 'Headcount']] as [id, label]}
+			{#each [['tally', 'Tally sheets'], ['bibs', 'Bib list'], ['marshal', 'Marshal tap list'], ['release', 'Batch release tally'], ['count', 'Headcount']] as [id, label]}
 				<a href="?tab={id}" role="tab" aria-selected={tab === id} class="flex h-11 items-center border-2 border-border px-4 text-lg font-bold uppercase {tab === id ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-accent'}">{label}</a>
 			{/each}
 		</div>
@@ -1098,7 +1123,7 @@
 						<button type="button" class="border-2 border-primary-foreground px-3 py-1 text-sm font-bold tracking-wide uppercase print:hidden" onclick={printProgress}>Print</button>
 					</h3>
 					<p class="border-b-2 border-border px-4 py-2 text-sm">Under each time: <b>RFID</b> = the reader, <b>Marshal tap</b> = a marshal's phone, <b>Station tap</b> = tapped on the station laptop, <b>Admin entry</b> = typed in the Reads tab, <b>Override</b> = finish time corrected by the admin. <b>{byHand}</b> read{byHand === 1 ? '' : 's'} here {byHand === 1 ? 'was' : 'were'} not from the reader.</p>
-					{#key `${c.id}-${progBatch}`}<ProgressTable course={c.course} rows={progRows} category={c.name} flags pageSize={printing ? 0 : 20} still={printing} onOverride={(r) => openOverride({ bib: r.bib, name: r.name, finishAt: null })} onPenalty={(r) => openPenalty(r)} overridden={(bib) => !!overrideOf(bib)} release={runnerRelease} batchOf={progBatchCol} />{/key}
+					{#key `${c.id}-${progBatch}`}<ProgressTable course={c.course} rows={progRows} category={c.name} flags pageSize={printing ? 0 : 20} still={printing} onOverride={(r) => openOverride({ bib: r.bib, name: r.name, finishAt: r.at[c.course.findIndex((s) => s.kind === 'finish')] ?? null, cps: c.course.flatMap((s, i) => (s.kind === 'checkpoint' ? [{ id: s.id, name: s.name, at: r.at[i] }] : [])) })} onPenalty={(r) => openPenalty(r)} overridden={(bib) => !!overrideOf(bib)} release={runnerRelease} batchOf={progBatchCol} />{/key}
 				</section>
 				<!-- print only: the summary that closes the printed sheet -->
 				<section class="hidden space-y-3 border-2 border-black p-4 text-black print:block print:break-inside-avoid">
@@ -1329,6 +1354,43 @@
 			{:else}
 				<p class="text-muted-foreground">{printCats.length ? 'No runners in the selected categories.' : 'No participants yet.'}</p>
 			{/each}
+		</div>
+		{/if}
+
+		<!-- MARSHAL TAP LIST: every bib on one list, for a marshal writing times by hand -->
+		{#if tab === 'marshal'}
+		{@const catName = new Map(data.categories.map((c: { id: number; name: string }) => [c.id, c.name]))}
+		{@const rows = data.participants.filter((p) => !printCats.includes(catName.get(p.category_id) ?? '')).sort((a, b) => a.bib.localeCompare(b.bib, undefined, { numeric: true }))}
+		<div class="space-y-5">
+			<div class="flex flex-wrap items-center gap-3 print:hidden">
+				<Button class="h-11 font-bold uppercase" onclick={() => window.print()} disabled={!rows.length}>Print marshal tap list</Button>
+				{@render catPicker()}
+				<p class="text-muted-foreground">Every bib on one list, by bib number. Teams show the team name. Prints on long bond paper (8.5 &times; 13 in).</p>
+			</div>
+			<section class="border-2 border-border bg-card p-4 print:border-0 print:p-0">
+				<div class="mb-1 flex items-baseline justify-between gap-3">
+					<h2 class="font-display text-xl leading-none font-black uppercase">Marshal tap list <span class="font-sans text-xs font-bold">&mdash; {data.event.name}</span></h2>
+					<div class="flex items-baseline gap-4 text-xs font-bold whitespace-nowrap uppercase"><span>Checkpoint #: <span class="inline-block w-24 border-b border-black align-baseline">&nbsp;</span></span><span>{rows.length} bibs</span></div>
+				</div>
+				<table class="w-full table-fixed border-collapse border-2 border-black text-left">
+					<thead>
+						<tr class="border-b-2 border-black bg-black/5 text-xs font-bold uppercase">
+							<th class="border border-black w-20 px-1 py-0.5">Bib</th><th class="border border-black px-1 py-0.5">Team name or name</th><th class="border border-black w-60 px-1 py-0.5">Time</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each rows as r (r.bib)}
+							<tr class="h-[0.3in] border-b border-black print:break-inside-avoid">
+								<td class="font-display border border-black px-1 text-lg leading-none font-black">{r.bib}</td>
+								<td class="border border-black px-1 text-sm leading-tight font-bold break-words uppercase">{r.name || '—'}</td>
+								<td class="border border-black"></td>
+							</tr>
+						{:else}
+							<tr><td colspan="3" class="px-1 py-2 text-muted-foreground">No participants yet.</td></tr>
+						{/each}
+					</tbody>
+				</table>
+			</section>
 		</div>
 		{/if}
 

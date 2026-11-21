@@ -26,3 +26,6 @@ backups/
 # Playwright
 /test-results
 /playwright-report
+qa/state.json
+qa/server.log
+qa/last.log

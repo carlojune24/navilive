@@ -51,9 +51,8 @@
 	let nameInput = $state('');
 
 	const station = $derived(board?.stations.find((s) => s.id === stationId) ?? null);
-	// the default: every station, start then checkpoints then finish. Raw `ord` is not enough: a checkpoint added
-	// after the finish gets a higher ord, which made the finish read as "the station before" it.
-	const course = $derived(defaultCourse(board?.stations ?? []).map((s) => s.id));
+	// the default: every station, start first and finish last (a checkpoint added later has a higher ord than Finish)
+	const course = $derived(board ? defaultCourse(board.stations).map((s) => s.id) : []);
 	// a category with its own course skips stations, so its runners must not read as missed at one
 	const courseOf = $derived.by(() => {
 		const m = new Map<number, number[]>();

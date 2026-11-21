@@ -1,6 +1,7 @@
 import { pool } from './db';
 import type { PoolClient } from 'pg';
 import { seenBy, stampFor, undoLocked } from '$lib/marshal';
+import { defaultCourse } from '$lib/progress';
 
 export type InRead = { tag: string; read_at_ms: number; device_id?: unknown; station?: unknown; bib?: unknown; voided?: unknown; server_time?: unknown; src?: unknown };
 
@@ -12,10 +13,10 @@ async function undoRefused(c: PoolClient, eventId: number, device: string, tag: 
 	const [row] = (await c.query('select station_id, bib from reads where event_id=$1 and device_id=$2 and tag=$3 and client_ms=$4 and not voided', [eventId, device, tag, clientMs])).rows;
 	if (!row?.station_id || !row.bib) return false;
 	// one after another: a pg client runs one query at a time
-	const stations = await c.query('select id, kind from stations where event_id=$1 order by ord, id', [eventId]);
+	const stations = await c.query('select id, kind, ord from stations where event_id=$1', [eventId]);
 	const course = await c.query('select cc.station_id from category_courses cc join participants p on p.category_id=cc.category_id where p.event_id=$1 and p.bib=$2 order by cc.ord', [eventId, row.bib]);
 	const tagged = await c.query('select bib, station_id, read_at_ms::float8 as at from reads where event_id=$1 and bib=$2 and not voided and station_id is not null', [eventId, row.bib]);
-	const ids = course.rows.length ? course.rows.map((r) => r.station_id as number) : stations.rows.map((s) => s.id as number);
+	const ids = course.rows.length ? course.rows.map((r) => r.station_id as number) : defaultCourse(stations.rows as { id: number; kind: string }[]).map((s) => s.id);
 	const finishIds = stations.rows.filter((s) => s.kind === 'finish').map((s) => s.id as number);
 	return undoLocked(row.bib, seenBy(tagged.rows), row.station_id, ids, finishIds);
 }
@@ -40,7 +41,7 @@ export async function insertReads(eventId: number, reads: InRead[], keyId: numbe
 				// station matched by name (case-insensitive); unknown/blank -> null, still stored
 				const res = await c.query(
 					`insert into reads(event_id, station_id, tag, bib, read_at_ms, device_id, voided, station_name_sent, client_ms, source, key_id)
-					 values($1,(select id from stations where event_id=$1 and lower(name)=lower($2)),$3,
+					 values($1,(select id from stations where event_id=$1 and lower(name)=lower(trim($2)) order by id limit 1),$3,
 					        coalesce($4,(select bib from participants where event_id=$1 and tag<>'' and upper(tag)=upper($3) limit 1),(select bib from participants where event_id=$1 and bib=$3 limit 1)),$5,$6,$7,$8,$9,'marshal',$10)
 					 on conflict (event_id, device_id, tag, client_ms) where client_ms is not null do update set voided = excluded.voided
 					   where reads.voided is distinct from excluded.voided and not reads.voided_by_admin
@@ -79,7 +80,7 @@ export async function insertReads(eventId: number, reads: InRead[], keyId: numbe
 			// tag mapping first (a station's roster copy can be stale), then the bib the station sent, then a bib typed as the tag.
 			const res = await c.query(
 				`insert into reads(event_id, station_id, tag, bib, read_at_ms, device_id, voided, station_name_sent, src, source, key_id)
-				 values($1,(select id from stations where event_id=$1 and lower(name)=lower($2)),$3,
+				 values($1,(select id from stations where event_id=$1 and lower(name)=lower(trim($2)) order by id limit 1),$3,
 				        coalesce((select bib from participants where event_id=$1 and tag<>'' and upper(tag)=upper($3) limit 1),$4,(select bib from participants where event_id=$1 and bib=$3 limit 1)),$5,$6,$7,$2,$8,$9,$10)
 				 on conflict do nothing returning id`,
 				[eventId, station, r.tag, r.bib ? String(r.bib) : null, r.read_at_ms, device, voided, src, source, keyId]

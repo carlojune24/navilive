@@ -135,6 +135,8 @@ Do this before the event and after the finish. Restore: `pg_restore -U postgres 
 
 `npm run dev` (port 5173), `npm run check`, `npx vitest run`.
 
+`npm run test:qa` runs the race-day QA suite (`qa/`, about 2 minutes): a throwaway `racecentral_qa` database next to yours, a production build on port 5299, and about 190 checks driving it like the admin, station laptops, marshal phones and the public board (tags, starts, reads, undo lock, release, security, 1,500-runner load). It never touches the database in `.env`. Run it before a deploy that changes reads, results or tags.
+
 ## Known limits
 
 - One shared admin password; no per-user accounts.

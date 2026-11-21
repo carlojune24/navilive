@@ -135,7 +135,7 @@ export function parseTeamCsv(text: string, on = new Date()): { teams: TeamRow[];
 	const used = new Set([bi, ti, fi, li, ni, ci, gi, di, ai, tgi]);
 	const teams = new Map<string, TeamRow>();
 	const errors: string[] = [];
-	const tags = new Set<string>();
+	const tags = new Map<string, string>(); // tag -> the team that wears it
 	lines.slice(1).forEach((line, i) => {
 		const c = splitLine(line, d);
 		const at = (k: number) => (k >= 0 ? (c[k] ?? '') : '');
@@ -150,8 +150,9 @@ export function parseTeamCsv(text: string, on = new Date()): { teams: TeamRow[];
 		const t = teams.get(key) ?? teams.set(key, { bib, team: team || bib, category, members: [] }).get(key)!;
 		if (team && t.team === t.bib) t.team = team;
 		const tag = at(tgi).trim();
-		if (tag && tags.has(tag.toUpperCase())) return errors.push(`Line ${i + 2}: tag ${tag} is used twice`);
-		if (tag) tags.add(tag.toUpperCase());
+		// members of one team may wear the team's one tag; another team may not
+		if (tag && tags.has(tag.toUpperCase()) && tags.get(tag.toUpperCase()) !== key) return errors.push(`Line ${i + 2}: tag ${tag} is used by another team`);
+		if (tag) tags.set(tag.toUpperCase(), key);
 		if (t.members.some((m) => m.name.toLowerCase() === name.toLowerCase())) return errors.push(`Line ${i + 2}: ${name} is listed twice in ${team}`);
 		const extra: Record<string, string> = {};
 		head.forEach((h, k) => h && !used.has(k) && c[k] && (extra[h] = c[k]));

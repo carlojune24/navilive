@@ -1,0 +1,15 @@
+import { check, login, act, api, sql, db, results, T0, min } from './lib.mjs';
+import * as L from './lib.mjs';
+await login('qa-admin-pass-123');
+const [ev] = await sql("select id, slug, api_key from events where slug='qa-trail-run-2026'");
+const P = `/admin/${ev.slug}`;
+await act(P, 'addCategory', { name: '0 Fun Run' });
+const [c] = await sql("select id from categories where event_id=$1 and name='0 Fun Run'", [ev.id]);
+await act(P, 'importCsv', { category: String(c.id), file: new File(['bib,tag\n601,T601\n602,T602'], 'f.csv') });
+await api('POST', `/api/events/${ev.slug}/reads`, { key: ev.api_key, body: { reads: [{ tag: 'T601', station: 'Start', read_at_ms: T0 - min(20), device_id: 'START-PC', src: 'stray601' }] } });
+const page = async () => (await fetch(`http://localhost:5299${P}?tab=categories`, { headers: { cookie: L.cookie } })).text();
+check('a stray early Start-mat scan shows "Clock running from first Start read"', (await page()).includes('Clock running from first Start read'), '');
+await act(P, 'startGun', { id: c.id, kind: 'category', ms: T0 });
+check('the warning goes once the real start time is set', !(await page()).includes('Clock running from first Start read'), '');
+console.log(`${results.filter((r) => r.ok).length}/${results.length} passed`);
+await db.end();

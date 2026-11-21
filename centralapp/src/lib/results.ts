@@ -59,6 +59,7 @@ export type Cat = {
 	badStart: number; // finish read or override is at or before the start time, so no time: the start was probably corrected wrongly
 	noStart: number; // crossed the finish but cannot be timed: no start read and no gun for their group
 	underway: boolean; // someone already has a counted checkpoint or finish read, so the clock can no longer be started
+	readGuns: Record<string, number>; // clocks nobody started ('c<id>' category, 'b<id>' batch): running from the first Start read
 	recent?: { bib: string; name: string }[]; // the latest across the finish line, newest first (live board's Latest finishers)
 };
 
@@ -270,7 +271,7 @@ export function computeResults(
 				course,
 				members.map((p) => ({ bib: p.bib, name: p.name, start: track.get(p.bib)!.start, first: track.get(p.bib)!.first, by: track.get(p.bib)!.by, src: track.get(p.bib)!.src, finished: rankOf.has(p.bib) || crossed.has(p.bib), rank: rankOf.get(p.bib) ?? null, time: timeOf.get(p.bib) ?? null, division: divisionOf(p), penalty: Math.max(0, Number(p.penaltyMs) || 0) }))
 			);
-			return { id: cat.id, name: cat.name, rows: done, started, total: members.length, awards: buildAwards(done, o), places: o.places, course, progress, noStart, badStart, gunMs: gun.get(`c${cat.id}`) ?? null, gunManual: manual.has(`c${cat.id}`), rankBy: (rankBy === 'chip' || rankBy === 'finish' ? rankBy : 'elapsed') as 'elapsed' | 'chip' | 'finish', underway: members.some((p) => (byP.get(p.id) ?? []).some((r) => kind.get(r.station_id)?.kind !== 'start')) };
+			return { id: cat.id, name: cat.name, rows: done, started, total: members.length, awards: buildAwards(done, o), places: o.places, course, progress, noStart, badStart, gunMs: gun.get(`c${cat.id}`) ?? null, gunManual: manual.has(`c${cat.id}`), rankBy: (rankBy === 'chip' || rankBy === 'finish' ? rankBy : 'elapsed') as 'elapsed' | 'chip' | 'finish', underway: members.some((p) => (byP.get(p.id) ?? []).some((r) => kind.get(r.station_id)?.kind !== 'start')), readGuns: Object.fromEntries([...new Set(members.map(groupOf))].filter((g) => !manual.has(g) && gun.has(g)).map((g) => [g, gun.get(g)!])) };
 		})
 		.filter((c) => c.total > 0);
 }
