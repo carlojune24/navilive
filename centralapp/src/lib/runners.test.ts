@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { countRunners } from './runners';
+import { countRunners, epcToCard } from './runners';
+
+describe('epcToCard', () => {
+	it('matches what the station app shows (same cases as the Rust test)', () => {
+		expect(epcToCard('00000000C8')).toBe('0000000200');
+		expect(epcToCard('000000000000000000000192')).toBe('0000000402');
+		expect(epcToCard('e2000000ffffffff')).toBe('4294967295');
+		expect(epcToCard('')).toBe('');
+		expect(epcToCard('BIB-12')).toBe('BIB-12');
+	});
+});
 
 describe('countRunners', () => {
 	it('counts people, not entries', () => {

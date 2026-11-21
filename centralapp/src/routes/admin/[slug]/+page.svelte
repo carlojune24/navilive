@@ -18,7 +18,7 @@
 	import { invalidateAll } from '$app/navigation';
 	import { ago } from '$lib/time';
 	import { fmt, genderLabel } from '$lib/results';
-	import { countRunners } from '$lib/runners';
+	import { countRunners, epcToCard } from '$lib/runners';
 	import { headcount } from '$lib/headcount';
 	import { sourceLabel } from '$lib/readtrail';
 	import { finishAt, localDay } from '$lib/time';
@@ -572,7 +572,7 @@
 				<Table.Root>
 					<Table.Header>
 						<Table.Row class="bg-primary hover:bg-primary">
-							{#each ['Bib', 'Name', 'Team name', 'Category', 'Gender', 'Age', 'Tag', ''] as h}
+							{#each ['Bib', 'Name', 'Team name', 'Category', 'Gender', 'Age', 'Tag', 'Station reading', ''] as h}
 								<Table.Head class="font-bold tracking-wide text-primary-foreground uppercase">{h}</Table.Head>
 							{/each}
 						</Table.Row>
@@ -581,7 +581,7 @@
 						{#each filtered as p (p.id)}
 							{#if editing === p.id}
 								<Table.Row class="bg-accent">
-									<Table.Cell colspan={8}>
+									<Table.Cell colspan={9}>
 										<form method="POST" action="?tab={tab}&/updateParticipant" use:enhance={closeOnSave} class="flex flex-wrap items-end gap-2">
 											<input type="hidden" name="id" value={p.id} />
 											<div class="w-28"><Label class={lbl} for="eb{p.id}">Bib</Label><Input id="eb{p.id}" name="bib" value={p.bib} class="h-11 border-2" required /></div>
@@ -648,6 +648,7 @@
 									<Table.Cell>{m.gender === 'M' ? 'Male' : m.gender === 'F' ? 'Female' : '—'}</Table.Cell>
 									<Table.Cell>{m.age ?? '—'}</Table.Cell>
 									<Table.Cell>{m.tag || '—'}</Table.Cell>
+									<Table.Cell>{m.tag ? epcToCard(m.tag) : '—'}</Table.Cell>
 									<Table.Cell class="text-right whitespace-nowrap">
 										{#if mi === 0}
 										<Button variant="outline" size="sm" class={small} onclick={() => (editing = p.id)}>Edit</Button>
@@ -662,7 +663,7 @@
 							{/if}
 						{:else}
 							<Table.Row>
-								<Table.Cell colspan={8} class="p-6 text-muted-foreground">{filtering ? 'No participants match this search.' : 'No participants yet. Press Import participants.'}</Table.Cell>
+								<Table.Cell colspan={9} class="p-6 text-muted-foreground">{filtering ? 'No participants match this search.' : 'No participants yet. Press Import participants.'}</Table.Cell>
 							</Table.Row>
 						{/each}
 					</Table.Body>
