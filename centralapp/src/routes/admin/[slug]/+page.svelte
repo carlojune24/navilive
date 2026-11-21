@@ -1188,7 +1188,7 @@
 					{#if isRes}
 						<Table.Root>
 							<Table.Header>
-								<Table.Row>{#each ['Rank', 'Bib', 'Name', 'Gender', 'Age', 'Time', ''] as h}<Table.Head class="font-bold tracking-wide uppercase">{h}</Table.Head>{/each}</Table.Row>
+								<Table.Row>{#each ['Rank', 'Bib', 'Name', 'Gender', 'Age', 'Elapsed', 'Penalty', 'Total', ''] as h}<Table.Head class="font-bold tracking-wide uppercase">{h}</Table.Head>{/each}</Table.Row>
 							</Table.Header>
 							<Table.Body>
 								{#each c.rows as r (r.bib)}
@@ -1198,7 +1198,9 @@
 										<Table.Cell>{r.name || '—'}</Table.Cell>
 										<Table.Cell>{genderLabel(r.gender) || '—'}</Table.Cell>
 										<Table.Cell>{r.age ?? '—'}</Table.Cell>
-										<Table.Cell class="font-bold tabular-nums">{fmt(r.time!)}</Table.Cell>
+										<Table.Cell class="tabular-nums">{fmt(r.time! - (r.penalty ?? 0))}</Table.Cell>
+											<Table.Cell class="tabular-nums {r.penalty ? 'font-bold text-destructive' : 'text-muted-foreground'}">{r.penalty ? '+' + fmt(r.penalty) : '—'}</Table.Cell>
+											<Table.Cell class="font-bold tabular-nums">{fmt(r.time!)}</Table.Cell>
 										<Table.Cell class="print:hidden">
 											{#if r.overridden}
 												{@const o = overrideOf(r.bib)}
@@ -1211,7 +1213,7 @@
 										</Table.Cell>
 									</Table.Row>
 								{:else}
-									<Table.Row><Table.Cell colspan={7} class="p-4 text-muted-foreground">No finishers yet.</Table.Cell></Table.Row>
+									<Table.Row><Table.Cell colspan={9} class="p-4 text-muted-foreground">No finishers yet.</Table.Cell></Table.Row>
 								{/each}
 							</Table.Body>
 						</Table.Root>
