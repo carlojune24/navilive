@@ -1368,7 +1368,7 @@
 		<div class="space-y-5">
 			<div class="flex flex-wrap items-center gap-3 print:hidden">
 				<Button class="h-11 font-bold uppercase" onclick={() => window.print()} disabled={!hc.entries}>Print headcount</Button>
-				<p class="text-muted-foreground">How many men, women, mixed and per age group in each category, counted the way the awards count them: a duo or relay is one entry, Mixed when it has both men and women, and its age is the members' average. Age groups follow the Awards settings. Underlined numbers are runners with no gender or no age. Prints on A4.</p>
+				<p class="text-muted-foreground">How many men, women, mixed and per age group in each category, counted the way the awards count them: a duo or relay is one entry, Mixed when it has both men and women, and its age is the members' average. Age groups follow the Awards settings. Underlined numbers are entries with no gender or no age: who they are is listed at the bottom ("Needs fixing"), so you can correct them on the Participants tab. Prints on A4.</p>
 			</div>
 			{@render catPicker()}
 			{#if hc.entries}
@@ -1430,6 +1430,31 @@
 						</table>
 					</section>
 				{/each}
+				{#if hc.missing.length}
+					<section class="border-2 border-border bg-card p-4 print:border-0 print:p-0">
+						<div class="mb-1 flex items-baseline justify-between gap-3">
+							<h2 class="font-display text-xl leading-none font-black uppercase">Needs fixing <span class="font-sans text-xs font-bold">&mdash; no gender or no age</span></h2>
+							<span class="text-xs font-bold whitespace-nowrap uppercase">{hc.missing.length} to fix</span>
+						</div>
+						<table class="w-full table-fixed border-collapse border-2 border-black text-left">
+							<thead>
+								<tr class="border-b-2 border-black bg-black/5 text-xs font-bold uppercase">
+									<th class="w-24 border border-black px-2 py-1">Category</th><th class="w-20 border border-black px-2 py-1">Bib</th><th class="border border-black px-2 py-1">Name</th><th class="w-40 border border-black px-2 py-1">Missing</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each hc.missing as m}
+									<tr class="print:break-inside-avoid">
+										<td class="border border-black px-2 py-1 text-sm font-bold uppercase">{m.category}</td>
+										<td class="font-display border border-black px-2 py-1 text-lg leading-none font-black">{m.bib}</td>
+										<td class="border border-black px-2 py-1 text-sm leading-tight font-bold break-words uppercase">{m.name || '—'}{#if m.member}<span class="font-normal"> &middot; member {m.member || '—'}</span>{/if}</td>
+										<td class="border border-black px-2 py-1 text-sm font-bold uppercase">{[m.gender && 'Gender', m.age && 'Age'].filter(Boolean).join(', ')}</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</section>
+				{/if}
 			{:else}
 				<p class="text-muted-foreground">{printCats.length ? 'No runners in the selected categories.' : 'No participants yet.'}</p>
 			{/if}

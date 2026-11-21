@@ -37,6 +37,25 @@ describe('headcount', () => {
 		expect(h.categories[1].groups).toEqual([]);
 		expect(h.categories.at(-1)).toMatchObject({ name: 'No category', entries: 1 });
 	});
+	it('names who is missing a gender or age, per member for a team', () => {
+		const named = (e: Entry, bib: string, name: string): Entry => ({ ...e, bib, name });
+		const h = headcount(
+			[
+				named(solo('M', 30), '1', 'COMPLETE'),
+				named(solo('', 30), '2', 'NO GENDER'),
+				named(solo('F', null), '3', 'NO AGE'),
+				named(solo('', null), '4', 'NEITHER'),
+				// the team counts as Men (the unknown member is skipped), but that member must be listed
+				named({ category_id: 2, gender: '', age: null, members: [{ id: 1, name: 'A', gender: 'M', age: 30 }, { id: 2, name: 'B', gender: '', age: 31 }] }, 'D1', 'TEAM')
+			],
+			cats,
+			def,
+			DEFAULT_CONFIG
+		);
+		expect(h.missing.map((m) => [m.bib, m.member, m.gender, m.age])).toEqual([['2', undefined, true, false], ['3', undefined, false, true], ['4', undefined, true, true], ['D1', 'B', true, false]]);
+		expect(h.missing[3]).toMatchObject({ category: 'DUO', name: 'TEAM' });
+		expect(headcount([solo('M', 30)], cats, def, DEFAULT_CONFIG).missing).toEqual([]);
+	});
 	it('no one registered', () => {
 		expect(headcount([], cats, def, DEFAULT_CONFIG)).toMatchObject({ entries: 0, runners: 0 });
 	});
